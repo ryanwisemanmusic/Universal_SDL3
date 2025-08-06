@@ -1,8 +1,8 @@
 [
 {
-  "directory": "/Volumes/2023 Drive/Universal_SDL3/build",
-  "command": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ -DBOOST_PROGRAM_OPTIONS_DYN_LINK -DBOOST_PROGRAM_OPTIONS_NO_LIB -isystem /opt/homebrew/include -O3 -DNDEBUG -std=gnu++17 -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk -mmacosx-version-min=13.6 -o CMakeFiles/simplehttpserver.dir/Volumes/2023_Drive/Universal_SDL3/main.cpp.o -c \"/Volumes/2023 Drive/Universal_SDL3/main.cpp\"",
-  "file": "/Volumes/2023 Drive/Universal_SDL3/main.cpp",
-  "output": "CMakeFiles/simplehttpserver.dir/Volumes/2023_Drive/Universal_SDL3/main.cpp.o"
+  "directory": "build",
+  "command": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ -DBOOST_PROGRAM_OPTIONS_DYN_LINK -DBOOST_PROGRAM_OPTIONS_NO_LIB -isystem /opt/homebrew/include -O3 -DNDEBUG -std=gnu++17 -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk -mmacosx-version-min=13.6 -o CMakeFiles/simplehttpserver.dirmain.cpp.o -c \"main.cpp\"",
+  "file": "main.cpp",
+  "output": "CMakeFiles/simplehttpserver.dirmain.cpp.o"
 }
 ]
