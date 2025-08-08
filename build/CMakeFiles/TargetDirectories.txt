@@ -1,3 +1,0 @@
-/Volumes/2023 Drive/Universal_SDL3/build/CMakeFiles/simplehttpserver.dir
-/Volumes/2023 Drive/Universal_SDL3/build/CMakeFiles/edit_cache.dir
-/Volumes/2023 Drive/Universal_SDL3/build/CMakeFiles/rebuild_cache.dir
