@@ -152,3 +152,15 @@
 // Foundational Headers - OpenGL
 //==================================================
 #include <GL/gl.h>
+#include <GL/glext.h>
+#include <GL/glcorearb.h>
+#include <GL/glx.h>
+#include <GL/glxmd.h>
+#include <GL/glxtokens.h>
+
+/*
+Double check these headers with relationship to your build. 
+Do I think these are needed, no, but, you need to handle:
+- #include <GL/glxint.h>
+- #include <GL/glxproto.h>
+*/
