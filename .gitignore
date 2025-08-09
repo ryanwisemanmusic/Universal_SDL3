@@ -167,3 +167,5 @@ build/native/compile_commands.json
 build/native/Makefile
 build/native/simplehttpserver
 build/CMakeFiles/simplehttpserver.dir/compiler_depend.make
+build_native.txt
+wtfisthis.txt
