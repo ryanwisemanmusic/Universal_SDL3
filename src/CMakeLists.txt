@@ -96,7 +96,23 @@ else()
     set(OPENGL_INCLUDE_DIRS ${OSMESA_INCLUDE_DIR})
 endif()
 
-add_executable(simplehttpserver ${PROJECT_ROOT}/main.cpp)
+add_executable(simplehttpserver
+    ${PROJECT_ROOT}/main.cpp
+    ${PROJECT_ROOT}/main.hpp 
+)
+
+# Associate header explicitly
+target_sources(simplehttpserver PRIVATE
+    ${PROJECT_ROOT}/main.hpp
+)
+
+# Ensure both main.cpp and main.hpp have proper includes
+target_include_directories(simplehttpserver PRIVATE
+    "${Boost_INCLUDE_DIRS}"
+    "${SDL3_INCLUDE_DIRS}"
+    "${OPENGL_INCLUDE_DIRS}"
+)
+
 
 if(NATIVE_MACOS_BUILD)
     if(SDL3_LIBRARY_DIRS)
