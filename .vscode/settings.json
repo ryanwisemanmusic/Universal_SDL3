@@ -1,4 +1,8 @@
 {
   "C_Cpp.default.compileCommands": "${workspaceFolder}/.vscode/compile_commands.json",
-  "C_Cpp.loggingLevel": "Debug"
+  "C_Cpp.loggingLevel": "Debug",
+  "files.associations": {
+    "*.dbclient-js": "javascript",
+    "iostream": "cpp"
+  }
 }
