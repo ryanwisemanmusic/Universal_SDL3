@@ -1,8 +1,14 @@
 #include "main.hpp"
 
+
+
 int main(int argc, char* argv[]) {
 
     SDL_Window *window;                    // Declare a pointer
+    // Set OpenGL version to 4.1 (macOS-compatible)
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     bool done = false;
 
     SDL_Init(SDL_INIT_VIDEO);              // Initialize SDL3
