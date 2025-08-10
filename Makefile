@@ -99,7 +99,7 @@ run-native:
 build-docker: build-base build-debug build-app
 
 build-base:
-	@echo "Building base Ubuntu image..."
+	@echo "Building base Alpine image..."
 	@docker build --platform=linux/arm64 --target base-deps -t sdl3-base:latest .
 
 build-debug:
@@ -228,5 +228,9 @@ help:
 	@echo "Available targets: all, build-native, run-native, build-docker, run-docker, test-native, run-headless, clean, debug"
 
 build-native-log:
-	@echo "Building natively and logging output to build_native.log..."
+	@echo "Building natively and logging output to build_native.txt..."
 	@$(MAKE) build-native > build_native.txt 2>&1
+
+build-docker-log:
+	@echo "Building with Docker and logging output to build_docker.txt"
+	@$(MAKE) build-docker > build_docker.txt 2>&1
