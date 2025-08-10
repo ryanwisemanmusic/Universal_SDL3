@@ -170,3 +170,4 @@ build/CMakeFiles/simplehttpserver.dir/compiler_depend.make
 build_native.txt
 wtfisthis.txt
 .DS_Store
+build_docker.txt
