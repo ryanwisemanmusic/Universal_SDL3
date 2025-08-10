@@ -119,6 +119,10 @@ run-docker: check-xquartz-settings
 		--shm-size=512m \
 		mostsignificant/simplehttpserver
 
+run-docker-log:
+	@echo "Running with Docker and logging output to run_docker.txt"
+	@$(MAKE) run-docker > run_docker.txt 2>&1
+
 run:
 	@if [ "$(UNAME_S)" = "Darwin" ] && [ "$(HAS_BREW)" = "yes" ] && [ "$(HAS_CMAKE)" = "yes" ] && [ -f "build/native/simplehttpserver" ]; then \
 		echo "Using native macOS build..."; \
