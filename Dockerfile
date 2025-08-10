@@ -15,7 +15,7 @@ RUN apk add --no-cache \
     linux-headers \
     musl-dev
 
-# Install glibc compatibility layer
+# Install glibc compatibility layer (ARM64-safe versions to prevent ldconfig machine mismatch)
 RUN wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub && \
     wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-2.35-r1.apk && \
     wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-bin-2.35-r1.apk && \
@@ -53,7 +53,7 @@ RUN apk add --no-cache \
     wayland-dev \
     wayland-protocols \
     libdrm-dev \
-    llvm16-dev \
+    llvm16-dev llvm16-libs \
     clang16 \
     python3-dev \
     py3-setuptools \
@@ -126,7 +126,7 @@ RUN git clone --depth=1 https://github.com/libsdl-org/SDL.git sdl && \
         -DSDL_VIDEO_OPENGL_EGL=ON && \
     make -j"$(nproc)" install
 
-# Build and install glmark2 with comprehensive debugging
+# Build and install glmark2
 RUN echo "===== START GLMARK2 BUILD =====" && \
     git clone --depth=1 https://github.com/glmark2/glmark2.git && \
     cd glmark2 && \
@@ -162,12 +162,10 @@ RUN cmake -DCMAKE_BUILD_TYPE=Release \
 
 # Stage: debug environment
 FROM base-deps AS debug
-# Copy built libraries
 COPY --from=libs-build /usr/local /usr/local
-# Copy application
 COPY --from=app-build /app/build/simplehttpserver /app/simplehttpserver
 
-# Install debug tools
+# Install debug tools + LLVM runtime
 RUN apk add --no-cache \
     mesa-demos \
     xdpyinfo \
@@ -176,7 +174,8 @@ RUN apk add --no-cache \
     strace \
     gdb \
     valgrind \
-    libxxf86vm
+    libxxf86vm \
+    llvm16-libs
 
 # Create DRI directory structure
 RUN mkdir -p /usr/lib/xorg/modules/dri && \
@@ -193,7 +192,7 @@ ENV SDL_VIDEODRIVER=x11 \
     GALLIUM_DRIVER=llvmpipe \
     MESA_GL_VERSION_OVERRIDE=3.3 \
     MESA_GLSL_VERSION_OVERRIDE=330 \
-    LD_LIBRARY_PATH=/usr/glibc-compat/lib:/usr/local/lib
+    LD_LIBRARY_PATH=/usr/lib:/usr/glibc-compat/lib:/usr/local/lib
 
 USER shs
 WORKDIR /app
@@ -201,8 +200,6 @@ CMD ["/app/simplehttpserver"]
 
 # Stage: runtime environment
 FROM alpine:3.18 AS runtime
-
-# Install runtime dependencies
 RUN apk add --no-cache \
     libstdc++ \
     libgcc \
@@ -224,9 +221,9 @@ RUN apk add --no-cache \
     mesa-dri-gallium \
     mesa-va-gallium \
     mesa-vdpau-gallium \
-    glu
+    glu \
+    llvm16-libs  # <-- ensure LLVM16 present in runtime
 
-# Handle libgbm differently for ARM vs x86
 RUN set -eux; \
     if apk add --no-cache libgbm 2>/dev/null; then \
         echo "Installed libgbm"; \
@@ -234,26 +231,22 @@ RUN set -eux; \
         apk add --no-cache mesa-gbm || true; \
     fi
 
-# Create DRI directory structure
 RUN mkdir -p /usr/lib/xorg/modules/dri && \
     ln -s /usr/lib/dri /usr/lib/xorg/modules/dri
 
-# Copy built artifacts
 COPY --from=libs-build /usr/local /usr/local
 COPY --from=app-build /app/build/simplehttpserver /app/simplehttpserver
 
-# Create non-root user
 RUN addgroup -g 1000 shs && \
     adduser -u 1000 -G shs -D shs && \
     chown -R shs:shs /app /usr/local
 
-# Environment setup for robust OpenGL
 ENV SDL_VIDEODRIVER=x11 \
     LIBGL_ALWAYS_SOFTWARE=1 \
     GALLIUM_DRIVER=llvmpipe \
     MESA_GL_VERSION_OVERRIDE=3.3 \
     MESA_GLSL_VERSION_OVERRIDE=330 \
-    LD_LIBRARY_PATH=/usr/glibc-compat/lib:/usr/local/lib
+    LD_LIBRARY_PATH=/usr/lib:/usr/glibc-compat/lib:/usr/local/lib
 
 USER shs
 WORKDIR /app
