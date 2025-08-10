@@ -1,4 +1,32 @@
+//==================================================
+// Foundational Headers - General System Headers
+//==================================================
+
+#include <ctype.h>
+#include <fcntl.h>
 #include <iostream>
+#include <math.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
+//==================================================
+// Foundational Headers - Networking Headers
+//==================================================
+
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <signal.h>
+#include <sys/ioctl.h>
+#include <sys/filio.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
 
 //==================================================
 // Foundational Headers - SDL (General)
@@ -156,6 +184,10 @@
 #include <GL/glx.h>
 #include <GL/glxmd.h>
 #include <GL/glxtokens.h>
+
+
+
+
 
 /*
 Double check these headers with relationship to your build. 
