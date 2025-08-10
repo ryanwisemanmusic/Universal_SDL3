@@ -4,16 +4,30 @@ project(simplehttpserver)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Detect build environment
 if(APPLE)
     set(NATIVE_MACOS_BUILD TRUE)
+    message(STATUS "Building for native macOS")
 else()
     set(NATIVE_MACOS_BUILD FALSE)
+    if(EXISTS "/etc/alpine-release")
+        set(ALPINE_LINUX_BUILD TRUE)
+        message(STATUS "Building for Alpine Linux")
+    else()
+        set(ALPINE_LINUX_BUILD FALSE)
+        message(STATUS "Building for generic Linux")
+    endif()
 endif()
 
 get_filename_component(PROJECT_ROOT "${CMAKE_SOURCE_DIR}/.." ABSOLUTE)
 
+# SDL3 configuration
 if(NOT SDL3_INSTALL_DIR)
-    set(SDL3_INSTALL_DIR "${PROJECT_ROOT}/build/deps/install")
+    if(ALPINE_LINUX_BUILD)
+        set(SDL3_INSTALL_DIR "/usr/local")
+    else()
+        set(SDL3_INSTALL_DIR "${PROJECT_ROOT}/build/deps/install")
+    endif()
 endif()
 get_filename_component(SDL3_INSTALL_DIR "${SDL3_INSTALL_DIR}" ABSOLUTE)
 
@@ -23,9 +37,8 @@ list(PREPEND CMAKE_LIBRARY_PATH "${SDL3_INSTALL_DIR}/lib")
 
 set(ENV{PKG_CONFIG_PATH} "${SDL3_INSTALL_DIR}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
 
-find_package(Boost REQUIRED COMPONENTS program_options)
-
 if(NATIVE_MACOS_BUILD)
+    # macOS-specific SDL3 finding
     find_package(PkgConfig QUIET)
     set(SDL3_FOUND FALSE)
 
@@ -34,7 +47,6 @@ if(NATIVE_MACOS_BUILD)
         if(SDL3_PKGCONFIG_FOUND)
             set(SDL3_INCLUDE_DIRS ${SDL3_PKGCONFIG_INCLUDE_DIRS})
             set(SDL3_LIBRARIES ${SDL3_PKGCONFIG_LIBRARIES})
-            # Try to resolve a full library path so the linker can find it
             find_library(SDL3_LIBRARY_PATH
                 NAMES SDL3 libSDL3.dylib libSDL3.a
                 PATHS "${SDL3_INSTALL_DIR}/lib" "${SDL3_INSTALL_DIR}/lib64"
@@ -70,15 +82,7 @@ if(NATIVE_MACOS_BUILD)
     endif()
 
     if(NOT SDL3_FOUND)
-        file(GLOB LIB_FILES RELATIVE "${SDL3_INSTALL_DIR}/lib" "${SDL3_INSTALL_DIR}/lib/*")
-        foreach(LIB_FILE ${LIB_FILES})
-            message(STATUS "  ${SDL3_INSTALL_DIR}/lib/${LIB_FILE}")
-        endforeach()
-        file(GLOB INCLUDE_DIRS RELATIVE "${SDL3_INSTALL_DIR}/include" "${SDL3_INSTALL_DIR}/include/*")
-        foreach(INC ${INCLUDE_DIRS})
-            message(STATUS "  ${SDL3_INSTALL_DIR}/include/${INC}")
-        endforeach()
-        message(FATAL_ERROR "SDL3 not found in ${SDL3_INSTALL_DIR}. Please ensure SDL3 was built/installed there.")
+        message(FATAL_ERROR "SDL3 not found in ${SDL3_INSTALL_DIR}")
     endif()
 
     find_package(OpenGL REQUIRED)
@@ -86,42 +90,55 @@ if(NATIVE_MACOS_BUILD)
     set(OPENGL_INCLUDE_DIRS ${OPENGL_INCLUDE_DIR})
 
 else()
+    # Alpine/Linux configuration
     find_package(SDL3 REQUIRED CONFIG)
-    find_library(OSMESA_LIBRARY NAMES OSMesa)
-    find_path(OSMESA_INCLUDE_DIR NAMES GL/osmesa.h)
-    if (NOT OSMESA_LIBRARY OR NOT OSMESA_INCLUDE_DIR)
-        message(FATAL_ERROR "OSMesa not found in Docker environment.")
+    
+    # Use software rendering in Alpine
+    if(ALPINE_LINUX_BUILD)
+        find_library(MESA_LIBRARY NAMES mesa)
+        find_library(LLVMPIPE_LIBRARY NAMES llvmpipe)
+        find_library(OSMESA_LIBRARY NAMES OSMesa)
+        
+        if(MESA_LIBRARY AND LLVMPIPE_LIBRARY)
+            set(OPENGL_LIBRARIES ${MESA_LIBRARY} ${LLVMPIPE_LIBRARY})
+        elseif(OSMESA_LIBRARY)
+            set(OPENGL_LIBRARIES ${OSMESA_LIBRARY})
+        else()
+            message(FATAL_ERROR "Could not find software rendering libraries (mesa/llvmpipe/OSMesa)")
+        endif()
+        
+        find_path(OPENGL_INCLUDE_DIRS NAMES GL/gl.h)
+    else()
+        # Generic Linux with hardware acceleration
+        find_package(OpenGL REQUIRED)
+        set(OPENGL_LIBRARIES ${OpenGL_LIBRARIES})
+        set(OPENGL_INCLUDE_DIRS ${OpenGL_INCLUDE_DIR})
     endif()
-    set(OPENGL_LIBRARIES ${OSMESA_LIBRARY})
-    set(OPENGL_INCLUDE_DIRS ${OSMESA_INCLUDE_DIR})
 endif()
 
+# Main executable
 add_executable(simplehttpserver
     ${PROJECT_ROOT}/main.cpp
     ${PROJECT_ROOT}/main.hpp 
 )
 
-# Associate header explicitly
 target_sources(simplehttpserver PRIVATE
     ${PROJECT_ROOT}/main.hpp
 )
 
-# Ensure both main.cpp and main.hpp have proper includes
 target_include_directories(simplehttpserver PRIVATE
-    "${Boost_INCLUDE_DIRS}"
     "${SDL3_INCLUDE_DIRS}"
     "${OPENGL_INCLUDE_DIRS}"
 )
 
-
 if(NATIVE_MACOS_BUILD)
+    # macOS linking
     if(SDL3_LIBRARY_DIRS)
         target_link_directories(simplehttpserver PRIVATE "${SDL3_LIBRARY_DIRS}")
     endif()
 
     target_link_libraries(simplehttpserver
         PRIVATE
-            ${Boost_LIBRARIES}
             ${SDL3_LIBRARIES}
             ${OPENGL_LIBRARIES}
             "-framework Cocoa"
@@ -131,12 +148,6 @@ if(NATIVE_MACOS_BUILD)
             "-framework AudioToolbox"
             "-framework AVFoundation"
             "-framework Foundation"
-    )
-
-    target_include_directories(simplehttpserver PRIVATE
-        "${Boost_INCLUDE_DIRS}"
-        "${SDL3_INCLUDE_DIRS}"
-        "${OPENGL_INCLUDE_DIRS}"
     )
 
     target_compile_definitions(simplehttpserver PRIVATE
@@ -152,30 +163,41 @@ if(NATIVE_MACOS_BUILD)
     )
 
 else()
+    # Alpine/Linux linking
     target_link_libraries(simplehttpserver
         PRIVATE
-            ${Boost_LIBRARIES}
             SDL3::SDL3-static
             ${OPENGL_LIBRARIES}
     )
 
-    target_include_directories(simplehttpserver PRIVATE
-        "${Boost_INCLUDE_DIRS}"
-        "${OPENGL_INCLUDE_DIRS}"
-    )
-
-    target_compile_definitions(simplehttpserver PRIVATE
-        DOCKER_BUILD=1
-        SDL_VIDEO_DRIVER_X11=1
-    )
+    if(ALPINE_LINUX_BUILD)
+        target_compile_definitions(simplehttpserver PRIVATE
+            ALPINE_LINUX_BUILD=1
+            SDL_VIDEO_DRIVER_X11=1
+            SDL_VIDEO_OPENGL=1
+            GLX_ALWAYS_SOFTWARE=1
+        )
+        
+        # Ensure software rendering is used
+        set_target_properties(simplehttpserver PROPERTIES
+            LINK_FLAGS "-Wl,--no-as-needed"
+        )
+    else()
+        target_compile_definitions(simplehttpserver PRIVATE
+            DOCKER_BUILD=1
+            SDL_VIDEO_DRIVER_X11=1
+        )
+    endif()
 endif()
 
+# Generate compile_commands.json for tooling
 add_custom_command(TARGET simplehttpserver POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_BINARY_DIR}/compile_commands.json
         ${PROJECT_ROOT}/.vscode/compile_commands.json
 )
 
+# Installation
 install(TARGETS simplehttpserver
     RUNTIME DESTINATION ${PROJECT_ROOT}/bin
     LIBRARY DESTINATION ${PROJECT_ROOT}/lib
