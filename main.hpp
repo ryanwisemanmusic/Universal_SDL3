@@ -1,5 +1,4 @@
 #include <iostream>
-#include <boost/program_options.hpp>
 
 //==================================================
 // Foundational Headers - SDL (General)
