@@ -2,6 +2,8 @@
 // Foundational Headers - General System Headers
 //==================================================
 
+//So standard headers are recognized. So long as it is C/C++ library, it
+//should be loaded.
 #include <assert.h>
 #include <ctype.h>
 #include <fcntl.h>
@@ -19,17 +21,29 @@
 // Foundational Headers - Networking Headers
 //==================================================
 
-#include <arpa/inet.h>
+
+/*
+Alright, some interesting notes. Apparently even though sys is a default
+library, I still need to package include??? Curious if there are a bunch
+of system headers that aren't automatically included so I've commented out
+anything that is contained within a system program.
+
+Weird af that Apline Linux doesn't like automatically build with sys
+networking from the start because isn't that like foundational and a 
+critical problem if someone were to build a kernel with Alpine but
+never substantiated sys
+*/
+//#include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
-#include <netinet/in.h>
+//#include <netinet/in.h>
 #include <signal.h>
-#include <sys/ioctl.h>
-#include <sys/filio.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
+//#include <sys/ioctl.h>
+//#include <sys/filio.h>
+//#include <sys/time.h>
+//#include <sys/types.h>
+//#include <sys/socket.h>
+//#include <sys/stat.h>
 
 //==================================================
 // Foundational Headers - SDL (General)
