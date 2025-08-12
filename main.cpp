@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) {
         "An SDL3 window",                  // window title
         640,                               // width, in pixels
         480,                               // height, in pixels
-        SDL_WINDOW_OPENGL                  // flags - see below
+        SDL_WINDOW_VULKAN                  // flags - see below
     );
 
     // Check that the window was successfully created
