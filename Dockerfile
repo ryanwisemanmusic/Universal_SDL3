@@ -406,6 +406,60 @@ RUN /usr/local/bin/check_llvm15.sh "pre-sdl3" || true && \
     make -j"$(nproc)" install && \
     /usr/local/bin/check_llvm15.sh "post-sdl3" || true
 
+    # Build and install SDL_image (from libsdl-org)
+RUN /usr/local/bin/check_llvm15.sh "pre-sdl_image" || true && \
+    apk add --no-cache libpng-dev jpeg-dev libwebp-dev tiff-dev && \
+    /usr/local/bin/check_llvm15.sh "after-sdl_image-deps" || true && \
+    git clone --depth=1 https://github.com/libsdl-org/SDL_image.git sdl_image && \
+    cd sdl_image && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_C_COMPILER=clang-16 \
+        -DCMAKE_CXX_COMPILER=clang++-16 \
+        -DCMAKE_C_FLAGS="-march=armv8-a" \
+        -DCMAKE_CXX_FLAGS="-march=armv8-a" && \
+    make -j"$(nproc)" install && \
+    cd ../.. && rm -rf sdl_image && \
+    /usr/local/bin/check_llvm15.sh "post-sdl_image" || true
+
+# Build and install SDL_mixer (from libsdl-org)
+RUN /usr/local/bin/check_llvm15.sh "pre-sdl_mixer" || true && \
+    apk add --no-cache libogg-dev libvorbis-dev libmodplug-dev mpg123-dev libsndfile-dev && \
+    /usr/local/bin/check_llvm15.sh "after-sdl_mixer-deps" || true && \
+    git clone --depth=1 https://github.com/libsdl-org/SDL_mixer.git sdl_mixer && \
+    cd sdl_mixer && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_C_COMPILER=clang-16 \
+        -DCMAKE_CXX_COMPILER=clang++-16 \
+        -DCMAKE_C_FLAGS="-march=armv8-a" \
+        -DCMAKE_CXX_FLAGS="-march=armv8-a" && \
+    make -j"$(nproc)" install && \
+    cd ../.. && rm -rf sdl_mixer && \
+    /usr/local/bin/check_llvm15.sh "post-sdl_mixer" || true
+
+# Build and install SDL_ttf (from libsdl-org)
+RUN /usr/local/bin/check_llvm15.sh "pre-sdl_ttf" || true && \
+    apk add --no-cache freetype-dev && \
+    /usr/local/bin/check_llvm15.sh "after-sdl_ttf-deps" || true && \
+    git clone --depth=1 https://github.com/libsdl-org/SDL_ttf.git sdl_ttf && \
+    cd sdl_ttf && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_C_COMPILER=clang-16 \
+        -DCMAKE_CXX_COMPILER=clang++-16 \
+        -DCMAKE_C_FLAGS="-march=armv8-a" \
+        -DCMAKE_CXX_FLAGS="-march=armv8-a" && \
+    make -j"$(nproc)" install && \
+    cd ../.. && rm -rf sdl_ttf && \
+    /usr/local/bin/check_llvm15.sh "post-sdl_ttf" || true
+
 # Vulkan-Headers
 RUN /usr/local/bin/check_llvm15.sh "pre-vulkan-headers" || true && \
     git clone --progress https://github.com/KhronosGroup/Vulkan-Headers.git && \
