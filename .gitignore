@@ -172,3 +172,4 @@ wtfisthis.txt
 .DS_Store
 build_docker.txt
 run_docker.txt
+clean_docker.txt
