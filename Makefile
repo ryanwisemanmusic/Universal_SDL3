@@ -167,6 +167,10 @@ clean-docker:
 	@docker system prune -f >/dev/null 2>&1 || true
 	@echo "Docker cleanup completed."
 
+clean-docker-log:
+	@echo "Cleaning with Docker and logging output to clean_docker.txt"
+	@$(MAKE) clean-docker > clean_docker.txt 2>&1
+
 clean: clean-native clean-docker
 
 update-libraries:
