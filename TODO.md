@@ -1,6 +1,5 @@
 Things to integrate (immediate):
 - SDL_VulkanRenderer
-- sys library. Networking is important for attempting to run the DOOM source code
 - wine (yes, do that but git clone with debug on)
 - DIRECTX renderer
 
