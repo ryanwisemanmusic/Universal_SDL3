@@ -89,6 +89,19 @@ if(NATIVE_MACOS_BUILD)
     set(OPENGL_LIBRARIES ${OPENGL_LIBRARIES})
     set(OPENGL_INCLUDE_DIRS ${OPENGL_INCLUDE_DIR})
 
+    # Vulkan on macOS
+    find_path(VULKAN_INCLUDE_DIR vulkan/vulkan.h
+        PATHS /usr/local/include /opt/homebrew/include
+        NO_DEFAULT_PATH
+    )
+    find_library(VULKAN_LIBRARIES vulkan
+        PATHS /usr/local/lib /opt/homebrew/lib
+        NO_DEFAULT_PATH
+    )
+    if(NOT VULKAN_INCLUDE_DIR OR NOT VULKAN_LIBRARIES)
+        message(FATAL_ERROR "Vulkan SDK not found on macOS")
+    endif()
+
 else()
     # Alpine/Linux configuration
     find_package(SDL3 REQUIRED CONFIG)
@@ -114,6 +127,25 @@ else()
         set(OPENGL_LIBRARIES ${OpenGL_LIBRARIES})
         set(OPENGL_INCLUDE_DIRS ${OpenGL_INCLUDE_DIR})
     endif()
+
+    # Vulkan on Linux
+    find_package(Vulkan QUIET)
+    if(Vulkan_FOUND)
+        set(VULKAN_INCLUDE_DIR ${Vulkan_INCLUDE_DIRS})
+        set(VULKAN_LIBRARIES ${Vulkan_LIBRARIES})
+    else()
+        # Fallback manual search
+        find_path(VULKAN_INCLUDE_DIR vulkan/vulkan.h
+            PATHS /usr/local/include /usr/include
+        )
+        find_library(VULKAN_LIBRARIES vulkan
+            PATHS /usr/local/lib /usr/lib
+        )
+    endif()
+
+    if(NOT VULKAN_INCLUDE_DIR OR NOT VULKAN_LIBRARIES)
+        message(FATAL_ERROR "Vulkan SDK not found on Linux")
+    endif()
 endif()
 
 # Main executable
@@ -129,6 +161,7 @@ target_sources(simplehttpserver PRIVATE
 target_include_directories(simplehttpserver PRIVATE
     "${SDL3_INCLUDE_DIRS}"
     "${OPENGL_INCLUDE_DIRS}"
+    "${VULKAN_INCLUDE_DIR}"
 )
 
 if(NATIVE_MACOS_BUILD)
@@ -141,6 +174,7 @@ if(NATIVE_MACOS_BUILD)
         PRIVATE
             ${SDL3_LIBRARIES}
             ${OPENGL_LIBRARIES}
+            ${VULKAN_LIBRARIES}
             "-framework Cocoa"
             "-framework CoreVideo"
             "-framework IOKit"
@@ -153,6 +187,7 @@ if(NATIVE_MACOS_BUILD)
     target_compile_definitions(simplehttpserver PRIVATE
         NATIVE_MACOS_BUILD=1
         SDL_VIDEO_DRIVER_COCOA=1
+        USE_VULKAN=1
     )
 
     set_target_properties(simplehttpserver PROPERTIES
@@ -168,6 +203,7 @@ else()
         PRIVATE
             SDL3::SDL3-static
             ${OPENGL_LIBRARIES}
+            ${VULKAN_LIBRARIES}
     )
 
     if(ALPINE_LINUX_BUILD)
@@ -176,6 +212,7 @@ else()
             SDL_VIDEO_DRIVER_X11=1
             SDL_VIDEO_OPENGL=1
             GLX_ALWAYS_SOFTWARE=1
+            USE_VULKAN=1
         )
         
         # Ensure software rendering is used
@@ -186,6 +223,7 @@ else()
         target_compile_definitions(simplehttpserver PRIVATE
             DOCKER_BUILD=1
             SDL_VIDEO_DRIVER_X11=1
+            USE_VULKAN=1
         )
     endif()
 endif()
