@@ -33,17 +33,18 @@ networking from the start because isn't that like foundational and a
 critical problem if someone were to build a kernel with Alpine but
 never substantiated sys
 */
-//#include <arpa/inet.h>
+#pragma once
+#include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
-//#include <netinet/in.h>
+#include <netinet/in.h>
 #include <signal.h>
-//#include <sys/ioctl.h>
-//#include <sys/filio.h>
-//#include <sys/time.h>
-//#include <sys/types.h>
-//#include <sys/socket.h>
-//#include <sys/stat.h>
+#include <sys/ioctl.h>
+
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
 
 //==================================================
 // Foundational Headers - SDL (General)
@@ -202,13 +203,16 @@ never substantiated sys
 #include <GL/glxmd.h>
 #include <GL/glxtokens.h>
 
-
-
-
-
 /*
 Double check these headers with relationship to your build. 
 Do I think these are needed, no, but, you need to handle:
 - #include <GL/glxint.h>
 - #include <GL/glxproto.h>
+*/
+
+/*
+Additional problematic headers:
+- #include <sys/filio.h> - Apparently <sys/ioctl.h> is the same???????
+
+So I'm supressing this so we don't get anymore issues
 */
