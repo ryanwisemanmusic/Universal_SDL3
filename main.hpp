@@ -198,7 +198,7 @@ never substantiated sys
 //==================================================
 
 #include <SDL3_image/SDL_image.h>
-//#include <SDL3_mixer/SDL_mixer.h>
+#include <SDL3_mixer/SDL_mixer.h>
 //#include <SDL3_ttf/SDL_textengine.h>
 //#include <SDL3_ttf/SDL_ttf.h>
 
