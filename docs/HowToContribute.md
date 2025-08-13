@@ -8,14 +8,13 @@ is dealing with older SDL2 libraries. Currently, the libraries with SDL3
 support are as the following:
 - SDL3 (vanilla) - this is a given
 - SDL_image
-
-Any code to better the linking of SDL3 extern libraries:
 - SDL3_mixer
 - SDL3_ttf
 
 Here are libraries that cause a fundamental problem to the build:
 - SDL3_gfx
 - SDL_sound
+- SDL_net
 
 If you want to contribute, what I personally need is a port of the two
 incompatible libraries to SDL3. Whether this is your own fork that meets
@@ -34,5 +33,21 @@ Here is what I'm not seeking:
 I do not want you to be contributing to main.cpp. I'm only using this
 as a means to intialization. Keep in mind, most of this work is backend.
 
+I do not want you to be messing with the approach in my Docker file. Yes,
+I indeed know better than you on this and the problems if we don't do stuff in
+this EXACT matter. This is not up for debate, I don't want to sit here
+and see you delete my MESA build from source, or any of these, given that
+there have been so many previous issues of just going through Alpine's
+APK manager. No, you cannot just simply shove all these packages into
+a more organized manner, or I would've fucking done that a long time ago.
+
+Here is what I am seeking:
+Any under the hood issues logged involving missing dependencies. If you
+are going to be adding a package, abide by checking with that .sh script.
+LLVM15 is the bane of my existence, you will absolutely bork this project
+if you proceed to download multiple packages without that check. 
+
+There's a reason why I check for contamination, it was causing issues
+with the Vulkan renderer. 
 
 
