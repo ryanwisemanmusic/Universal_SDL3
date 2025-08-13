@@ -509,6 +509,24 @@ RUN /usr/local/bin/check_llvm15.sh "pre-sdl3-mixer" || true && \
     rm -rf sdl_mixer && \
     /usr/local/bin/check_llvm15.sh "post-sdl3-mixer" || true
 
+# Build and install SDL3_ttf (SDL3 compatible)
+RUN /usr/local/bin/check_llvm15.sh "pre-sdl3-ttf" || true && \
+    git clone --depth=1 https://github.com/libsdl-org/SDL_ttf.git sdl_ttf && \
+    cd sdl_ttf && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_C_COMPILER=clang-16 \
+        -DCMAKE_CXX_COMPILER=clang++-16 \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DCMAKE_C_FLAGS="-march=armv8-a" \
+        -DCMAKE_CXX_FLAGS="-march=armv8-a" && \
+    make -j"$(nproc)" install && \
+    cd ../.. && \
+    rm -rf sdl_ttf && \
+    /usr/local/bin/check_llvm15.sh "post-sdl3-ttf" || true
+
 # Vulkan-Headers
 RUN /usr/local/bin/check_llvm15.sh "pre-vulkan-headers" || true && \
     git clone --progress https://github.com/KhronosGroup/Vulkan-Headers.git && \
