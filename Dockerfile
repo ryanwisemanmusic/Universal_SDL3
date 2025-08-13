@@ -187,7 +187,6 @@ RUN apk add --no-cache \
     libtool \
     util-macros \
     xorg-util-macros \
-    libdrm-dev \
     libpciaccess-dev \
     libepoxy-dev \
     pixman-dev \
@@ -196,6 +195,26 @@ RUN apk add --no-cache \
     libxkbfile-dev \
     libxfont2-dev && \
     /usr/local/bin/check_llvm15.sh "after-xorg-build-deps" || true
+
+# Build libdrm from source (avoiding LLVM15 contamination)
+RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-libdrm-source-build" || true && \
+    git clone --depth=1 https://gitlab.freedesktop.org/mesa/drm.git libdrm && \
+    cd libdrm && \
+    ./autogen.sh \
+        --prefix=/usr/local \
+        CC=clang-16 \
+        CXX=clang++-16 \
+        LLVM_CONFIG=/usr/lib/llvm16/bin/llvm-config \
+        CFLAGS="-I/usr/lib/llvm16/include -march=armv8-a" \
+        CXXFLAGS="-I/usr/lib/llvm16/include -march=armv8-a" \
+        LDFLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib" && \
+    make -j"$(nproc)" && \
+    make install && \
+    cd .. && \
+    rm -rf libdrm && \
+    /usr/local/bin/check_llvm15.sh "post-libdrm-source-build" || true
+
 
 # BUILD XORG-SERVER FROM SOURCE (avoiding LLVM15 contamination)
 RUN echo "=== BUILDING XORG-SERVER FROM SOURCE TO AVOID LLVM15 ===" && \
@@ -257,6 +276,27 @@ RUN apk add --no-cache libavif-dev && /usr/local/bin/check_llvm15.sh "after-liba
 RUN apk add --no-cache strace && /usr/local/bin/check_llvm15.sh "after-strace" || true
 RUN apk add --no-cache file && /usr/local/bin/check_llvm15.sh "after-file" || true
 RUN apk add --no-cache tree && /usr/local/bin/check_llvm15.sh "after-tree" || true
+
+# Build SPIRV-Tools from source (avoiding LLVM15 contamination)
+RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-spirv-tools-source-build" || true && \
+    git clone --depth=1 https://github.com/KhronosGroup/SPIRV-Tools.git spirv-tools && \
+    cd spirv-tools && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_C_COMPILER=clang-16 \
+        -DCMAKE_CXX_COMPILER=clang++-16 \
+        -DLLVM_CONFIG_EXECUTABLE=/usr/lib/llvm16/bin/llvm-config \
+        -DCMAKE_C_FLAGS="-I/usr/lib/llvm16/include -march=armv8-a" \
+        -DCMAKE_CXX_FLAGS="-I/usr/lib/llvm16/include -march=armv8-a" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib" && \
+    make -j"$(nproc)" && \
+    make install && \
+    cd ../.. && \
+    rm -rf spirv-tools && \
+    /usr/local/bin/check_llvm15.sh "post-spirv-tools-source-build" || true
 
 # BUILD SHADERC FROM SOURCE (avoiding LLVM15 contamination)
 RUN echo "=== BUILDING SHADERC FROM SOURCE TO AVOID LLVM15 ===" && \
@@ -409,6 +449,40 @@ RUN /usr/local/bin/check_llvm15.sh "pre-sdl3" || true && \
         -DCMAKE_CXX_FLAGS="-march=armv8-a" && \
     make -j"$(nproc)" install && \
     /usr/local/bin/check_llvm15.sh "post-sdl3" || true
+
+# Build and install SDL3_image
+RUN /usr/local/bin/check_llvm15.sh "pre-sdl3-image" || true && \
+    git clone --depth=1 https://github.com/libsdl-org/SDL_image.git sdl_image && \
+    cd sdl_image && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_C_COMPILER=clang-16 \
+        -DCMAKE_CXX_COMPILER=clang++-16 \
+        -DSDL3IMAGE_PNG=ON \
+        -DSDL3IMAGE_JPG=ON \
+        -DSDL3IMAGE_TIF=ON \
+        -DSDL3IMAGE_WEBP=ON \
+        -DSDL3IMAGE_AVIF=ON \
+        -DSDL3IMAGE_BMP=ON \
+        -DSDL3IMAGE_GIF=ON \
+        -DSDL3IMAGE_LBM=ON \
+        -DSDL3IMAGE_PCX=ON \
+        -DSDL3IMAGE_PNM=ON \
+        -DSDL3IMAGE_QOI=ON \
+        -DSDL3IMAGE_SVG=ON \
+        -DSDL3IMAGE_TGA=ON \
+        -DSDL3IMAGE_XCF=ON \
+        -DSDL3IMAGE_XPM=ON \
+        -DSDL3IMAGE_XV=ON \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DCMAKE_C_FLAGS="-march=armv8-a" \
+        -DCMAKE_CXX_FLAGS="-march=armv8-a" && \
+    make -j"$(nproc)" install && \
+    cd ../.. && \
+    rm -rf sdl_image && \
+    /usr/local/bin/check_llvm15.sh "post-sdl3-image" || true
 
 # Vulkan-Headers
 RUN /usr/local/bin/check_llvm15.sh "pre-vulkan-headers" || true && \
