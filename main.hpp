@@ -194,6 +194,16 @@ never substantiated sys
 #include <SDL3/SDL_tray.h>
 
 //==================================================
+// SDL Third Party Headers
+//==================================================
+
+#include <SDL3_image/SDL_image.h>
+//#include <SDL3_mixer/SDL_mixer.h>
+//#include <SDL3_ttf/SDL_textengine.h>
+//#include <SDL3_ttf/SDL_ttf.h>
+
+
+//==================================================
 // Foundational Headers - OpenGL
 //==================================================
 #include <GL/gl.h>
