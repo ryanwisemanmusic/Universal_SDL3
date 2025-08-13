@@ -1,5 +1,6 @@
 #Universal SDL3
-    Hello, welcome to a Universal SDL3 Application project repo!!!! Ever
+
+Hello, welcome to a Universal SDL3 Application project repo!!!! Ever
 since I began working with this library, one of the biggest hassles is
 to get dynamic linking working. And so hence, was born this Universal SDL project.
 
