@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <cstdint>
 
 //==================================================
 // Foundational Headers - Networking Headers
@@ -50,6 +51,7 @@ never substantiated sys
 // Foundational Headers - SDL (General)
 //==================================================
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
 #include <SDL3/SDL_events.h>
 
 //==================================================
@@ -213,6 +215,33 @@ never substantiated sys
 #include <GL/glxmd.h>
 #include <GL/glxtokens.h>
 
+//==================================================
+// Foundational Headers - Other NonSDL Headers
+//==================================================
+/*
+#include <sqlite3.h>
+
+
+
+extern "C"
+{
+    #include <libavcodec/avcodec.h>
+    #include <libavformat/avformat.h>
+    #include <libswscale/swscale.h>
+    #include <libswresample/swresample.h>
+    #include <libavutil/channel_layout.h>
+    #include <libswresample/swresample.h>
+}
+
+extern "C"
+{
+    #include <libavcodec/avcodec.h>
+    #include <libavformat/avformat.h>
+    #include <libswscale/swscale.h>
+    #include <libavutil/imgutils.h>
+}
+
+*/
 /*
 Double check these headers with relationship to your build. 
 Do I think these are needed, no, but, you need to handle:
