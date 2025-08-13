@@ -1,34 +1,31 @@
-Things to integrate (immediate):
-- SDL_VulkanRenderer
-- wine (yes, do that but git clone with debug on)
-- DIRECTX renderer
+Hello! This SDL3 Universal build is coming along well!!!!
 
-When we have this all done, we need to make sure this runs native via Obj-C
-Since Imo, this will be faster
+So my TODO list is centered around seeing if I can get my first project
+in SDL3, to work inside of this container!!!
 
-Things to integrate (soon):
-High Priorty:
+Right now, there are a few libraries we still need to implement. However,
+this is very small, given that anything outside of SQLite is FFMPEG:
+1. #include <sqlite3.h>
+2. #include <libavcodec/avcodec.h>
+3. #include <libavformat/avformat.h>
+4. #include <libswscale/swscale.h>
+5. #include <libswresample/swresample.h>
+6. #include <libavutil/channel_layout.h>
+7. #include <libswresample/swresample.h>
 
-- clang
-- SDL3_Image
-- lld
-- SDL3_mixer
-- SDL3_ttf
-- FFMPEG
-- JUCE
-- SQLite
-- GLM 
+After these are recognized and the headers create no segfault, I will
+be using this project as the testing ground to see just exactly WHAT code
+works. There may be some uses of code that fail due to an underlying
+dependency missing. And that is what the next part of my TODO comes into
+play. 
 
-Medium Priority:
-- util/types.h
-- perl
-- PortAudio
-- binutils
-- autoconf
-- automake
-- libtool
-- ImGui 
+Here is the link to the repo if you want to check it out!
+https://github.com/ryanwisemanmusic/SDL3_Cat_Tac_Toe
 
-Low Priority (for OS Project):
-- QEMU (this is for userspace kernel, and hence, will be passed into X11)
-- Abort kernel process of killall w/ Ubuntu fallback using GRUB 
+Once this gets built, then I will focus my efforts on porting my entire
+SDK to it and making sure that code compiles.
+
+Part of the reason for why I am doing this is because hardcoding library
+paths has created a specific problem, when homebrew updates said libraries,
+it will delete the older ones. And hence, why I wanted to build a 
+universally accessible SDL3 build that instantly compiles without tantrum.
