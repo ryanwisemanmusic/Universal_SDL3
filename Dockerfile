@@ -248,6 +248,10 @@ RUN apk add --no-cache py3-setuptools && /usr/local/bin/check_llvm15.sh "after-p
 RUN apk add --no-cache jpeg-dev && /usr/local/bin/check_llvm15.sh "after-jpeg-dev" || true
 RUN apk add --no-cache libpng-dev && /usr/local/bin/check_llvm15.sh "after-libpng-dev" || true
 RUN apk add --no-cache libxkbcommon-dev && /usr/local/bin/check_llvm15.sh "after-libxkbcommon-dev" || true
+#SDL3_Image Dependencies
+RUN apk add --no-cache tiff-dev && /usr/local/bin/check_llvm15.sh "after-tiff-dev" || true
+RUN apk add --no-cache libwebp-dev && /usr/local/bin/check_llvm15.sh "after-libwebp-dev" || true
+RUN apk add --no-cache libavif-dev && /usr/local/bin/check_llvm15.sh "after-libavif-dev" || true
 
 # Debug tools
 RUN apk add --no-cache strace && /usr/local/bin/check_llvm15.sh "after-strace" || true
@@ -406,60 +410,6 @@ RUN /usr/local/bin/check_llvm15.sh "pre-sdl3" || true && \
     make -j"$(nproc)" install && \
     /usr/local/bin/check_llvm15.sh "post-sdl3" || true
 
-    # Build and install SDL_image (from libsdl-org)
-RUN /usr/local/bin/check_llvm15.sh "pre-sdl_image" || true && \
-    apk add --no-cache libpng-dev jpeg-dev libwebp-dev tiff-dev && \
-    /usr/local/bin/check_llvm15.sh "after-sdl_image-deps" || true && \
-    git clone --depth=1 https://github.com/libsdl-org/SDL_image.git sdl_image && \
-    cd sdl_image && \
-    mkdir build && cd build && \
-    cmake .. \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr/local \
-        -DCMAKE_C_COMPILER=clang-16 \
-        -DCMAKE_CXX_COMPILER=clang++-16 \
-        -DCMAKE_C_FLAGS="-march=armv8-a" \
-        -DCMAKE_CXX_FLAGS="-march=armv8-a" && \
-    make -j"$(nproc)" install && \
-    cd ../.. && rm -rf sdl_image && \
-    /usr/local/bin/check_llvm15.sh "post-sdl_image" || true
-
-# Build and install SDL_mixer (from libsdl-org)
-RUN /usr/local/bin/check_llvm15.sh "pre-sdl_mixer" || true && \
-    apk add --no-cache libogg-dev libvorbis-dev libmodplug-dev mpg123-dev libsndfile-dev && \
-    /usr/local/bin/check_llvm15.sh "after-sdl_mixer-deps" || true && \
-    git clone --depth=1 https://github.com/libsdl-org/SDL_mixer.git sdl_mixer && \
-    cd sdl_mixer && \
-    mkdir build && cd build && \
-    cmake .. \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr/local \
-        -DCMAKE_C_COMPILER=clang-16 \
-        -DCMAKE_CXX_COMPILER=clang++-16 \
-        -DCMAKE_C_FLAGS="-march=armv8-a" \
-        -DCMAKE_CXX_FLAGS="-march=armv8-a" && \
-    make -j"$(nproc)" install && \
-    cd ../.. && rm -rf sdl_mixer && \
-    /usr/local/bin/check_llvm15.sh "post-sdl_mixer" || true
-
-# Build and install SDL_ttf (from libsdl-org)
-RUN /usr/local/bin/check_llvm15.sh "pre-sdl_ttf" || true && \
-    apk add --no-cache freetype-dev && \
-    /usr/local/bin/check_llvm15.sh "after-sdl_ttf-deps" || true && \
-    git clone --depth=1 https://github.com/libsdl-org/SDL_ttf.git sdl_ttf && \
-    cd sdl_ttf && \
-    mkdir build && cd build && \
-    cmake .. \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr/local \
-        -DCMAKE_C_COMPILER=clang-16 \
-        -DCMAKE_CXX_COMPILER=clang++-16 \
-        -DCMAKE_C_FLAGS="-march=armv8-a" \
-        -DCMAKE_CXX_FLAGS="-march=armv8-a" && \
-    make -j"$(nproc)" install && \
-    cd ../.. && rm -rf sdl_ttf && \
-    /usr/local/bin/check_llvm15.sh "post-sdl_ttf" || true
-
 # Vulkan-Headers
 RUN /usr/local/bin/check_llvm15.sh "pre-vulkan-headers" || true && \
     git clone --progress https://github.com/KhronosGroup/Vulkan-Headers.git && \
@@ -589,6 +539,13 @@ RUN apk add --no-cache libx11 && echo "Installed libx11"
 RUN apk add --no-cache libxcomposite && echo "Installed libxcomposite"
 RUN apk add --no-cache libxext && echo "Installed libxext"
 RUN apk add --no-cache libxrandr && echo "Installed libxrandr"
+#If you get errors CHECK HERE, SOMETHING went wrong
+RUN apk add --no-cache libpng && echo "Installed libpng"
+RUN apk add --no-cache libjpeg-turbo && echo "Installed libjpeg-turbo"
+RUN apk add --no-cache tiff && echo "Installed tiff"  
+RUN apk add --no-cache libwebp && echo "Installed libwebp"
+RUN apk add --no-cache libavif && echo "Installed libavif"
+#Break, older packages after
 RUN apk add --no-cache libxrender && echo "Installed libxrender"
 RUN apk add --no-cache libxfixes && echo "Installed libxfixes"
 RUN apk add --no-cache libxcursor && echo "Installed libxcursor"
