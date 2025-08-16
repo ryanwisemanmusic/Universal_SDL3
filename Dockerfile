@@ -110,6 +110,13 @@ RUN apk add --no-cache ninja && /usr/local/bin/check_llvm15.sh "after-ninja" || 
 RUN apk add --no-cache pkgconf && /usr/local/bin/check_llvm15.sh "after-pkgconf" || true
 RUN apk add --no-cache python3 && /usr/local/bin/check_llvm15.sh "after-python3" || true
 RUN apk add --no-cache py3-pip && /usr/local/bin/check_llvm15.sh "after-py3-pip" || true
+# dev/runtime packages commonly missing that cause include/link-time failures for sqlite3 consumers
+RUN apk add --no-cache libpcap-dev && /usr/local/bin/check_llvm15.sh "after-libpcap-dev" || true
+RUN apk add --no-cache readline-dev && /usr/local/bin/check_llvm15.sh "after-readline-dev" || true
+RUN apk add --no-cache openssl-dev && /usr/local/bin/check_llvm15.sh "after-openssl-dev" || true
+RUN apk add --no-cache linux-headers && /usr/local/bin/check_llvm15.sh "after-linux-headers" || true
+RUN apk add --no-cache bzip2-dev && /usr/local/bin/check_llvm15.sh "after-bzip2-dev" || true
+
 
 # Vulkan and graphics packages (high suspects for LLVM15)
 RUN apk add --no-cache vulkan-headers && /usr/local/bin/check_llvm15.sh "after-vulkan-headers" || true
@@ -582,6 +589,57 @@ RUN echo "===== START GLMARK2 BUILD WITH LLVM16 =====" && \
     echo "===== GLMARK2 BUILD COMPLETED =====" && \
     /usr/local/bin/check_llvm15.sh "post-glmark2" || true
 
+# Ensure pkg-config can find /usr/local packages installed by us
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+# Ensure runtime loader finds /usr/local libs
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+# fail-fast: abort if any llvm15 strings appear in local cmake/meson cache (belt+suspenders)
+RUN (grep -R --binary-files=without-match -n "llvm-15" / || true) | tee /tmp/llvm15-grep || true && \
+    test ! -s /tmp/llvm15-grep || (echo "FOUND llvm-15 references - aborting" && cat /tmp/llvm15-grep && false) || true
+
+# SQLite3 build with LLVM16 enforcement and no vendored downloads
+RUN echo "=== SQLITE3 BUILD WITH LLVM16 ENFORCEMENT ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-sqlite3-clone" || true && \
+    git clone --progress https://github.com/sqlite/sqlite.git sqlite && \
+    /usr/local/bin/check_llvm15.sh "post-sqlite3-clone" || true && \
+    cd sqlite && \
+    mkdir build && cd build && \
+    echo "=== SQLITE3 BUILD CONFIGURATION (ARM64 + LLVM16) ===" && \
+    CC=clang-16 CXX=clang++-16 LLVM_CONFIG=/usr/lib/llvm16/bin/llvm-config \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_C_COMPILER=clang-16 \
+        -DCMAKE_CXX_COMPILER=clang++-16 \
+        -DSQLITE_ENABLE_COLUMN_METADATA=ON \
+        -DSQLITE_ENABLE_FTS3=ON \
+        -DSQLITE_ENABLE_FTS4=ON \
+        -DSQLITE_ENABLE_FTS5=ON \
+        -DSQLITE_ENABLE_JSON1=ON \
+        -DSQLITE_ENABLE_RTREE=ON \
+        -DSQLITE_ENABLE_DBSTAT_VTAB=ON \
+        -DSQLITE_SECURE_DELETE=ON \
+        -DSQLITE_USE_URI=ON \
+        -DSQLITE_ENABLE_UNLOCK_NOTIFY=ON \
+        -DSQLITE_ENABLE_ZLIB=ON \
+        -DCMAKE_C_FLAGS="-v -Wno-error -march=armv8-a -I/usr/lib/llvm16/include" \
+        -DCMAKE_CXX_FLAGS="-v -Wno-error -march=armv8-a -I/usr/lib/llvm16/include" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib" \
+        -DCMAKE_SHARED_LINKER_FLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib" \
+        -Wno-dev && \
+    /usr/local/bin/check_llvm15.sh "post-sqlite3-configure" || true && \
+    echo "=== STARTING SQLITE3 BUILD (ARM64 + LLVM16) ===" && \
+    make -j"$(nproc)" VERBOSE=1 install && \
+    /usr/local/bin/check_llvm15.sh "post-sqlite3-build" || true && \
+    echo "=== VERIFYING SQLITE3 INSTALL ===" && \
+    test -f /usr/local/include/sqlite3.h && \
+    pkg-config --cflags --libs sqlite3 && \
+    cd ../.. && \
+    rm -rf sqlite && \
+    /usr/local/bin/check_llvm15.sh "post-sqlite3-cleanup" || true
+
+
 # Stage: build application
 FROM libs-build AS app-build
 WORKDIR /app
@@ -608,6 +666,16 @@ RUN /usr/local/bin/check_llvm15.sh "pre-app-build" || true && \
     # explicitly build the simplehttpserver target so the binary exists for the COPY
     cmake --build . --target simplehttpserver --parallel "$(nproc)" && \
     /usr/local/bin/check_llvm15.sh "post-app-build" || true
+
+# in app-build stage before cmake invocation
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+# Example invocation adjustments:
+# cmake -DCMAKE_PREFIX_PATH=/usr/local -DCMAKE_BUILD_TYPE=Release ...
+# or ensure you use pkg-config:
+# CFLAGS=$(pkg-config --cflags sqlite3) LDFLAGS=$(pkg-config --libs sqlite3) cmake ...
+
 
 # Stage: debug environment
 FROM base-deps AS debug
