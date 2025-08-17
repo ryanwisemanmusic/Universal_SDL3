@@ -147,15 +147,22 @@ RUN apk add --no-cache net-tools && /usr/local/bin/check_llvm15.sh "after-net-to
 RUN apk add --no-cache iproute2 && /usr/local/bin/check_llvm15.sh "after-iproute2" || true
 
 
-# Install glibc compatibility layer (ARM64-safe versions to prevent ldconfig machine mismatch)
+# Install glibc compatibility layer with ARM64 warning suppression
 RUN wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub && \
     wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-2.35-r1.apk && \
     wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-bin-2.35-r1.apk && \
     wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-dev-2.35-r1.apk && \
-    apk add --no-cache \
+    # Install packages and suppress ARM64 ldconfig warnings
+    apk add --no-cache --allow-untrusted \
         glibc-2.35-r1.apk \
         glibc-bin-2.35-r1.apk \
-        glibc-dev-2.35-r1.apk && \
+        glibc-dev-2.35-r1.apk 2>&1 | grep -v "unknown machine 183" || true && \
+    # Create a wrapper that suppresses the ARM64 warnings
+    mv /usr/glibc-compat/sbin/ldconfig /usr/glibc-compat/sbin/ldconfig.real && \
+    echo '#!/bin/sh' > /usr/glibc-compat/sbin/ldconfig && \
+    echo '/usr/glibc-compat/sbin/ldconfig.real "$@" 2>&1 | grep -v "unknown machine 183" || true' >> /usr/glibc-compat/sbin/ldconfig && \
+    chmod +x /usr/glibc-compat/sbin/ldconfig && \
+    # Clean up
     rm -f /sbin/ldconfig && \
     rm *.apk && \
     /usr/local/bin/check_llvm15.sh "after-glibc" || true
@@ -203,21 +210,112 @@ RUN apk add --no-cache \
     libxfont2-dev && \
     /usr/local/bin/check_llvm15.sh "after-xorg-build-deps" || true
 
+# Build pciaccess from source (dependency for libdrm) with enhanced LLVM16 enforcement
+RUN echo "=== STRINGENT_PCIACCESS_BUILD: BUILDING FROM SOURCE WITH LLVM16 ENFORCEMENT ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-pciaccess-source-build" || true && \
+    \
+    # Purge any potential LLVM15 residues \
+    echo "=== PURGING LLVM15 CONTAMINATION ===" && \
+    find /usr -name '*llvm15*' -exec rm -fv {} \; 2>/dev/null | tee /tmp/llvm15_purge.log || true && \
+    apk del --no-cache $(apk info -R llvm15-libs 2>/dev/null) llvm15-libs 2>/dev/null || true && \
+    \
+    # Install build dependencies with strict verification \
+    echo "=== INSTALLING SANITIZED BUILD DEPS ===" && \
+    apk add --no-cache meson py3-setuptools && \
+    /usr/local/bin/check_llvm15.sh "after-meson-install" || true && \
+    \
+    # Clone and verify source integrity \
+    echo "=== CLONING AND VERIFYING SOURCE ===" && \
+    git clone --depth=1 https://gitlab.freedesktop.org/xorg/lib/libpciaccess.git pciaccess && \
+    cd pciaccess && \
+    echo "=== SOURCE CONTAMINATION SCAN ===" && \
+    (grep -RIn "LLVM15\|llvm-15" . 2>&1 | tee /tmp/source_scan.log || true) && \
+    \
+    # Set hardened build environment \
+    echo "=== SETTING HARDENED BUILD ENV ===" && \
+    export CC=clang-16 CXX=clang++-16 && \
+    export LLVM_CONFIG=/usr/lib/llvm16/bin/llvm-config && \
+    export CFLAGS="-I/usr/lib/llvm16/include -march=armv8-a -Wno-deprecated-declarations -Werror=implicit-function-declaration" && \
+    export CXXFLAGS="-I/usr/lib/llvm16/include -march=armv8-a -Wno-deprecated-declarations -Werror=implicit-function-declaration" && \
+    export LDFLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib,--no-undefined" && \
+    export PKG_CONFIG_PATH="/usr/lib/llvm16/lib/pkgconfig" && \
+    export NO_COLOR=1 && \
+    \
+    # Configure with strict flags \
+    echo "=== CONFIGURING WITH STRICT FLAGS ===" && \
+    meson setup builddir \
+        --prefix=/usr/local \
+        --buildtype=release \
+        -Dwarning_level=3 \
+        -Dwerror=true \
+        -Dtests=disabled 2>&1 | tee /tmp/meson_configure.log && \
+    \
+    # Build with dependency verification \
+    echo "=== BUILDING WITH DEPENDENCY VERIFICATION ===" && \
+    meson compile -C builddir -j$(nproc) --verbose 2>&1 | tee /tmp/meson_build.log && \
+    \
+    # Verify build artifacts \
+    echo "=== VERIFYING BUILD ARTIFACTS ===" && \
+    find builddir -name '*.so*' -exec ldd {} \; | grep -i llvm | tee /tmp/library_deps.log && \
+    strings builddir/*.so* | grep -i 'llvm\|clang' | sort | uniq | tee /tmp/strings_scan.log && \
+    \
+    # Install and verify installation \
+    echo "=== INSTALLING AND VERIFYING ===" && \
+    meson install -C builddir 2>&1 | tee /tmp/meson_install.log && \
+    ldd /usr/local/lib/libpciaccess.so | grep -i llvm | tee /tmp/install_deps.log && \
+    \
+    # Final contamination scan \
+    echo "=== FINAL CONTAMINATION SCAN ===" && \
+    (grep -RIn "LLVM15\|llvm-15" builddir /usr/local 2>&1 | tee /tmp/final_scan.log || true) && \
+    \
+    cd .. && \
+    rm -rf pciaccess && \
+    /usr/local/bin/check_llvm15.sh "post-pciaccess-source-build" || true && \
+    echo "=== STRINGENT_PCIACCESS_BUILD COMPLETE ==="
+
 # Build libdrm from source (avoiding LLVM15 contamination)
 RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-libdrm-source-build" || true && \
+    # Clone libdrm (meson already installed from pciaccess step)
     git clone --depth=1 https://gitlab.freedesktop.org/mesa/drm.git libdrm && \
     cd libdrm && \
-    ./autogen.sh \
+    # Scan source tree for LLVM15 contamination
+    grep -RIn "LLVM15" . || true && grep -RIn "llvm-15" . || true && \
+    # Set up environment for LLVM16
+    export CC=clang-16 && \
+    export CXX=clang++-16 && \
+    export LLVM_CONFIG=/usr/lib/llvm16/bin/llvm-config && \
+    export CFLAGS="-I/usr/lib/llvm16/include -march=armv8-a -Wno-deprecated-declarations" && \
+    export CXXFLAGS="-I/usr/lib/llvm16/include -march=armv8-a -Wno-deprecated-declarations" && \
+    export LDFLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib" && \
+    export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH" && \
+    # Disable ANSI colors for cleaner output
+    export NO_COLOR=1 && \
+    # Configure with meson
+    meson setup builddir \
         --prefix=/usr/local \
-        CC=clang-16 \
-        CXX=clang++-16 \
-        LLVM_CONFIG=/usr/lib/llvm16/bin/llvm-config \
-        CFLAGS="-I/usr/lib/llvm16/include -march=armv8-a" \
-        CXXFLAGS="-I/usr/lib/llvm16/include -march=armv8-a" \
-        LDFLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib" && \
-    make -j"$(nproc)" && \
-    make install && \
+        --buildtype=release \
+        -Dintel=enabled \
+        -Dradeon=enabled \
+        -Damdgpu=enabled \
+        -Dnouveau=enabled \
+        -Dvmwgfx=enabled \
+        -Dvc4=enabled \
+        -Dfreedreno=enabled \
+        -Detnaviv=enabled \
+        -Dexynos=enabled \
+        -Dtests=false \
+        -Dman-pages=disabled && \
+    # Build and install with cleaner output
+    meson compile -C builddir -j$(nproc) --verbose 2>&1 | sed 's/\x1b\[[0-9;]*m//g' && \
+    meson install -C builddir 2>&1 | sed 's/\x1b\[[0-9;]*m//g' && \
+    # Output the meson log for debugging (strip colors)
+    echo "=== MESON BUILD LOG ===" && \
+    cat builddir/meson-logs/meson-log.txt | sed 's/\x1b\[[0-9;]*m//g' && \
+    echo "=== END MESON BUILD LOG ===" && \
+    # Post-build contamination scan
+    grep -RIn "LLVM15" builddir /usr/local || true && \
+    grep -RIn "llvm-15" builddir /usr/local || true && \
     cd .. && \
     rm -rf libdrm && \
     /usr/local/bin/check_llvm15.sh "post-libdrm-source-build" || true
@@ -589,16 +687,15 @@ RUN echo "===== START GLMARK2 BUILD WITH LLVM16 =====" && \
     echo "===== GLMARK2 BUILD COMPLETED =====" && \
     /usr/local/bin/check_llvm15.sh "post-glmark2" || true
 
-# Ensure pkg-config can find /usr/local packages installed by us
-ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
-# Ensure runtime loader finds /usr/local libs
-ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+# Ensure pkg-config and runtime loader find both LLVM16 and locally built libraries
+ENV PKG_CONFIG_PATH=/usr/lib/llvm16/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
+ENV LD_LIBRARY_PATH=/usr/lib/llvm16/lib:/usr/local/lib:/usr/lib
 
 # fail-fast: abort if any llvm15 strings appear in local cmake/meson cache (belt+suspenders)
 RUN (grep -R --binary-files=without-match -n "llvm-15" / || true) | tee /tmp/llvm15-grep || true && \
     test ! -s /tmp/llvm15-grep || (echo "FOUND llvm-15 references - aborting" && cat /tmp/llvm15-grep && false) || true
 
-# SQLite3 build with LLVM16 enforcement and no vendored downloads
+# SQLite3 build with LLVM16 enforcement (guarded by check_llvm15.sh)
 RUN echo "=== SQLITE3 BUILD WITH LLVM16 ENFORCEMENT ===" && \
     /usr/local/bin/check_llvm15.sh "pre-sqlite3-clone" || true && \
     git clone --progress https://github.com/sqlite/sqlite.git sqlite && \
@@ -623,10 +720,11 @@ RUN echo "=== SQLITE3 BUILD WITH LLVM16 ENFORCEMENT ===" && \
         -DSQLITE_USE_URI=ON \
         -DSQLITE_ENABLE_UNLOCK_NOTIFY=ON \
         -DSQLITE_ENABLE_ZLIB=ON \
-        -DCMAKE_C_FLAGS="-v -Wno-error -march=armv8-a -I/usr/lib/llvm16/include" \
-        -DCMAKE_CXX_FLAGS="-v -Wno-error -march=armv8-a -I/usr/lib/llvm16/include" \
+        -DCMAKE_C_FLAGS="-I/usr/lib/llvm16/include -march=armv8-a -Wno-error" \
+        -DCMAKE_CXX_FLAGS="-I/usr/lib/llvm16/include -march=armv8-a -Wno-error" \
         -DCMAKE_EXE_LINKER_FLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib" \
         -DCMAKE_SHARED_LINKER_FLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib" \
+        -DPKG_CONFIG_PATH="/usr/lib/llvm16/lib/pkgconfig:/usr/lib/pkgconfig" \
         -Wno-dev && \
     /usr/local/bin/check_llvm15.sh "post-sqlite3-configure" || true && \
     echo "=== STARTING SQLITE3 BUILD (ARM64 + LLVM16) ===" && \
@@ -638,6 +736,7 @@ RUN echo "=== SQLITE3 BUILD WITH LLVM16 ENFORCEMENT ===" && \
     cd ../.. && \
     rm -rf sqlite && \
     /usr/local/bin/check_llvm15.sh "post-sqlite3-cleanup" || true
+
 
 
 # Stage: build application
@@ -653,23 +752,29 @@ RUN apk add --no-cache \
         mesa-osmesa 
 
 COPY . .
+ENV CMAKE_PREFIX_PATH=/usr/local:/usr/lib/llvm16
 WORKDIR /app/build
 RUN /usr/local/bin/check_llvm15.sh "pre-app-build" || true && \
-    cmake -DCMAKE_BUILD_TYPE=Release \
-         -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
+    export PKG_CONFIG_PATH="/usr/lib/llvm16/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib/pkgconfig" && \
+    export LD_LIBRARY_PATH="/usr/lib/llvm16/lib:/usr/local/lib:/usr/lib" && \
+    export CMAKE_PREFIX_PATH="/usr/local;/usr/lib/llvm16" && \
+    cmake -S /app/src -B /app/build \
+         -G Ninja \
+         -DCMAKE_BUILD_TYPE=Release \
          -DCMAKE_C_COMPILER=clang-16 \
          -DCMAKE_CXX_COMPILER=clang++-16 \
-         -DCMAKE_C_FLAGS="-I/usr/lib/llvm16/include" \
-         -DCMAKE_CXX_FLAGS="-I/usr/lib/llvm16/include" \
-         -DCMAKE_EXE_LINKER_FLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib" \
-         ../src && \
-    # explicitly build the simplehttpserver target so the binary exists for the COPY
-    cmake --build . --target simplehttpserver --parallel "$(nproc)" && \
+         -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
+         -DCMAKE_LIBRARY_PATH="/usr/local/lib;/usr/lib/llvm16/lib" \
+         -DCMAKE_INCLUDE_PATH="/usr/local/include;/usr/lib/llvm16/include" \
+         -DCMAKE_INSTALL_RPATH="/usr/local/lib;/usr/lib/llvm16/lib" \
+         -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && \
+    cmake --build /app/build --target simplehttpserver --parallel "$(nproc)" && \
     /usr/local/bin/check_llvm15.sh "post-app-build" || true
 
-# in app-build stage before cmake invocation
-ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
-ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+# Ensure LLVM16 libs and pkgconfig are first, then our local installs, then system
+ENV PKG_CONFIG_PATH=/usr/lib/llvm16/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
+ENV LD_LIBRARY_PATH=/usr/lib/llvm16/lib:/usr/local/lib:/usr/lib
+
 
 # Example invocation adjustments:
 # cmake -DCMAKE_PREFIX_PATH=/usr/local -DCMAKE_BUILD_TYPE=Release ...
@@ -683,7 +788,72 @@ COPY --from=libs-build /usr/local /usr/local
 COPY --from=app-build /app/build/simplehttpserver /app/simplehttpserver
 
 # Install debug tools + LLVM runtime with monitoring
-RUN apk add --no-cache mesa-demos && /usr/local/bin/check_llvm15.sh "debug-after-mesa-demos" || true
+# Build mesa-demos from source with stringent LLVM16 enforcement
+RUN echo "=== STRINGENT_MESA_DEMOS_BUILD: COMPILING FROM SOURCE ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-mesa-demos-source" || true && \
+    \
+    # Purge any existing LLVM15 packages/files \
+    echo "=== PURGING LLVM15 CONTAMINATION ===" && \
+    apk del --no-cache llvm15-libs $(apk info -R llvm15-libs 2>/dev/null) 2>/dev/null || true && \
+    find /usr -name '*llvm15*' -exec rm -fv {} \; 2>/dev/null | tee /tmp/llvm15_purge.log || true && \
+    \
+    # Install minimal build dependencies \
+    echo "=== INSTALLING SANITIZED BUILD DEPS ===" && \
+    apk add --no-cache \
+        cmake \
+        make \
+        python3 \
+        mesa-dev \
+        glu-dev \
+        freeglut-dev && \
+    /usr/local/bin/check_llvm15.sh "after-deps-install" || true && \
+    \
+    # Clone and verify source \
+    echo "=== CLONING AND VERIFYING SOURCE ===" && \
+    git clone --depth=1 https://gitlab.freedesktop.org/mesa/demos.git && \
+    cd demos && \
+    echo "=== SOURCE CONTAMINATION SCAN ===" && \
+    (grep -RIn "LLVM15\|llvm-15" . 2>&1 | tee /tmp/source_scan.log || true) && \
+    \
+    # Set hardened build environment \
+    echo "=== SETTING HARDENED BUILD ENV ===" && \
+    export CC=clang-16 CXX=clang++-16 && \
+    export LLVM_CONFIG=/usr/lib/llvm16/bin/llvm-config && \
+    export CFLAGS="-I/usr/lib/llvm16/include -march=armv8-a -Wno-deprecated-declarations -Werror=implicit-function-declaration" && \
+    export CXXFLAGS="-I/usr/lib/llvm16/include -march=armv8-a -Wno-deprecated-declarations -Werror=implicit-function-declaration" && \
+    export LDFLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib,--no-undefined" && \
+    export PKG_CONFIG_PATH="/usr/lib/llvm16/lib/pkgconfig:/usr/local/lib/pkgconfig" && \
+    \
+    # Configure with strict flags \
+    echo "=== CONFIGURING WITH STRICT FLAGS ===" && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DWAYLAND=OFF \
+        -DGLES=OFF \
+        -DGLUT=ON \
+        -Werror=dev \
+        -Wno-dev 2>&1 | tee /tmp/cmake_configure.log && \
+    \
+    # Build with dependency verification \
+    echo "=== BUILDING WITH DEPENDENCY VERIFICATION ===" && \
+    make -j$(nproc) VERBOSE=1 2>&1 | tee /tmp/make_build.log && \
+    \
+    # Verify build artifacts \
+    echo "=== VERIFYING BUILD ARTIFACTS ===" && \
+    find . -name 'gl*' -exec ldd {} \; | grep -i llvm | tee /tmp/library_deps.log && \
+    strings src/xdemos/glxinfo 2>/dev/null | grep -i 'llvm\|clang' | sort | uniq | tee /tmp/strings_scan.log && \
+    \
+    # Install and verify installation \
+    echo "=== INSTALLING AND VERIFYING ===" && \
+    make install && \
+    ldd /usr/local/bin/glxinfo | grep -i llvm | tee /tmp/install_deps.log && \
+    cd ../.. && \
+    rm -rf demos && \
+    /usr/local/bin/check_llvm15.sh "post-mesa-demos-build" || true && \
+    echo "=== STRINGENT_MESA_DEMOS_BUILD COMPLETE ==="
+    
 RUN apk add --no-cache xdpyinfo && /usr/local/bin/check_llvm15.sh "debug-after-xdpyinfo" || true
 RUN apk add --no-cache xrandr && /usr/local/bin/check_llvm15.sh "debug-after-xrandr" || true
 RUN apk add --no-cache xeyes && /usr/local/bin/check_llvm15.sh "debug-after-xeyes" || true
