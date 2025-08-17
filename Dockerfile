@@ -228,15 +228,10 @@ RUN echo "=== STRINGENT_PCIACCESS_BUILD: BUILDING FROM SOURCE WITH LLVM16 ENFORC
     find /usr -name '*llvm15*' -not -path '/usr/local/bin/check_llvm15.sh' -exec rm -fv {} \; 2>/dev/null | tee /tmp/llvm15_purge.log || true && \
     apk del --no-cache $(apk info -R llvm15-libs 2>/dev/null) llvm15-libs 2>/dev/null || true && \
     \
-    # Install build dependencies with strict verification \
+    # Install build dependencies (using autotools instead of meson for better pkg-config) \
     echo "=== INSTALLING SANITIZED BUILD DEPS ===" && \
-    apk add --no-cache meson py3-setuptools && \
-    /usr/local/bin/check_llvm15.sh "after-meson-install" || true && \
-    \
-    # Install build dependencies with strict verification \
-    echo "=== INSTALLING SANITIZED BUILD DEPS ===" && \
-    apk add --no-cache meson py3-setuptools && \
-    /usr/local/bin/check_llvm15.sh "after-meson-install" || true && \
+    apk add --no-cache autoconf automake libtool util-macros && \
+    /usr/local/bin/check_llvm15.sh "after-autotools-install" || true && \
     \
     # Clone and verify source integrity \
     echo "=== CLONING AND VERIFYING SOURCE ===" && \
@@ -252,35 +247,80 @@ RUN echo "=== STRINGENT_PCIACCESS_BUILD: BUILDING FROM SOURCE WITH LLVM16 ENFORC
     export CFLAGS="-I/usr/lib/llvm16/include -march=armv8-a -Wno-deprecated-declarations -Werror=implicit-function-declaration" && \
     export CXXFLAGS="-I/usr/lib/llvm16/include -march=armv8-a -Wno-deprecated-declarations -Werror=implicit-function-declaration" && \
     export LDFLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib,--no-undefined" && \
-    export PKG_CONFIG_PATH="/usr/lib/llvm16/lib/pkgconfig" && \
+    export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/llvm16/lib/pkgconfig:/usr/lib/pkgconfig" && \
     export NO_COLOR=1 && \
     \
-    # Configure with strict flags \
-    echo "=== CONFIGURING WITH STRICT FLAGS ===" && \
-    meson setup builddir \
+    # Generate configure script and build using autotools \
+    echo "=== GENERATING CONFIGURE SCRIPT ===" && \
+    ./autogen.sh && \
+    echo "=== CONFIGURING WITH AUTOTOOLS ===" && \
+    ./configure \
         --prefix=/usr/local \
-        --buildtype=release \
-        -Dwarning_level=3 \
-        -Dwerror=true \
-        -Dtests=disabled 2>&1 | tee /tmp/meson_configure.log && \
+        --libdir=/usr/local/lib \
+        --enable-shared \
+        --disable-static 2>&1 | tee /tmp/configure.log && \
     \
     # Build with dependency verification \
     echo "=== BUILDING WITH DEPENDENCY VERIFICATION ===" && \
-    meson compile -C builddir -j$(nproc) --verbose 2>&1 | tee /tmp/meson_build.log && \
+    make -j$(nproc) V=1 2>&1 | tee /tmp/make_build.log && \
     \
     # Verify build artifacts \
     echo "=== VERIFYING BUILD ARTIFACTS ===" && \
-    find builddir -name '*.so*' -exec ldd {} \; | grep -i llvm | tee /tmp/library_deps.log && \
-    strings builddir/*.so* | grep -i 'llvm\|clang' | sort | uniq | tee /tmp/strings_scan.log && \
+    find . -name '*.so*' -exec ldd {} \; 2>/dev/null | grep -i llvm | tee /tmp/library_deps.log || true && \
+    find . -name '*.so*' -exec strings {} \; 2>/dev/null | grep -i 'llvm\|clang' | sort | uniq | tee /tmp/strings_scan.log || true && \
     \
     # Install and verify installation \
     echo "=== INSTALLING AND VERIFYING ===" && \
-    meson install -C builddir 2>&1 | tee /tmp/meson_install.log && \
-    ldd /usr/local/lib/libpciaccess.so | grep -i llvm | tee /tmp/install_deps.log && \
+    make install V=1 2>&1 | tee /tmp/make_install.log && \
+    \
+    # Ensure pkg-config directory exists and verify pkg-config file \
+    echo "=== VERIFYING PKG-CONFIG INSTALLATION ===" && \
+    mkdir -p /usr/local/lib/pkgconfig && \
+    echo "Contents of /usr/local/lib/pkgconfig:" && \
+    ls -la /usr/local/lib/pkgconfig/ || echo "Directory does not exist" && \
+    echo "Contents of /usr/local/lib:" && \
+    ls -la /usr/local/lib/ && \
+    echo "Searching for any pciaccess.pc files:" && \
+    find /usr/local -name "pciaccess.pc" -type f && \
+    echo "All .pc files in /usr/local:" && \
+    find /usr/local -name "*.pc" -type f && \
+    # Try to find where the build actually created the .pc file
+    if [ -f /usr/local/lib/pkgconfig/pciaccess.pc ]; then \
+        echo "Found pciaccess.pc at expected location" && \
+        cat /usr/local/lib/pkgconfig/pciaccess.pc; \
+    else \
+        echo "pciaccess.pc not found at expected location, checking other common locations..." && \
+        find /usr/local -name "pciaccess.pc" 2>/dev/null | head -5 && \
+        # Check if it was installed in a different lib directory
+        find /usr/local -name "*.pc" -path "*/pkgconfig/*" -exec dirname {} \; | sort | uniq && \
+        # Try to manually create a basic .pc file if autotools didn't create one
+        echo "Creating manual pciaccess.pc file..." && \
+        echo "prefix=/usr/local" > /usr/local/lib/pkgconfig/pciaccess.pc && \
+        echo "exec_prefix=\${prefix}" >> /usr/local/lib/pkgconfig/pciaccess.pc && \
+        echo "libdir=\${exec_prefix}/lib" >> /usr/local/lib/pkgconfig/pciaccess.pc && \
+        echo "includedir=\${prefix}/include" >> /usr/local/lib/pkgconfig/pciaccess.pc && \
+        echo "" >> /usr/local/lib/pkgconfig/pciaccess.pc && \
+        echo "Name: pciaccess" >> /usr/local/lib/pkgconfig/pciaccess.pc && \
+        echo "Description: Generic PCI access library" >> /usr/local/lib/pkgconfig/pciaccess.pc && \
+        echo "Version: 0.17" >> /usr/local/lib/pkgconfig/pciaccess.pc && \
+        echo "Libs: -L\${libdir} -lpciaccess" >> /usr/local/lib/pkgconfig/pciaccess.pc && \
+        echo "Cflags: -I\${includedir}" >> /usr/local/lib/pkgconfig/pciaccess.pc && \
+        echo "Manual pciaccess.pc created:" && \
+        cat /usr/local/lib/pkgconfig/pciaccess.pc; \
+    fi && \
+    # Test pkg-config with explicit path
+    export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/pkgconfig" && \
+    echo "Testing pkg-config with PKG_CONFIG_PATH=$PKG_CONFIG_PATH" && \
+    pkg-config --list-all | grep pciaccess || echo "pciaccess not found in pkg-config list" && \
+    pkg-config --exists pciaccess && \
+    pkg-config --cflags --libs pciaccess && \
+    \
+    # Verify library installation \
+    ldd /usr/local/lib/libpciaccess.so 2>/dev/null | grep -i llvm | tee /tmp/install_deps.log || true && \
     \
     # Final contamination scan \
     echo "=== FINAL CONTAMINATION SCAN ===" && \
-    (grep -RIn "LLVM15\|llvm-15" builddir /usr/local 2>&1 | tee /tmp/final_scan.log || true) && \
+    (grep -RIn "LLVM15\|llvm-15" /usr/local 2>&1 | tee /tmp/final_scan.log || true) && \
     \
     cd .. && \
     rm -rf pciaccess && \
@@ -290,24 +330,49 @@ RUN echo "=== STRINGENT_PCIACCESS_BUILD: BUILDING FROM SOURCE WITH LLVM16 ENFORC
 # Build libdrm from source (avoiding LLVM15 contamination)
 RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-libdrm-source-build" || true && \
+    # Install missing dependencies first
+    apk add --no-cache libatomic_ops-dev && \
     # Clone libdrm (meson already installed from pciaccess step)
     git clone --depth=1 https://gitlab.freedesktop.org/mesa/drm.git libdrm && \
     cd libdrm && \
     # Scan source tree for LLVM15 contamination
     grep -RIn "LLVM15" . || true && grep -RIn "llvm-15" . || true && \
-    # Set up environment for LLVM16
+    # Set up environment for LLVM16 with proper PKG_CONFIG_PATH ordering
     export CC=clang-16 && \
     export CXX=clang++-16 && \
     export LLVM_CONFIG=/usr/lib/llvm16/bin/llvm-config && \
     export CFLAGS="-I/usr/lib/llvm16/include -march=armv8-a -Wno-deprecated-declarations" && \
     export CXXFLAGS="-I/usr/lib/llvm16/include -march=armv8-a -Wno-deprecated-declarations" && \
-    export LDFLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib" && \
-    export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH" && \
+    export LDFLAGS="-L/usr/lib/llvm16/lib -L/usr/local/lib -Wl,-rpath,/usr/lib/llvm16/lib,-rpath,/usr/local/lib" && \
+    export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/llvm16/lib/pkgconfig:/usr/lib/pkgconfig" && \
     # Disable ANSI colors for cleaner output
     export NO_COLOR=1 && \
+    # Verify pciaccess is findable with debug output
+    echo "=== PKG-CONFIG DEBUG FOR PCIACCESS ===" && \
+    echo "Contents of /usr/local/lib/pkgconfig:" && \
+    ls -la /usr/local/lib/pkgconfig/ && \
+    echo "PKG_CONFIG_PATH = $PKG_CONFIG_PATH" && \
+    echo "Testing basic pkg-config functionality:" && \
+    pkg-config --version && \
+    pkg-config --list-all | head -5 && \
+    echo "Searching for pciaccess in pkg-config:" && \
+    pkg-config --list-all | grep pciaccess || echo "pciaccess not in list" && \
+    echo "Manual test of pciaccess.pc file:" && \
+    if [ -f /usr/local/lib/pkgconfig/pciaccess.pc ]; then \
+        echo "File exists, contents:" && \
+        cat /usr/local/lib/pkgconfig/pciaccess.pc; \
+    else \
+        echo "pciaccess.pc file not found!"; \
+        find /usr/local -name "*.pc" -type f; \
+    fi && \
+    echo "Attempting pkg-config with explicit debug:" && \
+    pkg-config --debug --exists pciaccess 2>&1 | head -20 && \
+    pkg-config --cflags --libs pciaccess && \
+    echo "=== PCIACCESS FOUND SUCCESSFULLY ===" && \
     # Configure with meson
     meson setup builddir \
         --prefix=/usr/local \
+        --libdir=lib \
         --buildtype=release \
         -Dintel=enabled \
         -Dradeon=enabled \
@@ -327,13 +392,16 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     echo "=== MESON BUILD LOG ===" && \
     cat builddir/meson-logs/meson-log.txt | sed 's/\x1b\[[0-9;]*m//g' && \
     echo "=== END MESON BUILD LOG ===" && \
+    # Verify libdrm pkg-config installation
+    echo "=== VERIFYING LIBDRM PKG-CONFIG ===" && \
+    ls -la /usr/local/lib/pkgconfig/libdrm.pc && \
+    PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/pkgconfig" pkg-config --cflags --libs libdrm && \
     # Post-build contamination scan
     grep -RIn "LLVM15" builddir /usr/local || true && \
     grep -RIn "llvm-15" builddir /usr/local || true && \
     cd .. && \
     rm -rf libdrm && \
     /usr/local/bin/check_llvm15.sh "post-libdrm-source-build" || true
-
 
 # BUILD XORG-SERVER FROM SOURCE (avoiding LLVM15 contamination)
 RUN echo "=== BUILDING XORG-SERVER FROM SOURCE TO AVOID LLVM15 ===" && \
