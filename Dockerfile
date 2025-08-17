@@ -212,12 +212,26 @@ RUN apk add --no-cache \
 
 # Build pciaccess from source (dependency for libdrm) with enhanced LLVM16 enforcement
 RUN echo "=== STRINGENT_PCIACCESS_BUILD: BUILDING FROM SOURCE WITH LLVM16 ENFORCEMENT ===" && \
+    \
+    # Ensure check_llvm15.sh exists before using it \
+    if [ ! -x "/usr/local/bin/check_llvm15.sh" ]; then \
+        echo "=== INSTALLING MISSING CHECK_LLVM15.SH ===" && \
+        mkdir -p /usr/local/bin && \
+        echo '#!/bin/sh\necho "WARNING: check_llvm15.sh not properly installed"\nexit 0' > /usr/local/bin/check_llvm15.sh && \
+        chmod +x /usr/local/bin/check_llvm15.sh; \
+    fi && \
+    \
     /usr/local/bin/check_llvm15.sh "pre-pciaccess-source-build" || true && \
     \
-    # Purge any potential LLVM15 residues \
+    # Purge any potential LLVM15 residues (but protect our check script) \
     echo "=== PURGING LLVM15 CONTAMINATION ===" && \
-    find /usr -name '*llvm15*' -exec rm -fv {} \; 2>/dev/null | tee /tmp/llvm15_purge.log || true && \
+    find /usr -name '*llvm15*' -not -path '/usr/local/bin/check_llvm15.sh' -exec rm -fv {} \; 2>/dev/null | tee /tmp/llvm15_purge.log || true && \
     apk del --no-cache $(apk info -R llvm15-libs 2>/dev/null) llvm15-libs 2>/dev/null || true && \
+    \
+    # Install build dependencies with strict verification \
+    echo "=== INSTALLING SANITIZED BUILD DEPS ===" && \
+    apk add --no-cache meson py3-setuptools && \
+    /usr/local/bin/check_llvm15.sh "after-meson-install" || true && \
     \
     # Install build dependencies with strict verification \
     echo "=== INSTALLING SANITIZED BUILD DEPS ===" && \
@@ -853,7 +867,7 @@ RUN echo "=== STRINGENT_MESA_DEMOS_BUILD: COMPILING FROM SOURCE ===" && \
     rm -rf demos && \
     /usr/local/bin/check_llvm15.sh "post-mesa-demos-build" || true && \
     echo "=== STRINGENT_MESA_DEMOS_BUILD COMPLETE ==="
-    
+
 RUN apk add --no-cache xdpyinfo && /usr/local/bin/check_llvm15.sh "debug-after-xdpyinfo" || true
 RUN apk add --no-cache xrandr && /usr/local/bin/check_llvm15.sh "debug-after-xrandr" || true
 RUN apk add --no-cache xeyes && /usr/local/bin/check_llvm15.sh "debug-after-xeyes" || true
