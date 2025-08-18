@@ -218,10 +218,10 @@ never substantiated sys
 //==================================================
 // Foundational Headers - Other NonSDL Headers
 //==================================================
+
+//#include <sqlite3.h>
+
 /*
-#include <sqlite3.h>
-
-
 
 extern "C"
 {
