@@ -22,6 +22,9 @@ play.
 Here is the link to the repo if you want to check it out!
 https://github.com/ryanwisemanmusic/SDL3_Cat_Tac_Toe
 
+
+Prior 
+
 Once this gets built, then I will focus my efforts on porting my entire
 SDK to it and making sure that code compiles.
 
