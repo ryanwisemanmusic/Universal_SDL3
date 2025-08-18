@@ -1,7 +1,23 @@
-Hello! This SDL3 Universal build is coming along well!!!!
+Alright, here are the things I'll be creating related to shell code
+- Shellcode that gets additional data on when a package is missing or not.
+- Shelcode to check the components and return whether or not they are found
+- Additional shellcode that pulls the source behind said component if possible?
+- Binary/Library Validator
+- Version Matrix Reporter
+- ldd checker for missing libraries highlighted (dependency walker)
+- automatic search suggestion so when file missing, a potential package and relevant paths from other stages
+- Check if missing files weren't copied to the build context (they only exist)
+- Logger that checks differences between each stage to pinpoint changes
+- Logger for ENV Variables and when they are modified/set
+- Anything that detects when there is a permission conflict
+- Source investigation (into how and why the problem happened)
+- Source fetcher: if a component is missing, attempt to locate its source repo
+- Dockerfile suggestions, So I stop making my problems worse
+- File Triggers, so if file is in stage x, but missing in stage y, we are pinged about it
+- Time Travel Debugger: Reconstruct the state of the filesystem at the exact time when a failure occured.
 
-So my TODO list is centered around seeing if I can get my first project
-in SDL3, to work inside of this container!!!
+
+
 
 Right now, there are a few libraries we still need to implement. However,
 this is very small, given that anything outside of SQLite is FFMPEG:
@@ -22,8 +38,6 @@ play.
 Here is the link to the repo if you want to check it out!
 https://github.com/ryanwisemanmusic/SDL3_Cat_Tac_Toe
 
-
-Prior 
 
 Once this gets built, then I will focus my efforts on porting my entire
 SDK to it and making sure that code compiles.
