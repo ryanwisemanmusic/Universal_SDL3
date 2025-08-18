@@ -110,21 +110,50 @@ RUN apk add --no-cache ninja && /usr/local/bin/check_llvm15.sh "after-ninja" || 
 RUN apk add --no-cache pkgconf && /usr/local/bin/check_llvm15.sh "after-pkgconf" || true
 RUN apk add --no-cache python3 && /usr/local/bin/check_llvm15.sh "after-python3" || true
 RUN apk add --no-cache py3-pip && /usr/local/bin/check_llvm15.sh "after-py3-pip" || true
+RUN apk add --no-cache m4 && /usr/local/bin/check_llvm15.sh "after-m4" || true
+RUN apk add --no-cache bison && /usr/local/bin/check_llvm15.sh "after-bison" || true  
+RUN apk add --no-cache flex && /usr/local/bin/check_llvm15.sh "after-flex" || true
+RUN apk add --no-cache zlib-dev && /usr/local/bin/check_llvm15.sh "after-zlib-dev" || true
+RUN apk add --no-cache expat-dev && /usr/local/bin/check_llvm15.sh "after-expat-dev" || true
+RUN apk add --no-cache ncurses-dev && /usr/local/bin/check_llvm15.sh "after-ncurses-dev" || true
+RUN apk add --no-cache libx11-dev && /usr/local/bin/check_llvm15.sh "after-libx11-dev" || true
+# Debug tools
+RUN apk add --no-cache strace && /usr/local/bin/check_llvm15.sh "after-strace" || true
+RUN apk add --no-cache file && /usr/local/bin/check_llvm15.sh "after-file" || true
+RUN apk add --no-cache tree && /usr/local/bin/check_llvm15.sh "after-tree" || true
+# Install X11 protocol packages first (these are needed for xorg-server build)
+RUN apk add --no-cache xf86driproto && /usr/local/bin/check_llvm15.sh "after-xf86driproto" || true
+RUN apk add --no-cache xf86vidmodeproto && /usr/local/bin/check_llvm15.sh "after-xf86vidmodeproto" || true
+RUN apk add --no-cache glproto && /usr/local/bin/check_llvm15.sh "after-glproto" || true
+RUN apk add --no-cache dri2proto && /usr/local/bin/check_llvm15.sh "after-dri2proto" || true
+RUN apk add --no-cache libxext-dev && /usr/local/bin/check_llvm15.sh "after-libxext-dev" || true
+RUN apk add --no-cache libxrender-dev && /usr/local/bin/check_llvm15.sh "after-libxrender-dev" || true
+RUN apk add --no-cache libxfixes-dev && /usr/local/bin/check_llvm15.sh "after-libxfixes-dev" || true
+RUN apk add --no-cache libxdamage-dev && /usr/local/bin/check_llvm15.sh "after-libxdamage-dev" || true
+RUN apk add --no-cache libxcb-dev && /usr/local/bin/check_llvm15.sh "after-libxcb-dev" || true
+# Other essential packages to download
+RUN apk add --no-cache wayland-dev && /usr/local/bin/check_llvm15.sh "after-wayland-dev" || true
+RUN apk add --no-cache wayland-protocols && /usr/local/bin/check_llvm15.sh "after-wayland-protocols" || true
+RUN apk add --no-cache python3-dev && /usr/local/bin/check_llvm15.sh "after-python3-dev" || true
+RUN apk add --no-cache py3-setuptools && /usr/local/bin/check_llvm15.sh "after-py3-setuptools" || true
+RUN apk add --no-cache jpeg-dev && /usr/local/bin/check_llvm15.sh "after-jpeg-dev" || true
+RUN apk add --no-cache libpng-dev && /usr/local/bin/check_llvm15.sh "after-libpng-dev" || true
+RUN apk add --no-cache libxkbcommon-dev && /usr/local/bin/check_llvm15.sh "after-libxkbcommon-dev" || true
+# Media packages
+RUN apk add --no-cache libpcap-dev && /usr/local/bin/check_llvm15.sh "after-libpcap-dev" || true
+RUN apk add --no-cache v4l-utils-dev && /usr/local/bin/check_llvm15.sh "after-v4l-utils-dev" || true
 # dev/runtime packages commonly missing that cause include/link-time failures for sqlite3 consumers
 RUN apk add --no-cache libpcap-dev && /usr/local/bin/check_llvm15.sh "after-libpcap-dev" || true
 RUN apk add --no-cache readline-dev && /usr/local/bin/check_llvm15.sh "after-readline-dev" || true
 RUN apk add --no-cache openssl-dev && /usr/local/bin/check_llvm15.sh "after-openssl-dev" || true
 RUN apk add --no-cache bzip2-dev && /usr/local/bin/check_llvm15.sh "after-bzip2-dev" || true
-
-
 # Vulkan and graphics packages (high suspects for LLVM15)
 RUN apk add --no-cache vulkan-headers && /usr/local/bin/check_llvm15.sh "after-vulkan-headers" || true
 RUN apk add --no-cache vulkan-loader && /usr/local/bin/check_llvm15.sh "after-vulkan-loader" || true
 RUN apk add --no-cache vulkan-tools && /usr/local/bin/check_llvm15.sh "after-vulkan-tools" || true
 RUN apk add --no-cache freetype-dev && /usr/local/bin/check_llvm15.sh "after-freetype-dev" || true
 RUN apk add --no-cache fontconfig-dev && /usr/local/bin/check_llvm15.sh "after-fontconfig-dev" || true
-
-# X11 packages (suspects)
+# X11 packages
 RUN apk add --no-cache libxcomposite-dev && /usr/local/bin/check_llvm15.sh "after-libxcomposite-dev" || true
 RUN apk add --no-cache libxinerama-dev && /usr/local/bin/check_llvm15.sh "after-libxinerama-dev" || true
 RUN apk add --no-cache libxi-dev && /usr/local/bin/check_llvm15.sh "after-libxi-dev" || true
@@ -132,11 +161,9 @@ RUN apk add --no-cache libxcursor-dev && /usr/local/bin/check_llvm15.sh "after-l
 RUN apk add --no-cache libxrandr-dev && /usr/local/bin/check_llvm15.sh "after-libxrandr-dev" || true
 RUN apk add --no-cache libxshmfence-dev && /usr/local/bin/check_llvm15.sh "after-libxshmfence-dev" || true
 RUN apk add --no-cache libxxf86vm-dev && /usr/local/bin/check_llvm15.sh "after-libxxf86vm-dev" || true
-
 # Audio packages
 RUN apk add --no-cache alsa-lib-dev && /usr/local/bin/check_llvm15.sh "after-alsa-lib-dev" || true
 RUN apk add --no-cache pulseaudio-dev && /usr/local/bin/check_llvm15.sh "after-pulseaudio-dev" || true
-
 # Misc packages
 RUN apk add --no-cache bsd-compat-headers && /usr/local/bin/check_llvm15.sh "after-bsd-compat-headers" || true
 RUN apk add --no-cache xf86-video-fbdev && /usr/local/bin/check_llvm15.sh "after-xf86-video-fbdev" || true
@@ -144,7 +171,33 @@ RUN apk add --no-cache xf86-video-dummy && /usr/local/bin/check_llvm15.sh "after
 RUN apk add --no-cache glslang && /usr/local/bin/check_llvm15.sh "after-glslang" || true
 RUN apk add --no-cache net-tools && /usr/local/bin/check_llvm15.sh "after-net-tools" || true
 RUN apk add --no-cache iproute2 && /usr/local/bin/check_llvm15.sh "after-iproute2" || true
-
+# Filesystem utilities
+RUN apk add --no-cache e2fsprogs-dev && /usr/local/bin/check_llvm15.sh "after-e2fsprogs-dev" || true
+RUN apk add --no-cache xfsprogs-dev && /usr/local/bin/check_llvm15.sh "after-xfsprogs-dev" || true
+RUN apk add --no-cache btrfs-progs-dev && /usr/local/bin/check_llvm15.sh "after-btrfs-progs-dev" || true
+# System utilities
+RUN apk add --no-cache util-linux-dev && /usr/local/bin/check_llvm15.sh "after-util-linux-dev" || true
+RUN apk add --no-cache libcap-dev && /usr/local/bin/check_llvm15.sh "after-libcap-dev" || true
+RUN apk add --no-cache liburing-dev && /usr/local/bin/check_llvm15.sh "after-liburing-dev" || true
+# Networking and IPC
+RUN apk add --no-cache libunwind-dev && /usr/local/bin/check_llvm15.sh "after-libunwind-dev" || true
+RUN apk add --no-cache dbus-dev && /usr/local/bin/check_llvm15.sh "after-dbus-dev" || true
+RUN apk add --no-cache libmnl-dev && /usr/local/bin/check_llvm15.sh "after-libmnl-dev" || true
+# Security
+RUN apk add --no-cache libselinux-dev && /usr/local/bin/check_llvm15.sh "after-libselinux-dev" || true
+RUN apk add --no-cache libseccomp-dev && /usr/local/bin/check_llvm15.sh "after-libseccomp-dev" || true
+# Compression
+RUN apk add --no-cache xz-dev && /usr/local/bin/check_llvm15.sh "after-xz-dev" || true
+RUN apk add --no-cache zstd-dev && /usr/local/bin/check_llvm15.sh "after-zstd-dev" || true
+# System debugging/profiling
+RUN apk add --no-cache libunwind-dev && /usr/local/bin/check_llvm15.sh "after-libunwind-dev" || true
+RUN apk add --no-cache linux-tools-dev && /usr/local/bin/check_llvm15.sh "after-linux-tools-dev" || true
+# SQLite3 packages
+RUN apk add --no-cache sqlite-dev && /usr/local/bin/check_llvm15.sh "after-sqlite-dev" || true
+RUN apk add --no-cache libedit-dev && /usr/local/bin/check_llvm15.sh "after-libedit-dev" || true
+RUN apk add --no-cache icu-dev && /usr/local/bin/check_llvm15.sh "after-icu-dev" || true
+RUN apk add --no-cache tcl-dev && /usr/local/bin/check_llvm15.sh "after-tcl-dev" || true
+RUN apk add --no-cache lz4-dev && /usr/local/bin/check_llvm15.sh "after-lz4-dev" || true
 
 # Install glibc compatibility layer with ARM64 warning suppression
 RUN wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub && \
@@ -172,26 +225,6 @@ WORKDIR /build
 
 # Pre-build LLVM status
 RUN /usr/local/bin/check_llvm15.sh "libs-build-start" || true
-
-# Install build dependencies with INDIVIDUAL LLVM15 monitoring
-RUN apk add --no-cache m4 && /usr/local/bin/check_llvm15.sh "after-m4" || true
-RUN apk add --no-cache bison && /usr/local/bin/check_llvm15.sh "after-bison" || true  
-RUN apk add --no-cache flex && /usr/local/bin/check_llvm15.sh "after-flex" || true
-RUN apk add --no-cache zlib-dev && /usr/local/bin/check_llvm15.sh "after-zlib-dev" || true
-RUN apk add --no-cache expat-dev && /usr/local/bin/check_llvm15.sh "after-expat-dev" || true
-RUN apk add --no-cache ncurses-dev && /usr/local/bin/check_llvm15.sh "after-ncurses-dev" || true
-RUN apk add --no-cache libx11-dev && /usr/local/bin/check_llvm15.sh "after-libx11-dev" || true
-
-# Install X11 protocol packages first (these are needed for xorg-server build)
-RUN apk add --no-cache xf86driproto && /usr/local/bin/check_llvm15.sh "after-xf86driproto" || true
-RUN apk add --no-cache xf86vidmodeproto && /usr/local/bin/check_llvm15.sh "after-xf86vidmodeproto" || true
-RUN apk add --no-cache glproto && /usr/local/bin/check_llvm15.sh "after-glproto" || true
-RUN apk add --no-cache dri2proto && /usr/local/bin/check_llvm15.sh "after-dri2proto" || true
-RUN apk add --no-cache libxext-dev && /usr/local/bin/check_llvm15.sh "after-libxext-dev" || true
-RUN apk add --no-cache libxrender-dev && /usr/local/bin/check_llvm15.sh "after-libxrender-dev" || true
-RUN apk add --no-cache libxfixes-dev && /usr/local/bin/check_llvm15.sh "after-libxfixes-dev" || true
-RUN apk add --no-cache libxdamage-dev && /usr/local/bin/check_llvm15.sh "after-libxdamage-dev" || true
-RUN apk add --no-cache libxcb-dev && /usr/local/bin/check_llvm15.sh "after-libxcb-dev" || true
 
 # Additional dependencies for xorg-server build
 RUN apk add --no-cache \
@@ -704,23 +737,14 @@ RUN echo "=== BUILDING XORG-SERVER FROM SOURCE TO AVOID LLVM15 ===" && \
     rm -rf xserver && \
     /usr/local/bin/check_llvm15.sh "post-xorg-server-source-build" || true
 
-# Continue with remaining packages
-RUN apk add --no-cache wayland-dev && /usr/local/bin/check_llvm15.sh "after-wayland-dev" || true
-RUN apk add --no-cache wayland-protocols && /usr/local/bin/check_llvm15.sh "after-wayland-protocols" || true
-RUN apk add --no-cache python3-dev && /usr/local/bin/check_llvm15.sh "after-python3-dev" || true
-RUN apk add --no-cache py3-setuptools && /usr/local/bin/check_llvm15.sh "after-py3-setuptools" || true
-RUN apk add --no-cache jpeg-dev && /usr/local/bin/check_llvm15.sh "after-jpeg-dev" || true
-RUN apk add --no-cache libpng-dev && /usr/local/bin/check_llvm15.sh "after-libpng-dev" || true
-RUN apk add --no-cache libxkbcommon-dev && /usr/local/bin/check_llvm15.sh "after-libxkbcommon-dev" || true
 #SDL3_Image Dependencies
 RUN apk add --no-cache tiff-dev && /usr/local/bin/check_llvm15.sh "after-tiff-dev" || true
 RUN apk add --no-cache libwebp-dev && /usr/local/bin/check_llvm15.sh "after-libwebp-dev" || true
 RUN apk add --no-cache libavif-dev && /usr/local/bin/check_llvm15.sh "after-libavif-dev" || true
 
-# Debug tools
-RUN apk add --no-cache strace && /usr/local/bin/check_llvm15.sh "after-strace" || true
-RUN apk add --no-cache file && /usr/local/bin/check_llvm15.sh "after-file" || true
-RUN apk add --no-cache tree && /usr/local/bin/check_llvm15.sh "after-tree" || true
+# Install Python dependencies for Mesa and glmark2
+RUN pip install --no-cache-dir meson==1.4.0 mako==1.3.3 && \
+    /usr/local/bin/check_llvm15.sh "after-python-packages" || true
 
 # Build SPIRV-Tools from source (avoiding LLVM15 contamination)
 RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
@@ -773,16 +797,6 @@ RUN echo "=== BUILDING SHADERC FROM SOURCE TO AVOID LLVM15 ===" && \
     cd ../.. && \
     rm -rf shaderc && \
     /usr/local/bin/check_llvm15.sh "post-shaderc-source-build" || true
-
-# Media packages
-RUN apk add --no-cache libpcap-dev && /usr/local/bin/check_llvm15.sh "after-libpcap-dev" || true
-
-
-RUN apk add --no-cache v4l-utils-dev && /usr/local/bin/check_llvm15.sh "after-v4l-utils-dev" || true
-
-# Install Python dependencies for Mesa and glmark2
-RUN pip install --no-cache-dir meson==1.4.0 mako==1.3.3 && \
-    /usr/local/bin/check_llvm15.sh "after-python-packages" || true
 
     # Build libgbm from source (required for GBM on this image)
 RUN echo "=== BUILDING libgbm FROM SOURCE ===" && \
@@ -1086,8 +1100,6 @@ RUN echo "=== SQLITE3 BUILD WITH LLVM16 ENFORCEMENT ===" && \
     rm -rf sqlite && \
     /usr/local/bin/check_llvm15.sh "post-sqlite3-cleanup" || true
 
-
-
 # Stage: build application
 FROM libs-build AS app-build
 WORKDIR /app
@@ -1129,7 +1141,6 @@ ENV LD_LIBRARY_PATH=/usr/lib/llvm16/lib:/usr/local/lib:/usr/lib
 # cmake -DCMAKE_PREFIX_PATH=/usr/local -DCMAKE_BUILD_TYPE=Release ...
 # or ensure you use pkg-config:
 # CFLAGS=$(pkg-config --cflags sqlite3) LDFLAGS=$(pkg-config --libs sqlite3) cmake ...
-
 
 # Stage: debug environment
 FROM base-deps AS debug
