@@ -1,14 +1,147 @@
 # Stage: filesystem setup
 FROM alpine:3.18 AS filesystem-builder
+
 # Install basic tools needed for filesystem operations
-RUN apk add --no-cache bash findutils
-# Create directory structure (using explicit paths to avoid shell expansion issues)
+RUN apk add --no-cache bash findutils wget
+
+# Create directory structure
 RUN mkdir -p /custom-os/bin /custom-os/sbin /custom-os/etc /custom-os/var /custom-os/tmp /custom-os/home /custom-os/root
 RUN mkdir -p /custom-os/usr/bin /custom-os/usr/sbin /custom-os/usr/lib
 RUN mkdir -p /custom-os/usr/local/bin /custom-os/usr/local/sbin /custom-os/usr/local/lib /custom-os/usr/share
+
+# Create compiler directory structure
+RUN mkdir -p /custom-os/compiler/bin /custom-os/compiler/lib /custom-os/compiler/include
+
+# Create glibc directory structure
+RUN mkdir -p /custom-os/glibc/lib /custom-os/glibc/bin /custom-os/glibc/sbin /custom-os/glibc/include
+
+# Copy the LLVM15 debug script for monitoring from your build context (setup-scripts/)
+COPY setup-scripts/check_llvm15.sh /usr/local/bin/check_llvm15.sh
+RUN chmod +x /usr/local/bin/check_llvm15.sh
+
+# Remove any preinstalled LLVM/Clang (on the builder)
+RUN apk del --no-cache llvm clang || true
+
+# Run LLVM15 check before any installations
+RUN /usr/local/bin/check_llvm15.sh "pre-install" || true
+
+# Install glibc compatibility layer with ARM64 warning suppression
+RUN wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub && \
+    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-2.35-r1.apk && \
+    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-bin-2.35-r1.apk && \
+    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-dev-2.35-r1.apk && \
+    # Install packages and suppress ARM64 ldconfig warnings
+    apk add --no-cache --allow-untrusted \
+        glibc-2.35-r1.apk \
+        glibc-bin-2.35-r1.apk \
+        glibc-dev-2.35-r1.apk 2>&1 | grep -v "unknown machine 183" || true && \
+    # Create a wrapper that suppresses the ARM64 warnings (if ldconfig exists)
+    if [ -x /usr/glibc-compat/sbin/ldconfig ]; then \
+        mv /usr/glibc-compat/sbin/ldconfig /usr/glibc-compat/sbin/ldconfig.real && \
+        echo '#!/bin/sh' > /usr/glibc-compat/sbin/ldconfig && \
+        echo '/usr/glibc-compat/sbin/ldconfig.real "$@" 2>&1 | grep -v "unknown machine 183" || true' >> /usr/glibc-compat/sbin/ldconfig && \
+        chmod +x /usr/glibc-compat/sbin/ldconfig; \
+    fi && \
+    # Clean up
+    rm -f /sbin/ldconfig || true && \
+    rm -f *.apk || true && \
+    /usr/local/bin/check_llvm15.sh "after-glibc" || true
+
+# Copy glibc installation to custom filesystem glibc directory
+RUN echo "=== COPYING GLIBC TO CUSTOM FILESYSTEM ===" && \
+    # Copy glibc libraries
+    cp -r /usr/glibc-compat/lib/* /custom-os/glibc/lib/ 2>/dev/null || true && \
+    # Copy glibc binaries
+    cp -r /usr/glibc-compat/bin/* /custom-os/glibc/bin/ 2>/dev/null || true && \
+    # Copy glibc sbin (including our wrapped ldconfig)
+    cp -r /usr/glibc-compat/sbin/* /custom-os/glibc/sbin/ 2>/dev/null || true && \
+    # Copy glibc headers
+    cp -r /usr/glibc-compat/include/* /custom-os/glibc/include/ 2>/dev/null || true && \
+    # Verify glibc installation
+    echo "GLIBC installed to custom filesystem:" && \
+    ls -la /custom-os/glibc/lib/ | head -10 || echo "No glibc libraries found" && \
+    ls -la /custom-os/glibc/bin/ || echo "No glibc binaries found" && \
+    ls -la /custom-os/glibc/sbin/ || echo "No glibc sbin found"
+
+# Force install LLVM 16 only - but install to custom location
+RUN /usr/local/bin/check_llvm15.sh "pre-llvm16" || true && \
+    apk add --no-cache llvm16-dev llvm16-libs clang16
+
+# Copy LLVM16 installation to custom filesystem compiler directory
+RUN echo "=== COPYING LLVM16 TO CUSTOM FILESYSTEM ===" && \
+    # Copy LLVM16 binaries (if present)
+    cp -r /usr/lib/llvm16/* /custom-os/compiler/ 2>/dev/null || true && \
+    # Copy clang binaries
+    find /usr/bin -name "*clang*16*" -exec cp {} /custom-os/compiler/bin/ \; 2>/dev/null || true && \
+    # Copy any additional LLVM16 libs that might be elsewhere
+    find /usr/lib -name "*llvm16*" -type f -exec cp {} /custom-os/compiler/lib/ \; 2>/dev/null || true && \
+    # Verify installation
+    echo "LLVM16/Clang installed to custom filesystem:" && \
+    ls -la /custom-os/compiler/bin/ | grep -E "(clang|llvm)" || echo "No clang/llvm binaries found" && \
+    ls -la /custom-os/compiler/lib/ | head -10 || echo "No libraries found"
+
+# Set up environment configuration for the custom filesystem
+# Create environment setup script that will be sourced in the final stage
+RUN cat > /custom-os/etc/environment <<'ENV' && \
+    echo "=== CREATING ENVIRONMENT SETUP ===" && \
+    cat /custom-os/etc/environment
+# Custom filesystem environment configuration
+export PATH="/glibc/bin:/glibc/sbin:/compiler/bin:${PATH}"
+export LLVM_CONFIG="/compiler/bin/llvm-config"
+export LD_LIBRARY_PATH="/glibc/lib:/compiler/lib:/usr/local/lib:/usr/lib"
+export GLIBC_ROOT="/glibc"
+ENV
+
+# Create a profile script for interactive shells
+RUN mkdir -p /custom-os/etc/profile.d && \
+    cat > /custom-os/etc/profile.d/compiler.sh <<'PROFILE'
+#!/bin/sh
+# Compiler and glibc environment setup
+export PATH="/glibc/bin:/glibc/sbin:/compiler/bin:${PATH}"
+export LLVM_CONFIG="/compiler/bin/llvm-config"
+export LD_LIBRARY_PATH="/glibc/lib:/compiler/lib:/usr/local/lib:/usr/lib"
+export GLIBC_ROOT="/glibc"
+
+# Set up glibc as the primary C library
+export GLIBC_COMPAT="/glibc"
+export C_INCLUDE_PATH="/glibc/include:${C_INCLUDE_PATH:-}"
+export CPLUS_INCLUDE_PATH="/glibc/include:${CPLUS_INCLUDE_PATH:-}"
+PROFILE
+
+# Make profile script executable
+RUN chmod +x /custom-os/etc/profile.d/compiler.sh
+
+# Create a glibc-specific configuration script
+RUN cat > /custom-os/etc/profile.d/glibc.sh <<'GLIBC_PROFILE'
+#!/bin/sh
+# glibc-specific environment setup
+export GLIBC_ROOT="/glibc"
+export GLIBC_COMPAT="/glibc"
+
+# Ensure glibc ldconfig is used
+export PATH="/glibc/sbin:/glibc/bin:${PATH}"
+
+# Set up library paths for glibc
+export LD_LIBRARY_PATH="/glibc/lib:${LD_LIBRARY_PATH:-}"
+
+# Set up include paths for glibc
+export C_INCLUDE_PATH="/glibc/include:${C_INCLUDE_PATH:-}"
+export CPLUS_INCLUDE_PATH="/glibc/include:${CPLUS_INCLUDE_PATH:-}"
+GLIBC_PROFILE
+
+RUN chmod +x /custom-os/etc/profile.d/glibc.sh
+
 # Copy and execute setup scripts
 COPY setup-scripts/ /setup/
 RUN chmod +x /setup/*.sh && /setup/create-filesystem.sh
+
+# Final LLVM15 contamination check
+RUN /usr/local/bin/check_llvm15.sh "final-filesystem-builder" || true
+
+# Stage: filesystem setup - Install base-deps
+FROM alpine:3.18 AS filesystem-base-deps-builder
+
+
 
 # Stage: base deps (Alpine version)
 FROM alpine:3.18 AS base-deps
@@ -25,6 +158,15 @@ ENV PATH=/usr/lib/llvm16/bin:${PATH}
 ENV LLVM_CONFIG=/usr/lib/llvm16/bin/llvm-config
 # Prefer llvm16 libs at runtime (helps runtime resolution inside the image)
 ENV LD_LIBRARY_PATH=/usr/lib/llvm16/lib:/usr/local/lib:/usr/lib
+
+# Verify our custom compiler installation works
+RUN echo "=== VERIFYING CUSTOM COMPILER INSTALLATION ===" && \
+    echo "Compiler PATH: $PATH" && \
+    echo "LLVM_CONFIG: $LLVM_CONFIG" && \
+    which clang-16 || echo "clang-16 not found in PATH" && \
+    which llvm-config || echo "llvm-config not found in PATH" && \
+    ls -la /compiler/bin/ | grep -E "(clang|llvm)" && \
+    echo "=== CUSTOM COMPILER VERIFICATION COMPLETE ==="
 
 # Enhanced LLVM15 detector with package correlation
 RUN cat > /usr/local/bin/check_llvm15.sh <<'SH' && chmod +x /usr/local/bin/check_llvm15.sh
