@@ -114,7 +114,6 @@ RUN apk add --no-cache py3-pip && /usr/local/bin/check_llvm15.sh "after-py3-pip"
 RUN apk add --no-cache libpcap-dev && /usr/local/bin/check_llvm15.sh "after-libpcap-dev" || true
 RUN apk add --no-cache readline-dev && /usr/local/bin/check_llvm15.sh "after-readline-dev" || true
 RUN apk add --no-cache openssl-dev && /usr/local/bin/check_llvm15.sh "after-openssl-dev" || true
-RUN apk add --no-cache linux-headers && /usr/local/bin/check_llvm15.sh "after-linux-headers" || true
 RUN apk add --no-cache bzip2-dev && /usr/local/bin/check_llvm15.sh "after-bzip2-dev" || true
 
 
@@ -200,6 +199,8 @@ RUN apk add --no-cache \
     automake \
     libtool \
     util-macros \
+    pkgconf-dev \
+    #Why is removing this causing the problem of LLVM15 after?????
     xorg-util-macros \
     libpciaccess-dev \
     libepoxy-dev \
@@ -231,16 +232,7 @@ RUN echo "=== STRINGENT_PCIACCESS_BUILD: BUILDING FROM SOURCE WITH LLVM16 ENFORC
     # Install comprehensive build dependencies \
     echo "=== INSTALLING SANITIZED BUILD DEPS ===" && \
     apk add --no-cache \
-        autoconf \
-        automake \
-        libtool \
-        util-macros \
-        m4 \
-        pkgconf-dev \
-        xorg-util-macros \
-        zlib-dev \
-        linux-headers \
-        musl-dev && \
+    #If this breaks, then figure out what do otherwise
     /usr/local/bin/check_llvm15.sh "after-comprehensive-deps-install" || true && \
     \
     # Clone and verify source integrity \
@@ -671,12 +663,6 @@ RUN echo "=== BUILDING XORG-SERVER FROM SOURCE TO AVOID LLVM15 ===" && \
     # Install autotools and build dependencies
     echo "=== INSTALLING AUTOTOOLS AND BUILD DEPENDENCIES ===" && \
     apk add --no-cache \
-        autoconf \
-        automake \
-        libtool \
-        util-macros \
-        m4 \
-        pkgconf-dev && \
     echo "=== CLONING XORG-SERVER SOURCE ===" && \
     git clone --depth=1 --branch xorg-server-21.1.8 https://gitlab.freedesktop.org/xorg/xserver.git && \
     cd xserver && \
@@ -739,8 +725,15 @@ RUN apk add --no-cache tree && /usr/local/bin/check_llvm15.sh "after-tree" || tr
 # Build SPIRV-Tools from source (avoiding LLVM15 contamination)
 RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-spirv-tools-source-build" || true && \
+    echo "=== CLONING SPIRV-TOOLS AND DEPENDENCIES ===" && \
     git clone --depth=1 https://github.com/KhronosGroup/SPIRV-Tools.git spirv-tools && \
     cd spirv-tools && \
+    echo "=== CLONING SPIRV-HEADERS DEPENDENCY ===" && \
+    git clone --depth=1 https://github.com/KhronosGroup/SPIRV-Headers.git external/spirv-headers && \
+    echo "=== VERIFYING DEPENDENCIES ===" && \
+    echo "SPIRV-Headers contents:" && \
+    ls -la external/spirv-headers/ && \
+    echo "=== CONFIGURING WITH CMAKE ===" && \
     mkdir build && cd build && \
     cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
@@ -751,7 +744,9 @@ RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
         -DCMAKE_C_FLAGS="-I/usr/lib/llvm16/include -march=armv8-a" \
         -DCMAKE_CXX_FLAGS="-I/usr/lib/llvm16/include -march=armv8-a" \
         -DCMAKE_EXE_LINKER_FLAGS="-L/usr/lib/llvm16/lib -Wl,-rpath,/usr/lib/llvm16/lib" && \
+    echo "=== BUILDING SPIRV-TOOLS ===" && \
     make -j"$(nproc)" && \
+    echo "=== INSTALLING SPIRV-TOOLS ===" && \
     make install && \
     cd ../.. && \
     rm -rf spirv-tools && \
