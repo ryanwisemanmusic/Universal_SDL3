@@ -1,5 +1,18 @@
+# Stage: filesystem setup
+FROM alpine:3.18 AS filesystem-builder
+# Install basic tools needed for filesystem operations
+RUN apk add --no-cache bash findutils
+# Create directory structure (using explicit paths to avoid shell expansion issues)
+RUN mkdir -p /custom-os/bin /custom-os/sbin /custom-os/etc /custom-os/var /custom-os/tmp /custom-os/home /custom-os/root
+RUN mkdir -p /custom-os/usr/bin /custom-os/usr/sbin /custom-os/usr/lib
+RUN mkdir -p /custom-os/usr/local/bin /custom-os/usr/local/sbin /custom-os/usr/local/lib /custom-os/usr/share
+# Copy and execute setup scripts
+COPY setup-scripts/ /setup/
+RUN chmod +x /setup/*.sh && /setup/create-filesystem.sh
+
 # Stage: base deps (Alpine version)
 FROM alpine:3.18 AS base-deps
+COPY --from=filesystem-builder /custom-os /
 
 # Remove any preinstalled LLVM/Clang
 RUN apk del --no-cache llvm clang || true
