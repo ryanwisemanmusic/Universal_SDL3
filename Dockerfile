@@ -19,6 +19,10 @@ RUN mkdir -p /custom-os/glibc/lib /custom-os/glibc/bin /custom-os/glibc/sbin /cu
 COPY setup-scripts/check_llvm15.sh /usr/local/bin/check_llvm15.sh
 RUN chmod +x /usr/local/bin/check_llvm15.sh
 
+# Copy the filesystem inspection script
+COPY setup-scripts/check-filesystem.sh /usr/local/bin/check-filesystem.sh
+RUN chmod +x /usr/local/bin/check-filesystem.sh
+
 # Remove any preinstalled LLVM/Clang (on the builder)
 RUN apk del --no-cache llvm clang || true
 
@@ -135,8 +139,9 @@ RUN chmod +x /custom-os/etc/profile.d/glibc.sh
 COPY setup-scripts/ /setup/
 RUN chmod +x /setup/*.sh && /setup/create-filesystem.sh
 
-# Final LLVM15 contamination check
-RUN /usr/local/bin/check_llvm15.sh "final-filesystem-builder" || true
+# Final LLVM15 contamination check && filesystem analyzer
+RUN /usr/local/bin/check_llvm15.sh "final-filesystem-builder" || true && \
+    /usr/local/bin/check-filesystem.sh "final-filesystem-builder" || true
 
 # Stage: filesystem setup - Install base-deps
 FROM alpine:3.18 AS filesystem-base-deps-builder
