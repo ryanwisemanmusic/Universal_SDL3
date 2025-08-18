@@ -142,6 +142,21 @@ RUN chmod +x /setup/*.sh && /setup/create-filesystem.sh
 # Final LLVM15 contamination check && filesystem analyzer
 RUN /usr/local/bin/check_llvm15.sh "final-filesystem-builder" || true && \
     /usr/local/bin/check-filesystem.sh "final-filesystem-builder" || true
+# Check binaries/libraries
+COPY setup-scripts/binlib_validator.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/binlib_validator.sh
+
+# Version Matrix (Checking for versioning)
+COPY setup-scripts/version_matrix.sh /usr/local/bin/version_matrix
+RUN chmod +x /usr/local/bin/version_matrix && \
+    version_matrix > /custom-os/build_versions.txt && \
+    cat /custom-os/build_versions.txt
+
+# Dependency checker (to make sure nothing is missing)
+COPY setup-scripts/dependency_checker.sh /usr/local/bin/dependency_checker
+RUN chmod +x /usr/local/bin/dependency_checker && \
+    dependency_checker /custom-os/compiler/bin /custom-os/glibc/bin > /custom-os/dependency_report.txt && \
+    cat /custom-os/dependency_report.txt
 
 # Stage: filesystem setup - Install base-deps
 FROM alpine:3.18 AS filesystem-base-deps-builder
