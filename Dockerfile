@@ -53,19 +53,14 @@ RUN wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/s
 
 # Copy glibc installation to custom filesystem glibc directory
 RUN echo "=== COPYING GLIBC TO CUSTOM FILESYSTEM ===" && \
-    # Copy glibc libraries
+    mkdir -p /custom-os/glibc/{lib,bin,sbin} && \
+    # copy only runtime libs & binaries (no development headers)
     cp -r /usr/glibc-compat/lib/* /custom-os/glibc/lib/ 2>/dev/null || true && \
-    # Copy glibc binaries
     cp -r /usr/glibc-compat/bin/* /custom-os/glibc/bin/ 2>/dev/null || true && \
-    # Copy glibc sbin (including our wrapped ldconfig)
     cp -r /usr/glibc-compat/sbin/* /custom-os/glibc/sbin/ 2>/dev/null || true && \
-    # Copy glibc headers
-    cp -r /usr/glibc-compat/include/* /custom-os/glibc/include/ 2>/dev/null || true && \
-    # Verify glibc installation
-    echo "GLIBC installed to custom filesystem:" && \
-    ls -la /custom-os/glibc/lib/ | head -10 || echo "No glibc libraries found" && \
-    ls -la /custom-os/glibc/bin/ || echo "No glibc binaries found" && \
-    ls -la /custom-os/glibc/sbin/ || echo "No glibc sbin found"
+    # DO NOT copy include/ - avoid mismatched headers for cross builds
+    echo "GLIBC runtime copied to custom filesystem (no headers)." && \
+    ls -la /custom-os/glibc/lib/ | head -10 || echo "No glibc libraries found"
 
 # Force install LLVM 16 only - but install to custom location
 RUN /usr/local/bin/check_llvm15.sh "pre-llvm16" || true && \
@@ -162,7 +157,7 @@ RUN apk add --no-cache cmake && /usr/local/bin/check_llvm15.sh "after-cmake" || 
 RUN apk add --no-cache ninja && /usr/local/bin/check_llvm15.sh "after-ninja" || true
 RUN apk add --no-cache pkgconf && /usr/local/bin/check_llvm15.sh "after-pkgconf" || true
 RUN apk add --no-cache wget && /usr/local/bin/check_llvm15.sh "after-wget" || true
-RUN akp add --no-cache tar && /usr/local/bin/check_llvm15.sh "after-tar" || true
+RUN apk add --no-cache tar && /usr/local/bin/check_llvm15.sh "after-tar" || true
 RUN apk add --no-cache python3 && /usr/local/bin/check_llvm15.sh "after-python3" || true
 RUN apk add --no-cache py3-pip && /usr/local/bin/check_llvm15.sh "after-py3-pip" || true
 RUN apk add --no-cache m4 && /usr/local/bin/check_llvm15.sh "after-m4" || true
@@ -187,6 +182,7 @@ RUN apk add --no-cache jpeg-dev && /usr/local/bin/check_llvm15.sh "after-jpeg-de
 RUN apk add --no-cache libpng-dev && /usr/local/bin/check_llvm15.sh "after-libpng-dev" || true
 RUN apk add --no-cache libxkbcommon-dev && /usr/local/bin/check_llvm15.sh "after-libxkbcommon-dev" || true
 RUN apk add --no-cache libatomic_ops-dev && /usr/local/bin/check_llvm15.sh "after-libatomic_ops-dev" || true
+RUN apk add --no-cache pciutils-dev && /usr/local/bin/check_llvm15.sh "after-pciutils-dev" || true
 # Other essential packages - Pt 2
 RUN apk add --no-cache autoconf && /usr/local/bin/check_llvm15.sh "after-autoconf" || true
 RUN apk add --no-cache automake && /usr/local/bin/check_llvm15.sh "after-automake" || true
@@ -1139,9 +1135,9 @@ RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
         -DCMAKE_C_COMPILER=/custom-os/compiler/bin/clang-16 \
         -DCMAKE_CXX_COMPILER=/custom-os/compiler/bin/clang++-16 \
         -DLLVM_CONFIG_EXECUTABLE=/custom-os/compiler/bin/llvm-config \
-        -DCMAKE_C_FLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
-        -DCMAKE_CXX_FLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
-        -DCMAKE_EXE_LINKER_FLAGS="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib" && \
+        -DCMAKE_C_FLAGS="-I/custom-os/compiler/include -march=armv8-a" \
+        -DCMAKE_CXX_FLAGS="-I/custom-os/compiler/include -march=armv8-a" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/custom-os/compiler/lib -Wl,-rpath,/custom-os/compiler/lib" && \
     \
     echo "=== BUILDING SPIRV-TOOLS ===" && \
     make -j"$(nproc)" 2>&1 | tee /tmp/spirv-build.log && \
@@ -1190,9 +1186,9 @@ RUN echo "=== BUILDING SHADERC FROM SOURCE TO AVOID LLVM15 ===" && \
         -DCMAKE_INSTALL_PREFIX=/custom-os/usr/vulkan \
         -DCMAKE_C_COMPILER=/custom-os/compiler/bin/clang-16 \
         -DCMAKE_CXX_COMPILER=/custom-os/compiler/bin/clang++-16 \
-        -DCMAKE_C_FLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
-        -DCMAKE_CXX_FLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
-        -DCMAKE_EXE_LINKER_FLAGS="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib" \
+        -DCMAKE_C_FLAGS="-I/custom-os/compiler/include -march=armv8-a" \
+        -DCMAKE_CXX_FLAGS="-I/custom-os/compiler/include -march=armv8-a" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/custom-os/compiler/lib -Wl,-rpath,/custom-os/compiler/lib" \
         -DCMAKE_SHARED_LINKER_FLAGS="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib" \
         -DSHADERC_SKIP_TESTS=ON \
         -DSHADERC_SKIP_EXAMPLES=ON && \
@@ -1993,9 +1989,24 @@ RUN echo "=== INSTALLING DEBUG TOOLS ===" && \
     # Copy debug tools to custom filesystem
     echo "=== INTEGRATING DEBUG TOOLS INTO CUSTOM FILESYSTEM ===" && \
     mkdir -p /custom-os/usr/bin /custom-os/usr/share/debug && \
-    cp -p $(which gdb strace ltrace valgrind perf lsof file objdump) /custom-os/usr/bin/ && \
-    cp -rp /usr/share/gdb /usr/share/valgrind /custom-os/usr/share/debug/ && \
-    \
+# copy binaries safely: avoid copying a file onto itself
+for cmd in gdb strace ltrace valgrind perf lsof file objdump; do \
+  src="$(command -v "$cmd" 2>/dev/null || true)"; \
+  if [ -n "$src" ]; then \
+    dest="/custom-os/usr/bin/$(basename "$src")"; \
+    if [ "$src" = "$dest" ]; then \
+      echo "skipping $cmd (already at $dest)"; \
+    else \
+      echo "copying $src -> /custom-os/usr/bin/"; \
+      cp -p "$src" /custom-os/usr/bin/; \
+    fi; \
+  else \
+    echo "warning: $cmd not found"; \
+  fi; \
+done && \
+# copy debug data dirs only if they exist
+[ -d /usr/share/gdb ] && cp -rp /usr/share/gdb /custom-os/usr/share/debug/ || true && \
+[ -d /usr/share/valgrind ] && cp -rp /usr/share/valgrind /custom-os/usr/share/debug/ || true && \
     echo "=== DEBUG ENVIRONMENT READY ==="
 
 # Final environment setup
@@ -2391,14 +2402,25 @@ RUN echo "=== SETTING UP DRI MODULE STRUCTURE ===" && \
 # ======================
 # SECTION: Copy Build Artifacts to Custom Filesystem
 # ======================
-# Copy libraries from previous build stages to custom filesystem
-COPY --from=libs-build /usr/local /custom-os/usr/local
-RUN echo "Copied libs-build artifacts to custom filesystem" | tee /custom-os/var/log/debug/artifacts_copy.log
+# Copy libraries from the builder stage that produced /usr/local into the custom filesystem.
+# Use the actual stage name (filesystem-libs-build-builder) instead of a non-existent 'libs-build'.
+# On failure, print a helpful message into the debug log rather than blowing up with an unclear error.
+COPY --from=filesystem-libs-build-builder /usr/local /custom-os/usr/local
+RUN if [ -d /custom-os/usr/local ]; then \
+      echo "Copied filesystem-libs-build-builder artifacts to custom filesystem" | tee /custom-os/var/log/debug/artifacts_copy.log; \
+    else \
+      echo "Warning: /custom-os/usr/local was not created by filesystem-libs-build-builder" | tee /custom-os/var/log/debug/artifacts_copy.log; \
+      mkdir -p /custom-os/usr/local; \
+    fi
 
 # Copy application to custom filesystem
 RUN mkdir -p /custom-os/app
-COPY --from=app-build /app/build/simplehttpserver /custom-os/app/simplehttpserver
+# app-build installs the built binary into /custom-os/usr/bin/simplehttpserver,
+# so copy from that path in the app-build stage instead of /app/build/....
+COPY --from=app-build /custom-os/usr/bin/simplehttpserver /custom-os/app/simplehttpserver
 RUN echo "Copied application to custom filesystem" | tee -a /custom-os/var/log/debug/artifacts_copy.log
+
+
 
 # ======================
 # SECTION: User Configuration (Filesystem-Integrated)
