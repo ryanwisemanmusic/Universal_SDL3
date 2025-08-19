@@ -157,14 +157,19 @@ RUN apk add --no-cache git && /usr/local/bin/check_llvm15.sh "after-git" || true
 RUN apk add --no-cache build-base && /usr/local/bin/check_llvm15.sh "after-build-base" || true
 RUN apk add --no-cache linux-headers && /usr/local/bin/check_llvm15.sh "after-linux-headers" || true
 RUN apk add --no-cache musl-dev && /usr/local/bin/check_llvm15.sh "after-musl-dev" || true
+RUN apk add --no-cache make && /usr/local/bin/check_llvm15.sh "after-make" || true
 RUN apk add --no-cache cmake && /usr/local/bin/check_llvm15.sh "after-cmake" || true
 RUN apk add --no-cache ninja && /usr/local/bin/check_llvm15.sh "after-ninja" || true
 RUN apk add --no-cache pkgconf && /usr/local/bin/check_llvm15.sh "after-pkgconf" || true
+RUN apk add --no-cache wget && /usr/local/bin/check_llvm15.sh "after-wget" || true
+RUN akp add --no-cache tar && /usr/local/bin/check_llvm15.sh "after-tar" || true
 RUN apk add --no-cache python3 && /usr/local/bin/check_llvm15.sh "after-python3" || true
 RUN apk add --no-cache py3-pip && /usr/local/bin/check_llvm15.sh "after-py3-pip" || true
 RUN apk add --no-cache m4 && /usr/local/bin/check_llvm15.sh "after-m4" || true
 RUN apk add --no-cache bison && /usr/local/bin/check_llvm15.sh "after-bison" || true
 RUN apk add --no-cache flex && /usr/local/bin/check_llvm15.sh "after-flex" || true
+RUN apk add --no-cache meson && /usr/local/bin/check_llvm15.sh "after-meson" || true
+RUN apk add --no-cache libgl1-mesa-dev && /usr/local/bin/check_llvm15.sh "after-libgl1-mesa-dev" || true
 RUN apk add --no-cache zlib-dev && /usr/local/bin/check_llvm15.sh "after-zlib-dev" || true
 RUN apk add --no-cache expat-dev && /usr/local/bin/check_llvm15.sh "after-expat-dev" || true
 RUN apk add --no-cache ncurses-dev && /usr/local/bin/check_llvm15.sh "after-ncurses-dev" || true
@@ -172,11 +177,16 @@ RUN apk add --no-cache libx11-dev && /usr/local/bin/check_llvm15.sh "after-libx1
 # Other essential packages - Pt 1
 RUN apk add --no-cache wayland-dev && /usr/local/bin/check_llvm15.sh "after-wayland-dev" || true
 RUN apk add --no-cache wayland-protocols && /usr/local/bin/check_llvm15.sh "after-wayland-protocols" || true
+RUN apk add --no-cache egl-dev && /usr/local/bin/check_llvm15.sh "after-egl-dev" || true
+RUN apk add --no-cache gles-dev && /usr/local/bin/check_llvm15.sh "after-gles-dev" || true
 RUN apk add --no-cache python3-dev && /usr/local/bin/check_llvm15.sh "after-python3-dev" || true
 RUN apk add --no-cache py3-setuptools && /usr/local/bin/check_llvm15.sh "after-py3-setuptools" || true
+RUN apk add --no-cache cunit-dev && /usr/local/bin/check_llvm15.sh "after-cunit-dev" || true
+RUN apk add --no-cache cairo-dev && /usr/local/bin/check_llvm15.sh "after-cairo-dev" || true
 RUN apk add --no-cache jpeg-dev && /usr/local/bin/check_llvm15.sh "after-jpeg-dev" || true
 RUN apk add --no-cache libpng-dev && /usr/local/bin/check_llvm15.sh "after-libpng-dev" || true
 RUN apk add --no-cache libxkbcommon-dev && /usr/local/bin/check_llvm15.sh "after-libxkbcommon-dev" || true
+RUN apk add --no-cache libatomic_ops-dev && /usr/local/bin/check_llvm15.sh "after-libatomic_ops-dev" || true
 # Other essential packages - Pt 2
 RUN apk add --no-cache autoconf && /usr/local/bin/check_llvm15.sh "after-autoconf" || true
 RUN apk add --no-cache automake && /usr/local/bin/check_llvm15.sh "after-automake" || true
@@ -185,12 +195,24 @@ RUN apk add --no-cache util-macros && /usr/local/bin/check_llvm15.sh "after-util
 RUN apk add --no-cache pkgconf-dev && /usr/local/bin/check_llvm15.sh "after-pkgconf-dev" || true
 RUN apk add --no-cache xorg-util-macros && /usr/local/bin/check_llvm15.sh "after-xorg-util-macros" || true
 RUN apk add --no-cache libpciaccess-dev && /usr/local/bin/check_llvm15.sh "after-libpciaccess-dev" || true
-RUN apk add --no-cache libepoxy-dev && /usr/local/bin/check_llvm15.sh "after-libepoxy-dev" || true
 RUN apk add --no-cache pixman-dev && /usr/local/bin/check_llvm15.sh "after-pixman-dev" || true
 RUN apk add --no-cache xkeyboard-config && /usr/local/bin/check_llvm15.sh "after-xkeyboard-config" || true
 RUN apk add --no-cache xkbcomp && /usr/local/bin/check_llvm15.sh "after-xkbcomp" || true
 RUN apk add --no-cache libxkbfile-dev && /usr/local/bin/check_llvm15.sh "after-libxkbfile-dev" || true
 RUN apk add --no-cache libxfont2-dev && /usr/local/bin/check_llvm15.sh "after-libxfont2-dev" || true
+RUN apk add --no-cache font-util-dev && /usr/local/bin/check_llvm15.sh "after-font-util-dev-dev" || true
+RUN apk add --no-cache xcb-util-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-dev" || true
+RUN apk add --no-cache xcb-util-renderutil-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-renderutil-dev" || true
+RUN apk add --no-cache xcb-util-wm-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-wm-dev" || true
+RUN apk add --no-cache xcb-util-keysyms-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-keysyms-dev" || true
+RUN apk add --no-cache tiff-dev && /usr/local/bin/check_llvm15.sh "after-tiff-dev" || true
+RUN apk add --no-cache gettext-dev && /usr/local/bin/check_llvm15.sh "after-gettext-dev" || true
+RUN apk add --no-cache libogg-dev && /usr/local/bin/check_llvm15.sh "after-libogg-dev" || true
+RUN apk add --no-cache flac-dev && /usr/local/bin/check_llvm15.sh "after flac-dev" || true
+RUN apk add --no-cache libmodplug-dev && /usr/local/bin/check_llvm15.sh "after-libmodplug-dev" || true
+RUN apk add --no-cache mpg123-dev && /usr/local/bin/check_llvm15.sh "after-mpg123-dev" || true
+RUN apk add --no-cache opusfile-dev && /usr/local/bin/check_llvm15.sh "after-opusfile-dev" || true
+RUN apk add --no-cache libjpeg-turbo-dev && /usr/local/bin/check_llvm15.sh "after-libjpeg-turbo-dev" || true
 
 # Copy the installed packages to custom filesystem in an organized way
 RUN echo "=== COPYING BASE PACKAGES TO CUSTOM FILESYSTEM ===" && \
@@ -219,6 +241,8 @@ RUN echo "=== INSTALLING DEBUG TOOLS ==="
 RUN apk add --no-cache strace && /usr/local/bin/check_llvm15.sh "after-strace" || true
 RUN apk add --no-cache file && /usr/local/bin/check_llvm15.sh "after-file" || true
 RUN apk add --no-cache tree && /usr/local/bin/check_llvm15.sh "after-tree" || true
+RUN apk add --no-cache valgrind-dev && /usr/local/bin/check_llvm15.sh "after-valgrind-dev" || true
+
 
 # Copy debug tools to organized locations
 RUN mkdir -p /custom-os/usr/debug/bin && \
@@ -425,21 +449,6 @@ RUN mkdir -p /custom-os/usr/db/{bin,lib,include} && \
 RUN /usr/local/bin/check_llvm15.sh "final-base-deps" || true && \
     /usr/local/bin/check-filesystem.sh "final-base-deps" || true
 
-#
-#
-#
-#
-#
-#
-# NEW SECTION AFTER THIS
-#
-#
-#
-#
-#
-#
-#
-
 # Stage: filesystem setup - Install base-deps
 FROM filesystem-base-deps-builder AS filesystem-libs-build-builder
 
@@ -466,7 +475,6 @@ RUN echo "=== STRINGENT_PCIACCESS_BUILD: BUILDING FROM SOURCE WITH LLVM16 ENFORC
     \
     # Install comprehensive build dependencies
     echo "=== INSTALLING SANITIZED BUILD DEPS ===" && \
-    apk add --no-cache git automake autoconf libtool pkgconf && \
     /usr/local/bin/check_llvm15.sh "after-comprehensive-deps-install" || true && \
     \
     # Clone and verify source integrity
@@ -720,8 +728,6 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-libdrm-source-build" || true && \
     \
     # Install missing dependencies first (including meson since pciaccess build removed it)
-    apk add --no-cache libatomic_ops-dev meson py3-setuptools \
-        cunit-dev cairo-dev valgrind-dev linux-headers musl-dev && \
     /usr/local/bin/check_llvm15.sh "after-libdrm-deps" || true && \
     \
     # Clone libdrm (meson now installed)
@@ -886,20 +892,98 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     cd .. && \
     rm -rf libdrm && \
     /usr/local/bin/check_llvm15.sh "post-libdrm-source-build" || true
+# ======================
+# SECTION: libepoxy Build from Source
+# ======================
+RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-libepoxy-source-build" || true && \
+    \
+    # Install meson, ninja and build dependencies (avoiding libepoxy-dev)
+    echo "=== INSTALLING NINJA AND BUILD DEPENDENCIES ===" && \
+    /usr/local/bin/check_llvm15.sh "after-libepoxy-deps-install" || true && \
+    \
+    # Clone libepoxy source
+    echo "=== CLONING LIBEPOXY SOURCE ===" && \
+    git clone --depth=1 --branch 1.5.10 https://github.com/anholt/libepoxy.git libepoxy && \
+    cd libepoxy && \
+    \
+    # Verify source integrity
+    echo "=== SOURCE CONTAMINATION SCAN ===" && \
+    grep -RIn "LLVM15\|llvm-15" . 2>/dev/null | tee /tmp/libepoxy_source_scan.log || true && \
+    \
+    # Configure with meson and LLVM16 enforcement
+    echo "=== CONFIGURING LIBEPOXY WITH LLVM16 EXPLICIT PATHS ===" && \
+    CC=/custom-os/compiler/bin/clang-16 \
+    CXX=/custom-os/compiler/bin/clang++-16 \
+    LLVM_CONFIG=/custom-os/compiler/bin/llvm-config \
+    CFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
+    CXXFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
+    LDFLAGS="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib" \
+    PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig" \
+    meson setup builddir \
+        --prefix=/custom-os/usr \
+        --libdir=/custom-os/usr/lib \
+        --includedir=/custom-os/usr/include \
+        --buildtype=release \
+        -Dglx=yes \
+        -Degl=yes \
+        -Dx11=true \
+        -Dwayland=false \
+        -Dtests=false && \
+    \
+    # Build with verification
+    echo "=== BUILDING LIBEPOXY ===" && \
+    ninja -C builddir -j"$(nproc)" 2>&1 | tee /tmp/libepoxy-build.log && \
+    \
+    # Install with verification
+    echo "=== INSTALLING LIBEPOXY ===" && \
+    ninja -C builddir install 2>&1 | tee /tmp/libepoxy-install.log && \
+    \
+    # Verify installation
+    echo "=== LIBEPOXY INSTALLATION VERIFICATION ===" && \
+    echo "Libraries installed:" && \
+    ls -la /custom-os/usr/lib/libepoxy* 2>/dev/null || echo "No libepoxy libraries found" && \
+    echo "Headers installed:" && \
+    ls -la /custom-os/usr/include/epoxy/ 2>/dev/null || echo "No epoxy headers found" && \
+    echo "PKG-config files:" && \
+    ls -la /custom-os/usr/lib/pkgconfig/epoxy.pc 2>/dev/null || echo "No epoxy.pc found" && \
+    \
+    # Create necessary symlinks if needed
+    echo "=== CREATING REQUIRED SYMLINKS ===" && \
+    cd /custom-os/usr/lib && \
+    for lib in $(ls libepoxy*.so.*.* 2>/dev/null); do \
+        soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
+        basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
+        ln -sf "$lib" "$soname"; \
+        ln -sf "$soname" "$basename"; \
+        echo "Created symlinks for $lib"; \
+    done && \
+    \
+    # Final contamination check
+    echo "=== FINAL CONTAMINATION SCAN ===" && \
+    find /custom-os/usr/lib -name "libepoxy*" -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee /tmp/libepoxy_contamination.log || true && \
+    \
+    # Cleanup
+    cd / && \
+    rm -rf libepoxy && \
+    \
+    # Final verification
+    /usr/local/bin/check_llvm15.sh "post-libepoxy-source-build" || true && \
+    echo "=== LIBEPOXY BUILD COMPLETE ===" && \
+    if [ -f /custom-os/usr/lib/libepoxy.so ] && [ -f /custom-os/usr/include/epoxy/gl.h ]; then \
+        echo "✓ SUCCESS: libepoxy components installed"; \
+    else \
+        echo "⚠ WARNING: Some libepoxy components missing"; \
+    fi
 
 # ======================
-# SECTION: Xorg Server Build
+# SECTION: Xorg Server Build (Updated to use custom libepoxy)
 # ======================
 RUN echo "=== BUILDING XORG-SERVER FROM SOURCE TO AVOID LLVM15 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-xorg-server-source-build" || true && \
     \
-    # Install autotools and build dependencies
+    # Install autotools and build dependencies (excluding libepoxy-dev since we built it)
     echo "=== INSTALLING AUTOTOOLS AND BUILD DEPENDENCIES ===" && \
-    apk add --no-cache autoconf automake libtool pkgconf git \
-        font-util-dev libxkbfile-dev libxfont2-dev pixman-dev \
-        mesa-dev libepoxy-dev libdrm-dev libpciaccess-dev \
-        xcb-util-dev xcb-util-image-dev xcb-util-renderutil-dev \
-        xcb-util-wm-dev xcb-util-keysyms-dev && \
     /usr/local/bin/check_llvm15.sh "after-xorg-deps-install" || true && \
     \
     # Clone xorg-server source
@@ -911,7 +995,7 @@ RUN echo "=== BUILDING XORG-SERVER FROM SOURCE TO AVOID LLVM15 ===" && \
     echo "=== SOURCE CONTAMINATION SCAN ===" && \
     grep -RIn "LLVM15\|llvm-15" . 2>/dev/null | tee /tmp/xorg_source_scan.log || true && \
     \
-    # Configure with custom paths and LLVM16 enforcement
+    # Configure with custom paths, LLVM16 enforcement, and custom libepoxy
     echo "=== CONFIGURING XORG-SERVER WITH LLVM16 EXPLICIT PATHS ===" && \
     autoreconf -fiv && \
     ./configure \
@@ -935,9 +1019,9 @@ RUN echo "=== BUILDING XORG-SERVER FROM SOURCE TO AVOID LLVM15 ===" && \
         CC=/custom-os/compiler/bin/clang-16 \
         CXX=/custom-os/compiler/bin/clang++-16 \
         LLVM_CONFIG=/custom-os/compiler/bin/llvm-config \
-        CFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
-        CXXFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
-        LDFLAGS="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib" \
+        CFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -I/custom-os/usr/include -march=armv8-a" \
+        CXXFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -I/custom-os/usr/include -march=armv8-a" \
+        LDFLAGS="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -L/custom-os/usr/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib:/custom-os/usr/lib" \
         PKG_CONFIG_PATH="/custom-os/usr/x11/pkgconfig:/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig" && \
     \
     # Build with verification
@@ -994,9 +1078,6 @@ RUN echo "=== BUILDING XORG-SERVER FROM SOURCE TO AVOID LLVM15 ===" && \
 # SECTION: SDL3 Image Dependencies
 # ======================
 RUN echo "=== INSTALLING SDL3_IMAGE DEPENDENCIES ===" && \
-    apk add --no-cache tiff-dev && \
-    /usr/local/bin/check_llvm15.sh "after-tiff-dev" || true && \
-    \
     apk add --no-cache libwebp-dev && \
     /usr/local/bin/check_llvm15.sh "after-libwebp-dev" || true && \
     \
@@ -1038,10 +1119,6 @@ RUN echo "=== INSTALLING PYTHON DEPENDENCIES ===" && \
 # ======================
 RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-spirv-tools-source-build" || true && \
-    \
-    # Install build dependencies
-    apk add --no-cache git cmake make python3 && \
-    /usr/local/bin/check_llvm15.sh "after-spirv-deps-install" || true && \
     \
     echo "=== CLONING SPIRV-TOOLS AND DEPENDENCIES ===" && \
     git clone --depth=1 https://github.com/KhronosGroup/SPIRV-Tools.git spirv-tools && \
@@ -1103,9 +1180,6 @@ RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
 RUN echo "=== BUILDING SHADERC FROM SOURCE TO AVOID LLVM15 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-shaderc-source-build" || true && \
     \
-    # Install build dependencies
-    apk add --no-cache git cmake python3 && \
-    \
     git clone --recursive https://github.com/google/shaderc.git && \
     cd shaderc && \
     \
@@ -1159,10 +1233,6 @@ RUN echo "=== BUILDING SHADERC FROM SOURCE TO AVOID LLVM15 ===" && \
 RUN echo "=== BUILDING libgbm FROM SOURCE ===" && \
     /usr/local/bin/check_llvm15.sh "pre-libgbm-deps" || true && \
     \
-    # Install build dependencies
-    apk add --no-cache autoconf automake libtool pkgconf pkgconfig && \
-    /usr/local/bin/check_llvm15.sh "after-libgbm-deps" || true && \
-    \
     git clone --depth=1 https://github.com/robclark/libgbm.git && \
     cd libgbm && \
     \
@@ -1211,8 +1281,6 @@ RUN echo "=== BUILDING GST-PLUGINS-BASE FROM SOURCE TO AVOID LLVM15 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-gst-plugins-base-source-build" || true && \
     \
     # Install build dependencies
-    apk add --no-cache wget tar xz autoconf automake libtool gettext-dev && \
-    \
     wget https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-1.20.3.tar.xz && \
     tar -xvf gst-plugins-base-1.20.3.tar.xz && \
     cd gst-plugins-base-1.20.3 && \
@@ -1273,8 +1341,6 @@ RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
     /usr/local/bin/check_llvm15.sh "pre-mesa-clone" || true && \
     \
     # Install build dependencies
-    apk add --no-cache git python3 bison flex wayland-dev wayland-protocols && \
-    \
     git clone --progress https://gitlab.freedesktop.org/mesa/mesa.git && \
     /usr/local/bin/check_llvm15.sh "post-mesa-clone" || true && \
     \
@@ -1338,8 +1404,6 @@ RUN echo "=== BUILDING SDL3 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-sdl3" || true && \
     \
     # Install build dependencies
-    apk add --no-cache git cmake && \
-    \
     git clone --depth=1 https://github.com/libsdl-org/SDL.git sdl && \
     cd sdl && \
     mkdir build && cd build && \
@@ -1385,8 +1449,6 @@ RUN echo "=== BUILDING SDL3_image ===" && \
     /usr/local/bin/check_llvm15.sh "pre-sdl3-image" || true && \
     \
     # Install build dependencies
-    apk add --no-cache git cmake && \
-    \
     git clone --depth=1 https://github.com/libsdl-org/SDL_image.git sdl_image && \
     cd sdl_image && \
     mkdir build && cd build && \
@@ -1438,8 +1500,6 @@ RUN echo "=== BUILDING SDL3_mixer ===" && \
     /usr/local/bin/check_llvm15.sh "pre-sdl3-mixer" || true && \
     \
     # Install build dependencies
-    apk add --no-cache git cmake libogg-dev flac-dev libmodplug-dev mpg123-dev opusfile-dev && \
-    \
     git clone --depth=1 https://github.com/libsdl-org/SDL_mixer.git sdl_mixer && \
     cd sdl_mixer && \
     mkdir build && cd build && \
@@ -1482,8 +1542,6 @@ RUN echo "=== BUILDING SDL3_ttf ===" && \
     /usr/local/bin/check_llvm15.sh "pre-sdl3-ttf" || true && \
     \
     # Install build dependencies
-    apk add --no-cache git cmake freetype-dev && \
-    \
     git clone --depth=1 https://github.com/libsdl-org/SDL_ttf.git sdl_ttf && \
     cd sdl_ttf && \
     mkdir build && cd build && \
@@ -1586,9 +1644,6 @@ RUN echo "=== BUILDING VULKAN-LOADER ===" && \
 # ======================
 RUN echo "=== BUILDING GLMARK2 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-glmark2" || true && \
-    \
-    # Install build dependencies
-    apk add --no-cache git python3 libpng-dev libjpeg-turbo-dev && \
     \
     git clone --depth=1 https://github.com/glmark2/glmark2.git && \
     cd glmark2 && \
@@ -1842,7 +1897,6 @@ RUN echo "=== STRINGENT_MESA_DEMOS_BUILD: COMPILING FROM SOURCE ===" && \
     apk add --no-cache \
         cmake \
         make \
-        python3 \
         mesa-dev \
         glu-dev \
         freeglut-dev \
