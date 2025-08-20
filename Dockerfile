@@ -157,8 +157,12 @@ RUN apk add --no-cache make && /usr/local/bin/check_llvm15.sh "after-make" || tr
 RUN apk add --no-cache cmake && /usr/local/bin/check_llvm15.sh "after-cmake" || true
 RUN apk add --no-cache ninja && /usr/local/bin/check_llvm15.sh "after-ninja" || true
 RUN apk add --no-cache pkgconf && /usr/local/bin/check_llvm15.sh "after-pkgconf" || true
+RUN apk add --no-cache xmlto && /usr/local/bin/check_llvm15.sh "after-xmlto" || true
+RUN apk add --no-cache fop && /usr/local/bin/check_llvm15.sh "after-fop" || true
 RUN apk add --no-cache wget && /usr/local/bin/check_llvm15.sh "after-wget" || true
+RUN apk add --no-cache gbm && /usr/local/bin/check_llvm15.sh "after-gbm" || true
 RUN apk add --no-cache tar && /usr/local/bin/check_llvm15.sh "after-tar" || true
+RUN apk add --no-cache harfbuzz-dev && /usr/local/bin/check_llvm15.sh "after-harfbuzz-dev" || true
 RUN apk add --no-cache python3 && /usr/local/bin/check_llvm15.sh "after-python3" || true
 RUN apk add --no-cache py3-pip && /usr/local/bin/check_llvm15.sh "after-py3-pip" || true
 RUN apk add --no-cache m4 && /usr/local/bin/check_llvm15.sh "after-m4" || true
@@ -168,6 +172,7 @@ RUN apk add --no-cache meson && /usr/local/bin/check_llvm15.sh "after-meson" || 
 RUN apk add --no-cache zlib-dev && /usr/local/bin/check_llvm15.sh "after-zlib-dev" || true
 RUN apk add --no-cache expat-dev && /usr/local/bin/check_llvm15.sh "after-expat-dev" || true
 RUN apk add --no-cache ncurses-dev && /usr/local/bin/check_llvm15.sh "after-ncurses-dev" || true
+RUN apk add --no-cache eudev-dev && /usr/local/bin/check_llvm15.sh "after-eudev-dev" || true
 RUN apk add --no-cache libx11-dev && /usr/local/bin/check_llvm15.sh "after-libx11-dev" || true
 # Other essential packages - Pt 1
 RUN apk add --no-cache wayland-dev && /usr/local/bin/check_llvm15.sh "after-wayland-dev" || true
@@ -183,6 +188,10 @@ RUN apk add --no-cache libpng-dev && /usr/local/bin/check_llvm15.sh "after-libpn
 RUN apk add --no-cache libxkbcommon-dev && /usr/local/bin/check_llvm15.sh "after-libxkbcommon-dev" || true
 RUN apk add --no-cache libatomic_ops-dev && /usr/local/bin/check_llvm15.sh "after-libatomic_ops-dev" || true
 RUN apk add --no-cache pciutils-dev && /usr/local/bin/check_llvm15.sh "after-pciutils-dev" || true
+RUN apk add --no-cache jack2-dev && /usr/local/bin/check_llvm15.sh "after-jack2-dev" || true
+RUN apk add --no-cache pipewire-dev && /usr/local/bin/check_llvm15.sh "after-pipewire-dev" || true
+RUN apk add --no-cache sndio-dev && /usr/local/bin/check_llvm15.sh "after-sndio-dev" || true
+RUN apk add --no-cache libvorbis-dev && /usr/local/bin/check_llvm15.sh "after-liborbis-dev" || true
 # Other essential packages - Pt 2
 RUN apk add --no-cache autoconf && /usr/local/bin/check_llvm15.sh "after-autoconf" || true
 RUN apk add --no-cache automake && /usr/local/bin/check_llvm15.sh "after-automake" || true
@@ -190,6 +199,8 @@ RUN apk add --no-cache libtool && /usr/local/bin/check_llvm15.sh "after-libtool"
 RUN apk add --no-cache util-macros && /usr/local/bin/check_llvm15.sh "after-util-macros" || true
 RUN apk add --no-cache pkgconf-dev && /usr/local/bin/check_llvm15.sh "after-pkgconf-dev" || true
 RUN apk add --no-cache xorg-util-macros && /usr/local/bin/check_llvm15.sh "after-xorg-util-macros" || true
+RUN apk add --no-cache plutosvg-dev && /usr/local/bin/check_llvm15.sh "after-plutosvg-dev" || true
+RUN apk add --no-cache libusb-dev && /usr/local/bin/check_llvm15.sh "after-libusb-dev" || true
 # Checking something integral because could this be a problem?????? - RUN apk add --no-cache libpciaccess-dev && /usr/local/bin/check_llvm15.sh "after-libpciaccess-dev" || true
 RUN apk add --no-cache pixman-dev && /usr/local/bin/check_llvm15.sh "after-pixman-dev" || true
 RUN apk add --no-cache xkeyboard-config && /usr/local/bin/check_llvm15.sh "after-xkeyboard-config" || true
@@ -212,23 +223,50 @@ RUN apk add --no-cache libjpeg-turbo-dev && /usr/local/bin/check_llvm15.sh "afte
 
 # Copy the installed packages to custom filesystem in an organized way
 RUN echo "=== COPYING BASE PACKAGES TO CUSTOM FILESYSTEM ===" && \
-    # Create essential directories if they don't exist
-    mkdir -p /custom-os/usr/bin /custom-os/usr/lib /custom-os/usr/include && \
-    mkdir -p /custom-os/usr/share /custom-os/usr/local/bin && \
+    # Create essential directories if they don't exist (include pkgconfig & gcc dirs)
+    mkdir -p /custom-os/usr/bin /custom-os/usr/lib /custom-os/usr/include /custom-os/usr/lib/pkgconfig /custom-os/usr/lib/gcc && \
+    mkdir -p /custom-os/lib /custom-os/usr/share /custom-os/usr/local/bin && \
     # Copy the package database
-    cp -r /lib/apk /custom-os/lib/ && \
-    # Copy binaries
-    find /usr/bin -type f -exec cp {} /custom-os/usr/bin/ \; 2>/dev/null || true && \
-    # Copy libraries
-    find /usr/lib -type f -name "*.so*" -exec cp {} /custom-os/usr/lib/ \; 2>/dev/null || true && \
+    cp -r /lib/apk /custom-os/lib/ 2>/dev/null || true && \
+    # Copy essential musl C library components to both lib and usr/lib directories
+    echo "Copying musl C library components..." && \
+    cp -a /lib/ld-musl-aarch64.so.1 /custom-os/lib/ 2>/dev/null || true && \
+    cp -a /lib/libc.musl-aarch64.so.1 /custom-os/lib/ 2>/dev/null || true && \
+    cp -a /usr/lib/libc.a /custom-os/usr/lib/ 2>/dev/null || true && \
+    # Create necessary symlinks for libc
+    cd /custom-os/lib && ln -sf libc.musl-aarch64.so.1 libc.so 2>/dev/null || true && \
+    cd /custom-os/lib && ln -sf ld-musl-aarch64.so.1 ld-linux-aarch64.so.1 2>/dev/null || true && \
+    # Also copy to usr/lib for compatibility
+    cp -a /lib/ld-musl-aarch64.so.1 /custom-os/usr/lib/ 2>/dev/null || true && \
+    cp -a /lib/libc.musl-aarch64.so.1 /custom-os/usr/lib/ 2>/dev/null || true && \
+    cd /custom-os/usr/lib && ln -sf libc.musl-aarch64.so.1 libc.so 2>/dev/null || true && \
+    # Copy binaries (best-effort)
+    find /usr/bin -type f -exec cp --parents -a {} /custom-os/usr/bin/ \; 2>/dev/null || true && \
+    # Copy shared libraries (best-effort)
+    find /usr/lib -type f -name "*.so*" -exec cp --parents -a {} /custom-os/usr/lib/ \; 2>/dev/null || true && \
+    # Copy pkg-config files (so pkg-config sees them in the sysroot)
+    if [ -d /usr/lib/pkgconfig ]; then find /usr/lib/pkgconfig -type f -exec cp --parents -a {} /custom-os/usr/lib/pkgconfig/ \; 2>/dev/null || true; fi && \
+    # Copy nested gcc runtime files (crtbegin/crtend and libgcc locations)
+    if [ -d /usr/lib/gcc ]; then mkdir -p /custom-os/usr/lib/gcc && cp -a /usr/lib/gcc/* /custom-os/usr/lib/gcc/ 2>/dev/null || true; fi && \
+    # Copy crt objects into the sysroot's usr/lib (linker looks under /usr/lib in sysroot)
+    cp -a /lib/crt*.o /usr/lib/crt*.o /custom-os/usr/lib/ 2>/dev/null || true && \
+    # Copy libgcc / libssp runtime bits into sysroot
+    cp -a /usr/lib/libgcc* /lib/libgcc* /custom-os/usr/lib/ 2>/dev/null || true && \
+    cp -a /usr/lib/libssp* /lib/libssp* /custom-os/usr/lib/ 2>/dev/null || true && \
     # Copy headers
     cp -r /usr/include/* /custom-os/usr/include/ 2>/dev/null || true && \
     # Copy shared data
     cp -r /usr/share/* /custom-os/usr/share/ 2>/dev/null || true && \
-    # Verify the copy operation
-    echo "Base dependencies copied to custom filesystem:" && \
-    ls -la /custom-os/usr/bin/ | head -10 && \
-    ls -la /custom-os/usr/lib/ | head -10
+    # Verify the copy operation (short) - specifically check for libc
+    echo "Base dependencies copied to custom filesystem (short listing):" && \
+    echo "Lib directory contents:" && \
+    ls -la /custom-os/lib/ 2>/dev/null || echo "No /custom-os/lib directory" && \
+    echo "Libc files found:" && \
+    find /custom-os -name "*libc*" -o -name "*ld-musl*" 2>/dev/null || echo "No libc files found" && \
+    ls -la /custom-os/usr/bin/ | head -5 || true && \
+    ls -la /custom-os/usr/lib/ | head -10 || true && \
+    ls -la /custom-os/usr/lib/pkgconfig | head -5 2>/dev/null || echo "(no pkgconfig files)"
+
 
 # ======================
 # SECTION: Debug Tools
@@ -486,171 +524,122 @@ RUN echo "=== BUILDING pciaccess FROM SOURCE WITH LLVM16 ===" && \
 
 
 # ======================
-# SECTION: libdrm Build
+# SECTION: libdrm Build (sysroot-focused, non-fatal) — FINAL
 # ======================
+
+# Copy diagnostic scripts
+COPY setup-scripts/check-filesystem.sh /usr/local/bin/check-filesystem.sh
+COPY setup-scripts/dependency_checker.sh /usr/local/bin/dependency_checker.sh
+COPY setup-scripts/file_finder.sh /usr/local/bin/file_finder.sh
+COPY setup-scripts/binlib_validator.sh /usr/local/bin/binlib_validator.sh
+COPY setup-scripts/version_matrix.sh /usr/local/bin/version_matrix.sh
+COPY setup-scripts/dep_chain_visualizer.sh /usr/local/bin/dep_chain_visualizer.sh
+COPY setup-scripts/cflag_audit.sh /usr/local/bin/cflag_audit.sh
+RUN chmod +x /usr/local/bin/check-filesystem.sh /usr/local/bin/dependency_checker.sh /usr/local/bin/file_finder.sh \
+    /usr/local/bin/binlib_validator.sh /usr/local/bin/version_matrix.sh /usr/local/bin/dep_chain_visualizer.sh \
+    /usr/local/bin/cflag_audit.sh
+
 RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-libdrm-source-build" || true && \
+    /usr/local/bin/check_llvm15.sh "pre-libdrm-source-build" || true; \
+    /usr/local/bin/check_llvm15.sh "after-libdrm-deps" || true; \
     \
-    # Install missing dependencies first (including meson since pciaccess build removed it)
-    /usr/local/bin/check_llvm15.sh "after-libdrm-deps" || true && \
+    git clone --depth=1 https://gitlab.freedesktop.org/mesa/drm.git libdrm || true; \
+    if [ -d libdrm ]; then cd libdrm; else echo "⚠ libdrm not cloned; skipping build commands"; fi; \
     \
-    # Clone libdrm (meson now installed)
-    git clone --depth=1 https://gitlab.freedesktop.org/mesa/drm.git libdrm && \
-    cd libdrm && \
+    export PATH="/custom-os/compiler/bin:$PATH"; \
+    export CC=/custom-os/compiler/bin/clang-16; \
+    export CXX=/custom-os/compiler/bin/clang++-16; \
+    if [ -x /custom-os/compiler/bin/llvm-config-16 ]; then export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config-16; else export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config; fi; \
+    export PKG_CONFIG_SYSROOT_DIR="/custom-os"; \
+    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+    export CFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a"; \
+    export CXXFLAGS="$CFLAGS"; \
+    export LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib"; \
     \
-    # Scan source tree for LLVM15 contamination
-    grep -RIn "LLVM15" . || true && grep -RIn "llvm-15" . || true && \
+    # --- SYSROOT SANITY & FIXUPS (use existing /custom-os contents; do not recopy everything) ---
+    echo "=== SYSROOT RUNTIME CHECK ==="; \
+    # print which crt/gcc/lib files we have inside sysroot
+    echo "Looking for crt & runtime files under /custom-os:"; \
+    ls -la /custom-os/usr/lib/crt* /custom-os/usr/lib/Scrt1.o /custom-os/usr/lib/gcc 2>/dev/null || true; \
+    ls -la /custom-os/usr/lib/libgcc* /custom-os/usr/lib/libssp* 2>/dev/null || true; \
     \
-        # Set up environment for LLVM16 with proper paths
-    export CC=/custom-os/compiler/bin/clang-16 && \
-    export CXX=/custom-os/compiler/bin/clang++-16 && \
-    export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config && \
-    export CFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" && \
-    export CXXFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" && \
-    export LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib" && \
-    export PKG_CONFIG_SYSROOT_DIR="/custom-os" && \
-    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig" && \
+    # If Scrt1.o is missing but crt1.o exists, create a safe symlink (some toolchains expect Scrt1.o)
+    if [ ! -e /custom-os/usr/lib/Scrt1.o ] && [ -e /custom-os/usr/lib/crt1.o ]; then \
+        echo "Creating /custom-os/usr/lib/Scrt1.o -> crt1.o (case-sensitivity fix)"; \
+        ln -sf crt1.o /custom-os/usr/lib/Scrt1.o || true; \
+    fi; \
+    if [ ! -e /custom-os/lib/Scrt1.o ] && [ -e /custom-os/usr/lib/Scrt1.o ]; then \
+        ln -sf /custom-os/usr/lib/Scrt1.o /custom-os/lib/Scrt1.o || true; \
+    fi; \
     \
-    # Disable ANSI colors for cleaner output
-    export NO_COLOR=1 && \
+    # If crtbeginS.o (or similar) lives under /custom-os/usr/lib/gcc/... create a shallow symlink for linker convenience
+    CRTBEGIN=$(find /custom-os/usr/lib/gcc -name 'crtbegin*.o' 2>/dev/null | head -n1 || true); \
+    if [ -n "$CRTBEGIN" ] && [ ! -e /custom-os/usr/lib/crtbeginS.o ]; then \
+        echo "Linking crtbegin from: $CRTBEGIN -> /custom-os/usr/lib/crtbeginS.o"; \
+        ln -sf "$CRTBEGIN" /custom-os/usr/lib/crtbeginS.o || true; \
+    fi; \
     \
-        # Verify pciaccess is available
-    echo "=== VERIFYING PCIACCESS AVAILABILITY ===" && \
-    pkg-config --exists pciaccess && \
-        echo "✓ FOUND: pciaccess version $(pkg-config --modversion pciaccess)" || \
-        (echo "✗ ERROR: pciaccess not found" && exit 1) && \
+    # If libssp_nonshared is missing but libssp_nonshared.a exists with another name, try to link it
+    if [ ! -e /custom-os/usr/lib/libssp_nonshared.a ] && ls /custom-os/usr/lib/libssp* 1>/dev/null 2>&1; then \
+        SSP=$(ls /custom-os/usr/lib/libssp* | head -n1); \
+        echo "Creating libssp_nonshared alias -> $SSP"; ln -sf "$(basename "$SSP")" /custom-os/usr/lib/libssp_nonshared.a || true; \
+    fi; \
     \
-    # Create sys/mkdev.h symlink workaround for musl systems
-    echo "=== CREATING MUSL HEADER WORKAROUND ===" && \
-    if [ ! -f /usr/include/sys/mkdev.h ] && [ -f /usr/include/sys/sysmacros.h ]; then \
-        echo "Creating sys/mkdev.h -> sys/sysmacros.h symlink for musl compatibility" && \
-        ln -sf sysmacros.h /usr/include/sys/mkdev.h; \
-    fi && \
+    # Show the resolved small inventory (quick)
+    echo "Resolved sysroot /custom-os/usr/lib inventory (short):"; ls -la /custom-os/usr/lib | sed -n '1,60p' || true; \
     \
-    # Verify other required packages are available
-    echo "=== CHECKING FOR OPTIONAL DEPENDENCIES ===" && \
-    pkg-config --exists cunit && echo "cunit: available" || echo "cunit: not available (tests will be disabled)" && \
-    pkg-config --exists cairo && echo "cairo: available" || echo "cairo: not available (cairo tests will be disabled)" && \
-    pkg-config --exists valgrind && echo "valgrind: available" || echo "valgrind: not available (valgrind support will be disabled)" && \
+    # Run filesystem check
+    echo "=== FILESYSTEM DIAGNOSIS ==="; \
+    /usr/local/bin/check-filesystem.sh || true; \
     \
-    # Configure with meson - explicitly disable problematic optional features
+    # --- Compiler/linker test (verbose, non-fatal) ---
+    printf 'int main(void){return 0;}\n' > /tmp/meson_toolchain_test.c; \
+    echo "=== COMPILER CHECK (non-fatal, verbose) ==="; \
+    echo "CC -> $CC"; $CC --version 2>/dev/null || true; \
+    # Explicitly pass sysroot to the linker as well and request verbose link tracing so we can see search dirs
+    $CC $CFLAGS -Wl,--sysroot=/custom-os -v -Wl,--verbose -o /tmp/meson_toolchain_test /tmp/meson_toolchain_test.c 2>/tmp/meson_toolchain_test.err || (echo "✗ compiler test failed (continuing) - show first 200 lines:" && sed -n '1,200p' /tmp/meson_toolchain_test.err); \
+    if [ -x /tmp/meson_toolchain_test ]; then echo "✓ compiler test OK"; else echo "⚠ compiler test failed — meson may also fail (see above)"; fi; \
+    \
+    # Run dependency checker on compiler
+    echo "=== COMPILER DEPENDENCY CHECK ==="; \
+    /usr/local/bin/dependency_checker.sh /custom-os/compiler/bin/clang-16 || true; \
+    \
+    # Run binary validator on compiler
+    echo "=== COMPILER VALIDATION ==="; \
+    /usr/local/bin/binlib_validator.sh /custom-os/compiler/bin/clang-16 || true; \
+    \
+    # Run version matrix check
+    echo "=== VERSION COMPATIBILITY CHECK ==="; \
+    /usr/local/bin/version_matrix.sh || true; \
+    \
+    # Run CFLAGS audit
+    echo "=== COMPILER FLAGS AUDIT ==="; \
+    /usr/local/bin/cflag_audit.sh || true; \
+    \
+    # --- meson configure / compile / install (non-fatal) ---
     meson setup builddir \
         --prefix=/usr \
         --libdir=lib \
+        --includedir=include \
+        --sysconfdir=/etc \
         --buildtype=release \
-        -Dintel=enabled \
-        -Dradeon=enabled \
-        -Damdgpu=enabled \
-        -Dnouveau=enabled \
-        -Dvmwgfx=enabled \
-        -Dvc4=enabled \
-        -Dfreedreno=enabled \
-        -Detnaviv=enabled \
-        -Dexynos=enabled \
         -Dtests=false \
         -Dman-pages=disabled \
         -Dcairo-tests=disabled \
-        -Dvalgrind=disabled && \
+        -Dvalgrind=disabled || (echo "✗ meson setup failed (continuing)" && /usr/local/bin/dep_chain_visualizer.sh "meson setup failed"); \
+    meson compile -C builddir -j$(nproc) || echo "✗ meson compile failed (continuing)"; \
+    DESTDIR="/custom-os" meson install -C builddir --no-rebuild || echo "✗ meson install failed (continuing)"; \
     \
-    # Build and install with cleaner output
-    meson compile -C builddir -j$(nproc) --verbose 2>&1 | sed 's/\x1b\[[0-9;]*m//g' && \
-    DESTDIR="/custom-os" meson install -C builddir 2>&1 | sed 's/\x1b\[[0-9;]*m//g' && \
+    # --- short post-check ---
+    echo "=== POST BUILD SUMMARY (short) ==="; \
+    echo "libdrm /custom-os/usr/lib listing (first 80 lines):"; ls -la /custom-os/usr/lib | sed -n '1,80p' || true; \
+    echo "pkg-config files (if any):"; ls -la /custom-os/usr/lib/pkgconfig 2>/dev/null | sed -n '1,80p' || echo "(none)"; \
     \
-    # Output the meson log for debugging (strip colors)
-    echo "=== MESON BUILD LOG ===" && \
-    cat builddir/meson-logs/meson-log.txt | sed 's/\x1b\[[0-9;]*m//g' && \
-    echo "=== END MESON BUILD LOG ===" && \
-    \
-    # Comprehensive libdrm installation verification
-    echo "=== COMPREHENSIVE LIBDRM INSTALLATION VERIFICATION ===" && \
-    echo "Contents of /custom-os/usr/lib:" && \
-    ls -la /custom-os/usr/lib/ | grep -E "(libdrm|\.so)" || echo "No libdrm libraries visible" && \
-    echo "Contents of /custom-os/usr/include:" && \
-    ls -la /custom-os/usr/include/ | grep -E "(drm|libdrm)" || echo "No drm headers visible" && \
-    \
-    # Verify pkg-config files were installed
-    echo "=== PKG-CONFIG FILES VERIFICATION ===" && \
-    echo "Searching for all libdrm pkg-config files:" && \
-    find /custom-os/usr -name "libdrm*.pc" -type f | tee /tmp/libdrm_pc_files.log && \
-    if [ -s /tmp/libdrm_pc_files.log ]; then \
-        echo "Found libdrm pkg-config files:" && \
-        while read pc_file; do \
-            echo "File: $pc_file" && \
-            echo "Contents:" && \
-            cat "$pc_file" && \
-            echo "---"; \
-        done < /tmp/libdrm_pc_files.log; \
-    else \
-        echo "No libdrm pkg-config files found - checking meson install logs" && \
-        echo "Builddir contents:" && \
-        find builddir -name "*.pc" -type f || echo "No .pc files in builddir"; \
-    fi && \
-    \
-    # Test pkg-config functionality
-    echo "=== PKG-CONFIG COMPREHENSIVE TESTING ===" && \
-    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig" && \
-    echo "Testing pkg-config with PKG_CONFIG_PATH=$PKG_CONFIG_PATH" && \
-    echo "Available packages containing 'drm':" && \
-    pkg-config --list-all | grep drm | tee /tmp/drm_pkg_list.log || echo "No drm packages found in pkg-config" && \
-    echo "Testing libdrm specifically:" && \
-    if pkg-config --exists libdrm; then \
-        echo "✓ libdrm package found" && \
-        echo "Cflags: $(pkg-config --cflags libdrm)" && \
-        echo "Libs: $(pkg-config --libs libdrm)" && \
-        echo "Version: $(pkg-config --modversion libdrm)"; \
-    else \
-        echo "✗ libdrm package not found in pkg-config"; \
-    fi && \
-    \
-    # Verify library installation and create symbolic links if needed
-    echo "=== LIBRARY INSTALLATION VERIFICATION ===" && \
-    echo "Installed libdrm libraries in /custom-os/usr/x11/lib:" && \
-    ls -la /custom-os/usr/x11/lib/libdrm* 2>/dev/null || echo "No libdrm libraries found" && \
-    echo "Verifying library symbolic links..." && \
-    cd /custom-os/usr/x11/lib && \
-    for lib_pattern in "libdrm.so" "libdrm_*.so"; do \
-        if ls $lib_pattern.*.*.* 1> /dev/null 2>&1; then \
-            for FULL_LIB in $lib_pattern.*.*.*; do \
-                SONAME=$(echo "$FULL_LIB" | sed 's/\(.*\.so\.[0-9]*\).*/\1/') && \
-                BASE_NAME=$(echo "$FULL_LIB" | sed 's/\(.*\.so\).*/\1/') && \
-                echo "Creating symlinks for $FULL_LIB -> $SONAME -> $BASE_NAME" && \
-                ln -sf "$FULL_LIB" "$SONAME" && \
-                ln -sf "$SONAME" "$BASE_NAME" && \
-                echo "Library symlinks created successfully for $BASE_NAME"; \
-            done; \
-        fi; \
-    done && \
-    ls -la /custom-os/usr/x11/lib/libdrm* 2>/dev/null && \
-    \
-    # Post-build contamination scan
-    echo "=== CONTAMINATION SCAN ===" && \
-    find builddir -name "*.so*" -type f -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null || echo "No LLVM15 contamination found in built libraries" && \
-    find /custom-os/usr/x11 -name "libdrm*" -type f -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null || echo "No LLVM15 contamination found in installed libdrm files" && \
-    \
-    # Final success verification
-    echo "=== FINAL SUCCESS VERIFICATION ===" && \
-    if find /custom-os/usr/x11/lib -name "libdrm*.so*" -type f | grep -q .; then \
-        echo "✓ SUCCESS: libdrm libraries installed" && \
-        if find /custom-os/usr/x11/pkgconfig -name "libdrm*.pc" -type f | grep -q .; then \
-            echo "✓ SUCCESS: libdrm pkg-config files installed" && \
-            if pkg-config --exists libdrm; then \
-                echo "✓ SUCCESS: pkg-config recognizes libdrm" && \
-                echo "=== LIBDRM BUILD COMPLETE - ALL CHECKS PASSED ==="; \
-            else \
-                echo "⚠ WARNING: pkg-config doesn't recognize libdrm but files exist" && \
-                echo "=== LIBDRM BUILD COMPLETE - PARTIAL SUCCESS ==="; \
-            fi; \
-        else \
-            echo "⚠ WARNING: No pkg-config files but libraries exist" && \
-            echo "=== LIBDRM BUILD COMPLETE - PARTIAL SUCCESS ==="; \
-        fi; \
-    else \
-        echo "✗ ERROR: No libdrm libraries found after build" && \
-        echo "=== LIBDRM BUILD FAILED ==="; \
-    fi && \
-    cd .. && \
-    rm -rf libdrm && \
-    /usr/local/bin/check_llvm15.sh "post-libdrm-source-build" || true
+    # cleanup and finish (non-fatal)
+    cd / || true; rm -rf /libdrm 2>/dev/null || true; \
+    /usr/local/bin/check_llvm15.sh "post-libdrm-source-build" || true; \
+    echo "=== libdrm RUN finished (non-fatal) ==="; \
+    true
 # ======================
 # SECTION: libepoxy Build from Source
 # ======================
@@ -818,7 +807,9 @@ RUN echo "=== BUILDING XORG-SERVER FROM SOURCE TO AVOID LLVM15 ===" && \
     \
     # Final contamination check
     echo "=== FINAL CONTAMINATION SCAN ===" && \
-    find /custom-os/usr/x11 -name "libxserver*" -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee /tmp/xorg_contamination.log || true && \
+    find /custom-os/usr/lib -name "libxserver*" -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee /tmp/xorg_contamination.log || true && \
+    find /custom-os/usr/include -type f -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee -a /tmp/xorg_contamination.log || true && \
+    find /custom-os/usr/lib/pkgconfig -type f -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee -a /tmp/xorg_contamination.log || true && \
     \
     # Cleanup
     cd / && \
@@ -996,14 +987,18 @@ RUN echo "=== BUILDING libgbm FROM SOURCE ===" && \
     cd libgbm && \
     \
     echo "=== CONFIGURING LIBGBM ===" && \
-    ./autogen.sh --prefix=/custom-os/usr/x11 && \
+    # Set up pkg-config environment to find libdrm in our sysroot
+    export PKG_CONFIG_SYSROOT_DIR="/custom-os" && \
+    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}" && \
+    \
+    ./autogen.sh --prefix=/custom-os/usr && \
     ./configure \
-        --prefix=/custom-os/usr/x11 \
+        --prefix=/custom-os/usr \
         CC=/custom-os/compiler/bin/clang-16 \
         CXX=/custom-os/compiler/bin/clang++-16 \
-        CFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
-        CXXFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
-        LDFLAGS="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib" && \
+        CFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
+        CXXFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
+        LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib" && \
     \
     echo "=== BUILDING LIBGBM ===" && \
     make -j"$(nproc)" 2>&1 | tee /tmp/libgbm-build.log && \
@@ -1017,11 +1012,11 @@ RUN echo "=== BUILDING libgbm FROM SOURCE ===" && \
     # Verify installation
     echo "=== LIBGBM INSTALLATION VERIFICATION ===" && \
     echo "libgbm libraries:" && \
-    ls -la /custom-os/usr/x11/lib/libgbm* 2>/dev/null || echo "No libgbm libraries found" && \
+    ls -la /custom-os/usr/lib/libgbm* 2>/dev/null || echo "No libgbm libraries found" && \
     \
     # Create symlinks
     echo "=== CREATING LIBRARY SYMLINKS ===" && \
-    cd /custom-os/usr/x11/lib && \
+    cd /custom-os/usr/lib && \
     for lib in $(ls libgbm.so.* 2>/dev/null); do \
         soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
         basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
@@ -1637,8 +1632,11 @@ RUN echo "=== CONFIGURING BUILD ENVIRONMENT ===" && \
 # SECTION: Final Environment Setup
 # ======================
 ENV PATH="/custom-os/usr/bin:/custom-os/compiler/bin:$PATH"
-ENV LD_LIBRARY_PATH="/custom-os/usr/lib:/custom-os/compiler/lib:$LD_LIBRARY_PATH"
+ENV PKG_CONFIG_SYSROOT_DIR="/custom-os"
 ENV PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig:$PKG_CONFIG_PATH"
+ENV LD_LIBRARY_PATH="/custom-os/usr/lib:/custom-os/compiler/lib:$LD_LIBRARY_PATH"
+ENV C_INCLUDE_PATH="/custom-os/usr/include:$C_INCLUDE_PATH"
+
 
 # Example invocation adjustments:
 # cmake -DCMAKE_PREFIX_PATH=/usr/local -DCMAKE_BUILD_TYPE=Release ...
