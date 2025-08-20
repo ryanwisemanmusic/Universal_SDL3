@@ -174,3 +174,4 @@ build_docker.txt
 run_docker.txt
 clean_docker.txt
 Docker.txt
+docs/pciaccess.md
