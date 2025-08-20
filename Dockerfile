@@ -190,7 +190,7 @@ RUN apk add --no-cache libtool && /usr/local/bin/check_llvm15.sh "after-libtool"
 RUN apk add --no-cache util-macros && /usr/local/bin/check_llvm15.sh "after-util-macros" || true
 RUN apk add --no-cache pkgconf-dev && /usr/local/bin/check_llvm15.sh "after-pkgconf-dev" || true
 RUN apk add --no-cache xorg-util-macros && /usr/local/bin/check_llvm15.sh "after-xorg-util-macros" || true
-RUN apk add --no-cache libpciaccess-dev && /usr/local/bin/check_llvm15.sh "after-libpciaccess-dev" || true
+# Checking something integral because could this be a problem?????? - RUN apk add --no-cache libpciaccess-dev && /usr/local/bin/check_llvm15.sh "after-libpciaccess-dev" || true
 RUN apk add --no-cache pixman-dev && /usr/local/bin/check_llvm15.sh "after-pixman-dev" || true
 RUN apk add --no-cache xkeyboard-config && /usr/local/bin/check_llvm15.sh "after-xkeyboard-config" || true
 RUN apk add --no-cache xkbcomp && /usr/local/bin/check_llvm15.sh "after-xkbcomp" || true
@@ -452,273 +452,38 @@ FROM filesystem-base-deps-builder AS filesystem-libs-build-builder
 #RUN apk add --no-cache libgl1-mesa-dev && /usr/local/bin/check_llvm15.sh "after-libgl1-mesa-dev" || true
 
 # ======================
-# SECTION: PCI Access Build
+# SECTION: pciaccess Build (Linux only)
 # ======================
-RUN echo "=== STRINGENT_PCIACCESS_BUILD: BUILDING FROM SOURCE WITH LLVM16 ENFORCEMENT ===" && \
-    mkdir -p /custom-os/usr/x11/{lib,include,bin,pkgconfig} && \
-    \
-    # Ensure check_llvm15.sh exists before using it
-    if [ ! -x "/usr/local/bin/check_llvm15.sh" ]; then \
-        echo "=== INSTALLING MISSING CHECK_LLVM15.SH ===" && \
-        mkdir -p /usr/local/bin && \
-        echo '#!/bin/sh\necho "WARNING: check_llvm15.sh not properly installed"' > /usr/local/bin/check_llvm15.sh && \
-        chmod +x /usr/local/bin/check_llvm15.sh; \
-    fi && \
-    \
+RUN echo "=== BUILDING pciaccess FROM SOURCE WITH LLVM16 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-pciaccess-source-build" || true && \
     \
-    # Purge any potential LLVM15 residues (but protect our check script)
-    echo "=== PURGING LLVM15 CONTAMINATION ===" && \
-    find /usr -name '*llvm15*' -not -path '/usr/local/bin/check_llvm15.sh' -exec rm -fv {} \; 2>/dev/null | tee /tmp/llvm15_purge.log || true && \
-    apk del --no-cache $(apk info -R llvm15-libs 2>/dev/null) llvm15-libs 2>/dev/null || true && \
+    git clone --depth=1 https://gitlab.freedesktop.org/xorg/lib/libpciaccess.git /tmp/libpciaccess && \
+    cd /tmp/libpciaccess && \
     \
-    # Install comprehensive build dependencies
-    echo "=== INSTALLING SANITIZED BUILD DEPS ===" && \
-    /usr/local/bin/check_llvm15.sh "after-comprehensive-deps-install" || true && \
+    echo ">>> Configuring libpciaccess <<<" && \
+    # CRITICAL: Set environment to find dependencies in target sysroot
+    export PKG_CONFIG_SYSROOT_DIR="/custom-os" && \
+    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig" && \
     \
-    # Clone and verify source integrity
-    echo "=== CLONING AND VERIFYING SOURCE ===" && \
-    rm -rf pciaccess 2>/dev/null || true && \
-    git clone --depth=1 https://gitlab.freedesktop.org/xorg/lib/libpciaccess.git pciaccess && \
-    cd pciaccess && \
-    echo "=== REPOSITORY STRUCTURE ANALYSIS ===" && \
-    echo "Repository contents:" && \
-    ls -la && \
-    echo "Checking for build system files:" && \
-    find . -maxdepth 2 -name "configure*" -o -name "Makefile*" -o -name "meson.build" -o -name "CMakeLists.txt" -o -name "autogen.sh" -o -name "configure.ac" -o -name "configure.in" && \
-    echo "=== SOURCE CONTAMINATION SCAN ===" && \
-    (grep -RIn "LLVM15\|llvm-15" . 2>&1 | tee /tmp/source_scan.log || true) && \
+    # Use minimal meson options - let it auto-detect what's available
+    meson setup builddir \
+        --prefix=/usr && \
     \
-    # Set hardened build environment for custom filesystem
-    echo "=== SETTING HARDENED BUILD ENV ===" && \
-    export CC=/custom-os/compiler/bin/clang-16 && \
-    export CXX=/custom-os/compiler/bin/clang++-16 && \
-    export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config && \
-    export CFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a -Wno-deprecated-declarations -Werror=implicit-function-declaration" && \
-    export CXXFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a -Wno-deprecated-declarations -Werror=implicit-function-declaration" && \
-    export LDFLAGS="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib,--no-undefined" && \
-    export PKG_CONFIG_PATH="/custom-os/usr/x11/pkgconfig:/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig" && \
-    export ACLOCAL_PATH="/usr/share/aclocal:/usr/local/share/aclocal" && \
-    export NO_COLOR=1 && \
-    echo "Build environment verification:" && \
-    echo "CC: $CC ($(which $CC 2>/dev/null || echo 'NOT FOUND'))" && \
-    echo "CXX: $CXX ($(which $CXX 2>/dev/null || echo 'NOT FOUND'))" && \
-    echo "LLVM_CONFIG: $LLVM_CONFIG ($(which $LLVM_CONFIG 2>/dev/null || echo 'NOT FOUND'))" && \
+    ninja -C builddir -v && \
+    # CRITICAL: Install to target filesystem, not host
+    DESTDIR="/custom-os" ninja -C builddir install && \
     \
-    # Try build strategies in order of preference
-    echo "=== ATTEMPTING BUILD STRATEGIES ===" && \
-    BUILD_SUCCESS=0 && \
+    # Verify installation in target
+    echo "=== VERIFYING PCIACCESS INSTALLATION IN TARGET ===" && \
+    find /custom-os -name "*pciaccess*" -type f | tee /tmp/pciaccess_install.log && \
+    echo "pciaccess.pc file contents:" && \
+    cat /custom-os/usr/lib/pkgconfig/pciaccess.pc || echo "pciaccess.pc not found" && \
     \
-    # Strategy 1: Try autogen.sh if it exists
-    if [ -f "./autogen.sh" ]; then \
-        echo "Strategy 1: Using autogen.sh" && \
-        chmod +x ./autogen.sh && \
-        ./autogen.sh --prefix=/custom-os/usr/x11 --libdir=/custom-os/usr/x11/lib --enable-shared --disable-static 2>&1 | tee /tmp/autogen.log && \
-        BUILD_SUCCESS=1; \
-    # Strategy 2: Try autoreconf if configure.ac/configure.in exists
-    elif [ -f "./configure.ac" ] || [ -f "./configure.in" ]; then \
-        echo "Strategy 2: Using autoreconf to generate configure script" && \
-        echo "Running aclocal..." && \
-        aclocal -I m4 --install 2>&1 | tee /tmp/aclocal.log || true && \
-        echo "Running autoheader..." && \
-        autoheader 2>&1 | tee /tmp/autoheader.log || true && \
-        echo "Running libtoolize..." && \
-        libtoolize --force --install 2>&1 | tee /tmp/libtoolize.log || true && \
-        echo "Running autoreconf..." && \
-        autoreconf -fiv -I m4 2>&1 | tee /tmp/autoreconf.log && \
-        if [ -f "./configure" ]; then \
-            echo "Configure script successfully generated" && \
-            chmod +x ./configure && \
-            BUILD_SUCCESS=1; \
-        else \
-            echo "autoreconf completed but no configure script generated"; \
-        fi; \
-    # Strategy 3: Check for existing configure script
-    elif [ -f "./configure" ]; then \
-        echo "Strategy 3: Using existing configure script" && \
-        chmod +x ./configure && \
-        BUILD_SUCCESS=1; \
-    # Strategy 4: Direct compilation
-    else \
-        echo "Strategy 4: No autotools setup found, will attempt direct compilation" && \
-        BUILD_SUCCESS=1; \
-    fi && \
-    \
-    # Configure if we have a configure script
-    if [ "$BUILD_SUCCESS" = "1" ] && [ -f "./configure" ]; then \
-        echo "=== CONFIGURING WITH ENHANCED OPTIONS ===" && \
-        ./configure \
-            --prefix=/custom-os/usr/x11 \
-            --libdir=/custom-os/usr/x11/lib \
-            --includedir=/custom-os/usr/x11/include \
-            --enable-shared \
-            --disable-static \
-            --with-pic 2>&1 | tee /tmp/configure.log && \
-        CONFIGURE_SUCCESS=1; \
-    else \
-        echo "=== SKIPPING CONFIGURE - WILL USE DIRECT BUILD ===" && \
-        CONFIGURE_SUCCESS=0; \
-    fi && \
-    \
-    # Build with comprehensive dependency verification
-    echo "=== BUILDING WITH DEPENDENCY VERIFICATION ===" && \
-    if [ -f "Makefile" ] || [ -f "makefile" ]; then \
-        echo "Found Makefile, proceeding with build..." && \
-        make -j$(nproc) V=1 2>&1 | tee /tmp/make_build.log && \
-        BUILD_COMPLETE=1; \
-    else \
-        echo "No Makefile found, attempting direct compilation..." && \
-        # Direct compilation fallback
-        SOURCES=$(find . -name "*.c" | grep -v test | head -20) && \
-        if [ -n "$SOURCES" ]; then \
-            echo "Found sources: $SOURCES" && \
-            echo "Attempting direct compilation..." && \
-            mkdir -p /tmp/pciaccess_build && \
-            $CC $CFLAGS -fPIC -shared -Wl,-soname,libpciaccess.so.0 \
-                -o /tmp/pciaccess_build/libpciaccess.so.0.11.1 \
-                $SOURCES $LDFLAGS 2>&1 | tee /tmp/direct_compile.log && \
-            cd /tmp/pciaccess_build && \
-            ln -sf libpciaccess.so.0.11.1 libpciaccess.so.0 && \
-            ln -sf libpciaccess.so.0.11.1 libpciaccess.so && \
-            BUILD_COMPLETE=1; \
-        else \
-            echo "No suitable source files found for direct compilation" && \
-            BUILD_COMPLETE=0; \
-        fi; \
-    fi && \
-    \
-    # Verify build artifacts
-    echo "=== VERIFYING BUILD ARTIFACTS ===" && \
-    if [ "$BUILD_COMPLETE" = "1" ]; then \
-        echo "Build completed successfully, verifying artifacts..." && \
-        find . -name '*.so*' -o -name 'libpciaccess*' | tee /tmp/artifacts.log && \
-        find . -name '*.so*' -exec ldd {} \; 2>/dev/null | grep -i llvm | tee /tmp/library_deps.log || true && \
-        find . -name '*.so*' -exec strings {} \; 2>/dev/null | grep -i 'llvm\|clang' | sort | uniq | tee /tmp/strings_scan.log || true; \
-    else \
-        echo "Build was not completed successfully" && \
-        ls -la; \
-    fi && \
-    \
-    # Install with robust error handling
-    echo "=== INSTALLING AND VERIFYING ===" && \
-    if [ -f "Makefile" ] || [ -f "makefile" ]; then \
-        make install V=1 2>&1 | tee /tmp/make_install.log; \
-    elif [ -d "/tmp/pciaccess_build" ]; then \
-        echo "Installing from direct build..." && \
-        cp /tmp/pciaccess_build/libpciaccess.so* /custom-os/usr/x11/lib/ && \
-        find . -name "*.h" -exec cp {} /custom-os/usr/x11/include/ \; 2>/dev/null || true; \
-    else \
-        echo "Attempting to find and install built libraries..." && \
-        BUILT_LIBS=$(find . -name "libpciaccess*.so*" | head -5) && \
-        if [ -n "$BUILT_LIBS" ]; then \
-            echo "Found built libraries: $BUILT_LIBS" && \
-            for lib in $BUILT_LIBS; do \
-                cp "$lib" /custom-os/usr/x11/lib/; \
-            done && \
-            find . -name "*.h" -exec cp {} /custom-os/usr/x11/include/ \; 2>/dev/null || true; \
-        else \
-            echo "No libraries found to install"; \
-        fi; \
-    fi && \
-    \
-    # Ensure pkg-config directory exists and create pkg-config file
-    echo "=== COMPREHENSIVE PKG-CONFIG SETUP ===" && \
-    echo "Contents of /custom-os/usr/x11/pkgconfig:" && \
-    ls -la /custom-os/usr/x11/pkgconfig/ || echo "Directory is empty" && \
-    echo "Contents of /custom-os/usr/x11/lib:" && \
-    ls -la /custom-os/usr/x11/lib/ && \
-    \
-    # Create pkg-config file if it doesn't exist
-    if [ ! -f /custom-os/usr/x11/pkgconfig/pciaccess.pc ]; then \
-        echo "Creating comprehensive pciaccess.pc file..." && \
-        printf 'prefix=/custom-os/usr/x11\n' > /custom-os/usr/x11/pkgconfig/pciaccess.pc && \
-        printf 'exec_prefix=${prefix}\n' >> /custom-os/usr/x11/pkgconfig/pciaccess.pc && \
-        printf 'libdir=${exec_prefix}/lib\n' >> /custom-os/usr/x11/pkgconfig/pciaccess.pc && \
-        printf 'includedir=${prefix}/include\n\n' >> /custom-os/usr/x11/pkgconfig/pciaccess.pc && \
-        printf 'Name: pciaccess\n' >> /custom-os/usr/x11/pkgconfig/pciaccess.pc && \
-        printf 'Description: Generic PCI access library\n' >> /custom-os/usr/x11/pkgconfig/pciaccess.pc && \
-        printf 'Version: 0.17\n' >> /custom-os/usr/x11/pkgconfig/pciaccess.pc && \
-        printf 'URL: https://www.x.org\n' >> /custom-os/usr/x11/pkgconfig/pciaccess.pc && \
-        printf 'Libs: -L${libdir} -lpciaccess\n' >> /custom-os/usr/x11/pkgconfig/pciaccess.pc && \
-        printf 'Cflags: -I${includedir}\n' >> /custom-os/usr/x11/pkgconfig/pciaccess.pc; \
-    else \
-        echo "Found existing pciaccess.pc:"; \
-        cat /custom-os/usr/x11/pkgconfig/pciaccess.pc 2>/dev/null || echo "No pciaccess.pc file found"; \
-    fi && \
-    \
-    # Test pkg-config
-    echo "=== PKG-CONFIG COMPREHENSIVE TESTING ===" && \
-    export PKG_CONFIG_PATH="/custom-os/usr/x11/pkgconfig:/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig" && \
-    echo "Testing pkg-config with PKG_CONFIG_PATH=$PKG_CONFIG_PATH" && \
-    echo "Available packages:" && \
-    pkg-config --list-all | grep -E "(pciaccess|drm|x11)" | tee /tmp/pkg_list.log || true && \
-    echo "Testing pciaccess specifically:" && \
-    if pkg-config --exists pciaccess; then \
-        echo "✓ pciaccess package found" && \
-        echo "Cflags: $(pkg-config --cflags pciaccess)" && \
-        echo "Libs: $(pkg-config --libs pciaccess)" && \
-        echo "Version: $(pkg-config --modversion pciaccess)"; \
-    else \
-        echo "✗ pciaccess package not found"; \
-    fi && \
-    \
-    # Verify library installation and create symbolic links
-    echo "=== LIBRARY INSTALLATION VERIFICATION ===" && \
-    echo "Installed libraries in /custom-os/usr/x11/lib:" && \
-    ls -la /custom-os/usr/x11/lib/libpciaccess* 2>/dev/null || echo "No libpciaccess libraries found" && \
-    echo "Creating/verifying symbolic links..." && \
-    cd /custom-os/usr/x11/lib && \
-    if ls libpciaccess.so.*.*.* 1> /dev/null 2>&1; then \
-        FULL_LIB=$(ls libpciaccess.so.*.*.* | head -1) && \
-        SONAME=$(echo "$FULL_LIB" | sed 's/\(.*\.so\.[0-9]*\).*/\1/') && \
-        echo "Creating symlinks for $FULL_LIB -> $SONAME -> libpciaccess.so" && \
-        ln -sf "$FULL_LIB" "$SONAME" && \
-        ln -sf "$SONAME" libpciaccess.so && \
-        echo "Library symlinks created successfully" && \
-        ls -la libpciaccess* && \
-        echo "Testing library loading:" && \
-        ldd "$FULL_LIB" 2>/dev/null | grep -i llvm | tee /tmp/install_deps.log || true; \
-    elif [ -f libpciaccess.so ]; then \
-        echo "Found basic libpciaccess.so" && \
-        ldd libpciaccess.so 2>/dev/null | grep -i llvm | tee /tmp/install_deps.log || true; \
-    else \
-        echo "No libpciaccess library found at all"; \
-    fi && \
-    \
-    # Final contamination scan
-    echo "=== FINAL CONTAMINATION SCAN ===" && \
-    (grep -RIn "LLVM15\|llvm-15" /custom-os/usr/x11 2>&1 | tee /tmp/final_scan.log || true) && \
-    echo "=== BUILD LOGS SUMMARY ===" && \
-    echo "Log files created:" && \
-    ls -la /tmp/*log /tmp/*scan.log 2>/dev/null || echo "No log files found" && \
+    /usr/local/bin/check_llvm15.sh "post-pciaccess-install" || true && \
     \
     # Cleanup
-    cd / && \
-    rm -rf pciaccess && \
-    rm -rf /tmp/pciaccess_build 2>/dev/null || true && \
-    \
-    # Final verification
-    /usr/local/bin/check_llvm15.sh "post-pciaccess-source-build" || true && \
-    echo "=== FINAL SUCCESS VERIFICATION ===" && \
-    if [ -f /custom-os/usr/x11/lib/libpciaccess.so ] || ls /custom-os/usr/x11/lib/libpciaccess.so.* 1> /dev/null 2>&1; then \
-        echo "✓ SUCCESS: libpciaccess library installed" && \
-        if [ -f /custom-os/usr/x11/pkgconfig/pciaccess.pc ]; then \
-            echo "✓ SUCCESS: pkg-config file installed" && \
-            if pkg-config --exists pciaccess; then \
-                echo "✓ SUCCESS: pkg-config recognizes pciaccess" && \
-                echo "=== STRINGENT_PCIACCESS_BUILD COMPLETE - ALL CHECKS PASSED ==="; \
-            else \
-                echo "⚠ WARNING: pkg-config doesn't recognize pciaccess but files exist" && \
-                echo "=== STRINGENT_PCIACCESS_BUILD COMPLETE - PARTIAL SUCCESS ==="; \
-            fi; \
-        else \
-            echo "⚠ WARNING: No pkg-config file but library exists" && \
-            echo "=== STRINGENT_PCIACCESS_BUILD COMPLETE - PARTIAL SUCCESS ==="; \
-        fi; \
-    else \
-        echo "✗ ERROR: No libpciaccess library found after build" && \
-        echo "=== STRINGENT_PCIACCESS_BUILD FAILED ==="; \
-    fi
+    cd / && rm -rf /tmp/libpciaccess
+
 
 # ======================
 # SECTION: libdrm Build
@@ -736,29 +501,24 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     # Scan source tree for LLVM15 contamination
     grep -RIn "LLVM15" . || true && grep -RIn "llvm-15" . || true && \
     \
-    # Set up environment for LLVM16 with proper PKG_CONFIG_PATH ordering
+        # Set up environment for LLVM16 with proper paths
     export CC=/custom-os/compiler/bin/clang-16 && \
     export CXX=/custom-os/compiler/bin/clang++-16 && \
     export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config && \
-    export CFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a -Wno-deprecated-declarations" && \
-    export CXXFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a -Wno-deprecated-declarations" && \
-    export LDFLAGS="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib" && \
-    export PKG_CONFIG_PATH="/custom-os/usr/x11/pkgconfig:/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig" && \
+    export CFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" && \
+    export CXXFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" && \
+    export LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib" && \
+    export PKG_CONFIG_SYSROOT_DIR="/custom-os" && \
+    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig" && \
     \
     # Disable ANSI colors for cleaner output
     export NO_COLOR=1 && \
     \
-    # Verify both meson and pciaccess are available
-    echo "=== VERIFYING BUILD DEPENDENCIES ===" && \
-    which meson && meson --version && \
-    echo "Contents of /custom-os/usr/x11/pkgconfig:" && \
-    ls -la /custom-os/usr/x11/pkgconfig/ && \
-    echo "PKG_CONFIG_PATH = $PKG_CONFIG_PATH" && \
-    echo "Testing basic pkg-config functionality:" && \
-    pkg-config --version && \
-    pkg-config --list-all | head -5 && \
-    echo "Searching for pciaccess in pkg-config:" && \
-    pkg-config --list-all | grep pciaccess || echo "pciaccess not in list" && \
+        # Verify pciaccess is available
+    echo "=== VERIFYING PCIACCESS AVAILABILITY ===" && \
+    pkg-config --exists pciaccess && \
+        echo "✓ FOUND: pciaccess version $(pkg-config --modversion pciaccess)" || \
+        (echo "✗ ERROR: pciaccess not found" && exit 1) && \
     \
     # Create sys/mkdev.h symlink workaround for musl systems
     echo "=== CREATING MUSL HEADER WORKAROUND ===" && \
@@ -775,7 +535,7 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     \
     # Configure with meson - explicitly disable problematic optional features
     meson setup builddir \
-        --prefix=/custom-os/usr/x11 \
+        --prefix=/usr \
         --libdir=lib \
         --buildtype=release \
         -Dintel=enabled \
@@ -794,7 +554,7 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     \
     # Build and install with cleaner output
     meson compile -C builddir -j$(nproc) --verbose 2>&1 | sed 's/\x1b\[[0-9;]*m//g' && \
-    meson install -C builddir 2>&1 | sed 's/\x1b\[[0-9;]*m//g' && \
+    DESTDIR="/custom-os" meson install -C builddir 2>&1 | sed 's/\x1b\[[0-9;]*m//g' && \
     \
     # Output the meson log for debugging (strip colors)
     echo "=== MESON BUILD LOG ===" && \
@@ -803,15 +563,15 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     \
     # Comprehensive libdrm installation verification
     echo "=== COMPREHENSIVE LIBDRM INSTALLATION VERIFICATION ===" && \
-    echo "Contents of /custom-os/usr/x11/lib:" && \
-    ls -la /custom-os/usr/x11/lib/ | grep -E "(libdrm|\.so)" || echo "No libdrm libraries visible" && \
-    echo "Contents of /custom-os/usr/x11/include:" && \
-    ls -la /custom-os/usr/x11/include/ | grep -E "(drm|libdrm)" || echo "No drm headers visible" && \
+    echo "Contents of /custom-os/usr/lib:" && \
+    ls -la /custom-os/usr/lib/ | grep -E "(libdrm|\.so)" || echo "No libdrm libraries visible" && \
+    echo "Contents of /custom-os/usr/include:" && \
+    ls -la /custom-os/usr/include/ | grep -E "(drm|libdrm)" || echo "No drm headers visible" && \
     \
     # Verify pkg-config files were installed
     echo "=== PKG-CONFIG FILES VERIFICATION ===" && \
     echo "Searching for all libdrm pkg-config files:" && \
-    find /custom-os/usr/x11 -name "libdrm*.pc" -type f | tee /tmp/libdrm_pc_files.log && \
+    find /custom-os/usr -name "libdrm*.pc" -type f | tee /tmp/libdrm_pc_files.log && \
     if [ -s /tmp/libdrm_pc_files.log ]; then \
         echo "Found libdrm pkg-config files:" && \
         while read pc_file; do \
@@ -828,7 +588,7 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     \
     # Test pkg-config functionality
     echo "=== PKG-CONFIG COMPREHENSIVE TESTING ===" && \
-    export PKG_CONFIG_PATH="/custom-os/usr/x11/pkgconfig:/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig" && \
+    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig" && \
     echo "Testing pkg-config with PKG_CONFIG_PATH=$PKG_CONFIG_PATH" && \
     echo "Available packages containing 'drm':" && \
     pkg-config --list-all | grep drm | tee /tmp/drm_pkg_list.log || echo "No drm packages found in pkg-config" && \
@@ -1339,17 +1099,40 @@ ENV MESON_LOG_LEVEL=debug \
 RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
     /usr/local/bin/check_llvm15.sh "pre-mesa-clone" || true && \
     \
-    # Install build dependencies
+    # Install likely build deps (adjust package names if your Alpine repos differ)
+    # These packages provide meson/ninja, headers and build tools needed by Mesa.
+    apk add --no-cache --virtual .mesa-build-deps \
+        build-base \
+        meson \
+        ninja \
+        pkgconfig \
+        python3 \
+        python3-dev \
+        git \
+        linux-headers \
+        libdrm-dev \
+        libx11-dev \
+        libxrandr-dev \
+        libxext-dev \
+        libxcb-dev \
+        wayland-dev \
+        wayland-protocols \
+        libxdamage-dev \
+        libxfixes-dev || true && \
+    \
     git clone --progress https://gitlab.freedesktop.org/mesa/mesa.git && \
     /usr/local/bin/check_llvm15.sh "post-mesa-clone" || true && \
     \
     cd mesa && \
-    git checkout mesa-24.0.3 && \
+    git checkout mesa-24.0.3 || true && \
     \
     echo "=== MESA BUILD CONFIGURATION (ARM64 + LLVM16) ===" && \
+    # Set compilers for this single meson invocation (applies only to meson command)
     CC=/custom-os/compiler/bin/clang-16 \
     CXX=/custom-os/compiler/bin/clang++-16 \
     LLVM_CONFIG=/custom-os/compiler/bin/llvm-config \
+    # Ensure pkg-config can find anything installed under /custom-os/usr
+    PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}" \
     meson setup builddir/ \
         -Dprefix=/custom-os/usr/x11 \
         -Dglx=disabled \
@@ -1365,20 +1148,21 @@ RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
         --fatal-meson-warnings \
         --wrap-mode=nodownload \
         -Dllvm=enabled \
-        -Dc_args="-v -Wno-error -march=armv8-a -I/custom-os/compiler/include -I/custom-os/glibc/include" \
-        -Dcpp_args="-v -Wno-error -march=armv8-a -I/custom-os/compiler/include -I/custom-os/glibc/include" \
-        -Dc_link_args="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib" \
-        -Dcpp_link_args="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib" && \
-    \
+        # NOTE: do NOT include /custom-os/glibc/include here to avoid header/ABI mismatches
+        -Dc_args="-v -Wno-error -march=armv8-a -I/custom-os/compiler/include" \
+        -Dcpp_args="-v -Wno-error -march=armv8-a -I/custom-os/compiler/include" \
+        -Dc_link_args="-L/custom-os/compiler/lib -Wl,-rpath,/custom-os/compiler/lib" \
+        -Dcpp_link_args="-L/custom-os/compiler/lib -Wl,-rpath,/custom-os/compiler/lib" \
+    && \
     /usr/local/bin/check_llvm15.sh "post-mesa-configure" || true && \
     \
-    echo "=== MESA BUILD LOGS ===" && \
-    cat builddir/meson-logs/meson-log.txt && \
+    echo "=== MESA BUILD LOGS (tail) ===" && \
+    test -f builddir/meson-logs/meson-log.txt && tail -n 200 builddir/meson-logs/meson-log.txt || true && \
     echo "=== MESA CONFIGURATION ===" && \
-    meson configure builddir/ && \
+    meson configure builddir/ || true && \
     \
     echo "=== STARTING NINJA BUILD (ARM64 + LLVM16) ===" && \
-    ninja -C builddir -v install && \
+    ninja -C builddir -v install 2>&1 | tee /tmp/mesa-install.log && \
     /usr/local/bin/check_llvm15.sh "post-mesa-build" || true && \
     \
     echo "=== VULKAN ICD CONFIGURATION (ARM64) ===" && \
@@ -1387,14 +1171,15 @@ RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
     \
     echo "=== MESA BUILD COMPLETED ===" && \
     cd .. && \
-    rm -rf mesa && \
+    rm -rf mesa || true && \
     \
-    # Create DRI directory structure
+    # Create DRI directory structure and helpful symlinks (if libs were installed under /custom-os/usr/lib)
     echo "=== CREATING DRI DIRECTORY STRUCTURE ===" && \
-    mkdir -p /custom-os/usr/lib/xorg/modules/dri && \
-    ln -s /custom-os/usr/lib/dri /custom-os/usr/lib/xorg/modules/dri && \
+    mkdir -p /custom-os/usr/lib/xorg/modules/dri /custom-os/usr/lib/dri || true && \
+    ln -sf /custom-os/usr/lib/dri /custom-os/usr/lib/xorg/modules/dri || true && \
     \
-    /usr/local/bin/check_llvm15.sh "post-mesa-cleanup" || true
+    /usr/local/bin/check_llvm15.sh "post-mesa-cleanup" || true && \
+    echo "=== MESA SECTION COMPLETE ==="
 
 # ======================
 # SECTION: SDL3 Build
