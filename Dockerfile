@@ -2,7 +2,7 @@
 FROM alpine:3.18 AS base-deps
 
 # Install basic tools needed for filesystem operations
-RUN apk add --no-cache bash findutils wget
+RUN apk add --no-cache bash findutils wget file coreutils
 
 # Create directory structure
 RUN mkdir -p /custom-os/bin /custom-os/sbin /custom-os/etc /custom-os/var /custom-os/tmp /custom-os/home /custom-os/root
@@ -137,6 +137,7 @@ RUN chmod +x /setup/*.sh && /setup/create-filesystem.sh
 # Final LLVM15 contamination check && filesystem analyzer
 RUN /usr/local/bin/check_llvm15.sh "final-filesystem-builder" || true && \
     /usr/local/bin/check-filesystem.sh "final-filesystem-builder" || true
+
 # Check binaries/libraries
 COPY setup-scripts/binlib_validator.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/binlib_validator.sh
@@ -164,7 +165,6 @@ RUN apk add --no-cache m4 && /usr/local/bin/check_llvm15.sh "after-m4" || true
 RUN apk add --no-cache bison && /usr/local/bin/check_llvm15.sh "after-bison" || true
 RUN apk add --no-cache flex && /usr/local/bin/check_llvm15.sh "after-flex" || true
 RUN apk add --no-cache meson && /usr/local/bin/check_llvm15.sh "after-meson" || true
-RUN apk add --no-cache libgl1-mesa-dev && /usr/local/bin/check_llvm15.sh "after-libgl1-mesa-dev" || true
 RUN apk add --no-cache zlib-dev && /usr/local/bin/check_llvm15.sh "after-zlib-dev" || true
 RUN apk add --no-cache expat-dev && /usr/local/bin/check_llvm15.sh "after-expat-dev" || true
 RUN apk add --no-cache ncurses-dev && /usr/local/bin/check_llvm15.sh "after-ncurses-dev" || true
@@ -447,6 +447,9 @@ RUN /usr/local/bin/check_llvm15.sh "final-base-deps" || true && \
 
 # Stage: filesystem setup - Install base-deps
 FROM filesystem-base-deps-builder AS filesystem-libs-build-builder
+
+
+#RUN apk add --no-cache libgl1-mesa-dev && /usr/local/bin/check_llvm15.sh "after-libgl1-mesa-dev" || true
 
 # ======================
 # SECTION: PCI Access Build
@@ -1857,6 +1860,9 @@ ENV PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgcon
 # or ensure you use pkg-config:
 # CFLAGS=$(pkg-config --cflags sqlite3) LDFLAGS=$(pkg-config --libs sqlite3) cmake ...
 
+# ensure /usr/local exists so later-stage COPY will not fail
+RUN mkdir -p /usr/local && touch /usr/local/.fs_libs_build_done || true
+
 # Stage: build application
 FROM app-build AS debug
 # ======================
@@ -2098,6 +2104,11 @@ RUN echo "=== FINAL ENVIRONMENT VERIFICATION ===" && \
     env | grep -E 'PATH|LD_LIBRARY|PKG_CONFIG|SDL|LIBGL|GALLIUM|MESA' | tee -a /custom-os/var/log/debug/final_env.log && \
     echo "Binary locations:" | tee -a /custom-os/var/log/debug/final_env.log && \
     which simplehttpserver xdpyinfo xrandr xeyes gdb valgrind 2>&1 | tee -a /custom-os/var/log/debug/final_env.log
+
+    # ensure the application binary is installed to the canonical path
+RUN mkdir -p /custom-os/usr/bin && \
+    # if you used cmake, preferable to run: cmake --install . --prefix=/custom-os/usr
+    cp -f /custom-os/app/build/simplehttpserver /custom-os/usr/bin/simplehttpserver || true
 
 USER shs
 WORKDIR /custom-os/app
@@ -2405,7 +2416,7 @@ RUN echo "=== SETTING UP DRI MODULE STRUCTURE ===" && \
 # Copy libraries from the builder stage that produced /usr/local into the custom filesystem.
 # Use the actual stage name (filesystem-libs-build-builder) instead of a non-existent 'libs-build'.
 # On failure, print a helpful message into the debug log rather than blowing up with an unclear error.
-COPY --from=filesystem-libs-build-builder /usr/local /custom-os/usr/local
+COPY --from=filesystem-libs-build-builder /usr/local/ /custom-os/usr/local/
 RUN if [ -d /custom-os/usr/local ]; then \
       echo "Copied filesystem-libs-build-builder artifacts to custom filesystem" | tee /custom-os/var/log/debug/artifacts_copy.log; \
     else \
