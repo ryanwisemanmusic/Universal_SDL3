@@ -625,37 +625,109 @@ COPY setup-scripts/binlib_validator.sh /usr/local/bin/binlib_validator.sh
 COPY setup-scripts/version_matrix.sh /usr/local/bin/version_matrix.sh
 COPY setup-scripts/dep_chain_visualizer.sh /usr/local/bin/dep_chain_visualizer.sh
 COPY setup-scripts/cflag_audit.sh /usr/local/bin/cflag_audit.sh
+COPY setup-scripts/sgid_suid_scanner.sh /usr/local/bin/sgid_suid_scanner.sh
 
 RUN chmod +x /usr/local/bin/check-filesystem.sh /usr/local/bin/dependency_checker.sh /usr/local/bin/file_finder.sh \
     /usr/local/bin/binlib_validator.sh /usr/local/bin/version_matrix.sh /usr/local/bin/dep_chain_visualizer.sh \
-    /usr/local/bin/cflag_audit.sh
+    /usr/local/bin/cflag_audit.sh /usr/local/bin/sgid_suid_scanner.sh
 
 # Stage: filesystem setup - Install base-deps
 FROM filesystem-base-deps-builder AS filesystem-libs-build-builder
 
 # ======================
-# SECTION: Apache FOP Integration
+# SECTION: Apache FOP Integration + Permission Checks (robust launcher discovery)
 # ======================
-RUN echo "=== INSTALLING Apache FOP 2.11 ===" && \
+# Copy scanner script and ensure it’s executable
+COPY setup-scripts/sgid_suid_scanner.sh /usr/local/bin/sgid_suid_scanner.sh
+COPY setup-scripts/fop-wrapper.sh /tmp/fop-wrapper.sh
+RUN chmod +x /usr/local/bin/sgid_suid_scanner.sh
+
+RUN echo "=== INSTALLING Apache FOP 2.11 (launcher discovery + copy jars) ===" && \
     /usr/local/bin/check_llvm15.sh "pre-fop-install" || true && \
     \
-    # Fetch and extract Apache FOP binary release
+    # Download and extract official FOP binary release
     mkdir -p /tmp/fop && \
     wget -O /tmp/fop/fop-bin.tar.gz https://dlcdn.apache.org/xmlgraphics/fop/binaries/fop-2.11-bin.tar.gz && \
     tar -xzf /tmp/fop/fop-bin.tar.gz -C /tmp/fop --strip-components=1 && \
     \
-    # Install into custom sysroot
-    mkdir -p /custom-os/usr/fop && \
-    cp -r /tmp/fop/* /custom-os/usr/fop/ && \
-    ln -sf /usr/fop/fop /custom-os/usr/bin/fop && \
+    # Prepare target dirs
+    mkdir -p /custom-os/usr/fop/bin /custom-os/usr/fop/lib /custom-os/usr/fop/docs && \
     \
-    # Fix permissions for fop launcher
-    chmod +x /custom-os/usr/fop/fop && \
+    # Try to locate a launcher file; if not found, try to copy a bin/ directory
+    launcher="$(find /tmp/fop -type f \( -name fop -o -name 'fop.sh' -o -name 'fop.bat' \) -print | head -n 1 || true)" && \
+    if [ -n "$launcher" ]; then \
+        echo "Found launcher at: $launcher" && cp "$launcher" /custom-os/usr/fop/bin/; \
+    else \
+        echo "Launcher file not found; searching for a bin/ directory" && \
+        bindir="$(find /tmp/fop -type d -name bin -print | head -n 1 || true)" && \
+        if [ -n "$bindir" ]; then \
+            echo "Found bin directory at: $bindir" && \
+            cp -r "$bindir"/* /custom-os/usr/fop/bin/ 2>/dev/null || true; \
+        else \
+            echo "ERROR: fop launcher or bin/ directory not found in extracted tree" >&2 && ls -la /tmp/fop || true && false; \
+        fi; \
+    fi && \
     \
-    # Verify installation
+    # Robustly collect and copy ALL jar files from anywhere in the extracted tree into lib/
+    echo "Copying JARs from extracted tree into /custom-os/usr/fop/lib" && \
+    find /tmp/fop -type f -name '*.jar' -print -exec cp -a {} /custom-os/usr/fop/lib/ \; || true && \
+    \
+    # If earlier attempts didn't find jars under /tmp/fop, try nested 'fop' dir (best-effort)
+    if [ "$(ls -A /custom-os/usr/fop/lib 2>/dev/null || true)" = "" ]; then \
+        echo "No jars copied yet; trying nested locations" && \
+        find /tmp/fop -type f -path '*/fop/*' -name '*.jar' -print -exec cp -a {} /custom-os/usr/fop/lib/ \; || true; \
+    fi && \
+    \
+    # Copy docs/snippets if present (best-effort)
+    cp -r /tmp/fop/javadocs /custom-os/usr/fop/docs/ 2>/dev/null || true && \
+    cp -r /tmp/fop/README* /custom-os/usr/fop/docs/ 2>/dev/null || true && \
+    cp -r /tmp/fop/LICENSE* /custom-os/usr/fop/docs/ 2>/dev/null || true && \
+    \
+    # Ensure proper permissions on everything in /custom-os/usr/fop
+    chmod -R a+rx /custom-os/usr/fop || true && \
+    \
+    # Install user-provided POSIX wrapper (if present in build context)
+    if [ -f /tmp/fop-wrapper.sh ]; then \
+        echo "Installing fop-wrapper from build context into /custom-os/usr/fop/bin/fop" && \
+        install -m 0755 /tmp/fop-wrapper.sh /custom-os/usr/fop/bin/fop || true; \
+    fi && \
+    \
+    # Make sure the launcher(s) are executable (if any were copied)
+    if [ -n "$(find /custom-os/usr/fop/bin -type f -print -quit 2>/dev/null)" ]; then \
+        find /custom-os/usr/fop/bin -type f -exec chmod +x {} \; 2>/dev/null || true; \
+    fi && \
+    \
+    # Symlink launcher into sysroot bin (if present)
+    if [ -f /custom-os/usr/fop/bin/fop ]; then \
+        ln -sf /custom-os/usr/fop/bin/fop /custom-os/usr/bin/fop; \
+    elif [ -f /custom-os/usr/fop/bin/fop.sh ]; then \
+        ln -sf /custom-os/usr/fop/bin/fop.sh /custom-os/usr/bin/fop; \
+    else \
+        echo "No recognized launcher to symlink (will still run scanner)" ; \
+    fi && \
+    \
+    # Run SUID/SGID scanner to check for unexpected bits and list contents
+    echo "=== RUNNING SUID/SGID SCANNER ON FOP INSTALLATION ===" && \
+    /usr/local/bin/sgid_suid_scanner.sh /custom-os/usr/fop && \
+    echo "=== SGID/SUID scan completed for FOP installation ===" && \
+    \
+    # Update environment and profile.d to include FOP (bin & jars)
+    echo 'export PATH=$PATH:/custom-os/usr/fop/bin' >> /custom-os/etc/profile.d/sysroot.sh && \
+    echo 'export CLASSPATH=$CLASSPATH:/custom-os/usr/fop/lib/*' >> /custom-os/etc/profile.d/sysroot.sh && \
+    echo 'PATH=$PATH:/custom-os/usr/fop/bin' >> /custom-os/etc/environment && \
+    echo 'CLASSPATH=$CLASSPATH:/custom-os/usr/fop/lib/*' >> /custom-os/etc/environment && \
+    \
+    # Verify installation (list jars + run java explicitly with classpath wildcard)
     echo "=== VERIFYING Apache FOP INSTALLATION ===" && \
-    [ -f /custom-os/usr/fop/fop ] && echo "FOP binary exists in sysroot" || echo "FOP binary not found" && \
-    /custom-os/usr/fop/fop -version || true && \
+    echo "Contents of /custom-os/usr/fop/lib:" && ls -la /custom-os/usr/fop/lib || true && \
+    JAVA_BIN="$(command -v java || true)" && \
+    if [ -n "$JAVA_BIN" ]; then \
+        echo "Found java at: $JAVA_BIN"; \
+        echo "Attempting explicit java -cp '/custom-os/usr/fop/lib/*' org.apache.fop.cli.Main -version"; \
+        "$JAVA_BIN" -cp "/custom-os/usr/fop/lib/*" org.apache.fop.cli.Main -version || echo "Explicit java run returned non-zero"; \
+    else \
+        echo "Java not found in PATH; ensure openjdk11 installed in this stage"; \
+    fi && \
     \
     /usr/local/bin/check_llvm15.sh "post-fop-install" || true && \
     /usr/local/bin/check-filesystem.sh "post-fop-install" || true && \
