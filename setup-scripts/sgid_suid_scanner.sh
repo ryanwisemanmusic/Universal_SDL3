@@ -33,13 +33,24 @@ while IFS= read -r -d '' file; do
         pkg="UNKNOWN"
     fi
     
-    echo "$status | $perms | $owner | $pkg | $file" >> "$REPORT_FILE"
+    # Check if executable
+    if [ ! -x "$file" ]; then
+        exec_status="NOT_EXECUTABLE"
+    else
+        exec_status="EXECUTABLE"
+    fi
+
+    echo "$status | $exec_status | $perms | $owner | $pkg | $file" >> "$REPORT_FILE"
 done
 
 # Check if empty
 if [ ! -s "$REPORT_FILE" ]; then
     echo "No SUID/SGID files found" >> "$REPORT_FILE"
 fi
+
+# Add directory contents for visibility
+echo "=== Contents of $SCAN_ROOT ===" >> "$REPORT_FILE"
+ls -l "$SCAN_ROOT" >> "$REPORT_FILE" 2>/dev/null || echo "Directory not readable"
 
 echo "\n💡 Report saved to $REPORT_FILE"
 cat "$REPORT_FILE"
