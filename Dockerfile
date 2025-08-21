@@ -741,23 +741,49 @@ RUN echo "=== INSTALLING Apache FOP 2.11 (launcher discovery + copy jars) ===" &
 RUN echo "=== BUILDING JACK2 FROM SOURCE ===" && \
     /usr/local/bin/check_llvm15.sh "pre-jack2-source-build" || true && \
     \
-    git clone --depth=1 https://gitlab.freedesktop.org/jack/jack2.git /tmp/jack2 && \
-    cd /tmp/jack2 && \
+    # Setup temporary build directory
+    mkdir -p /tmp/jack2 && cd /tmp/jack2 && \
     \
-    echo ">>> Configuring JACK2 <<<" && \
-    export PKG_CONFIG_SYSROOT_DIR="/custom-os" && \
-    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig" && \
-    meson setup builddir \
-        --prefix=/usr && \
+    # Clone JACK2 from GitHub (official repository)
+    if git clone --depth=1 https://github.com/jackaudio/jack2.git /tmp/jack2-source; then \
+        echo "JACK2 source cloned successfully"; \
+    else \
+        echo "ERROR: Could not clone JACK2 repository" >&2 && false; \
+    fi && \
     \
-    ninja -C builddir -v && \
-    DESTDIR="/custom-os" ninja -C builddir install && \
+    cd /tmp/jack2-source && \
     \
+    # Try Waf build system first
+    if [ -x ./waf ]; then \
+        echo ">>> Using waf build system <<<"; \
+        ./waf configure --prefix=/usr --libdir=/usr/lib && \
+        ./waf build && \
+        DESTDIR="/custom-os" ./waf install; \
+    else \
+        # Fallback to autotools
+        echo ">>> Waf not found, trying autotools <<<"; \
+        if [ -x ./configure ]; then \
+            ./configure --prefix=/usr --libdir=/usr/lib --with-sysroot=/custom-os && \
+            make -j$(nproc) && \
+            make DESTDIR="/custom-os" install; \
+        else \
+            echo "ERROR: No recognized build system found (waf or autotools)" >&2 && false; \
+        fi; \
+    fi && \
+    \
+    # Verify installation
     echo "=== VERIFYING JACK2 INSTALLATION ===" && \
-    find /custom-os -name "*jack*" -type f | tee /tmp/jack2_install.log && \
+    if find /custom-os -name "*jack*" -type f | tee /tmp/jack2_install.log; then \
+        echo "JACK2 files present in /custom-os"; \
+    else \
+        echo "WARNING: No JACK2 files found in /custom-os"; \
+    fi && \
+    \
     /usr/local/bin/check_llvm15.sh "post-jack2-install" || true && \
     \
-    cd / && rm -rf /tmp/jack2
+    # Cleanup
+    cd / && rm -rf /tmp/jack2 /tmp/jack2-source
+
 
 # ======================
 # BUILD PlutoSVG
