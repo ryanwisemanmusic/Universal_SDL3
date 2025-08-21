@@ -213,6 +213,9 @@ RUN apk add --no-cache xcb-util-renderutil-dev && /usr/local/bin/check_llvm15.sh
 RUN apk add --no-cache xcb-util-wm-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-wm-dev" || true
 RUN apk add --no-cache xcb-util-keysyms-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-keysyms-dev" || true
 RUN apk add --no-cache tiff-dev && /usr/local/bin/check_llvm15.sh "after-tiff-dev" || true
+RUN apk add --no-cahce libtiff && /usr/local/bin/check_llvm15.sh "after-lib-tiff" || true
+RUN apk add --no-cache libavif && /usr/local/bin/check_llvm15.sh "after-libavif" || true
+RUN apk add --no-cache libwebp && /usr/local/bin/check_llvm15.sh "after-libwebp" || true
 RUN apk add --no-cache gettext-dev && /usr/local/bin/check_llvm15.sh "after-gettext-dev" || true
 RUN apk add --no-cache libogg-dev && /usr/local/bin/check_llvm15.sh "after-libogg-dev" || true
 RUN apk add --no-cache flac-dev && /usr/local/bin/check_llvm15.sh "after flac-dev" || true
@@ -602,10 +605,27 @@ RUN echo "=== VERIFYING SYSROOT STRUCTURE ===" && \
     echo "Environment files:" && \
     ls -la /custom-os/etc/environment /custom-os/etc/profile.d/ && \
     echo "Sysroot structure verification completed."
-      
+
 # Final contamination check
 RUN /usr/local/bin/check_llvm15.sh "final-base-deps" || true && \
     /usr/local/bin/check-filesystem.sh "final-base-deps" || true
+
+
+# ======================
+# SECTION: Diagnostic Tools Setup
+# ======================
+# Copy diagnostic scripts
+COPY setup-scripts/check-filesystem.sh /usr/local/bin/check-filesystem.sh
+COPY setup-scripts/dependency_checker.sh /usr/local/bin/dependency_checker.sh
+COPY setup-scripts/file_finder.sh /usr/local/bin/file_finder.sh
+COPY setup-scripts/binlib_validator.sh /usr/local/bin/binlib_validator.sh
+COPY setup-scripts/version_matrix.sh /usr/local/bin/version_matrix.sh
+COPY setup-scripts/dep_chain_visualizer.sh /usr/local/bin/dep_chain_visualizer.sh
+COPY setup-scripts/cflag_audit.sh /usr/local/bin/cflag_audit.sh
+
+RUN chmod +x /usr/local/bin/check-filesystem.sh /usr/local/bin/dependency_checker.sh /usr/local/bin/file_finder.sh \
+    /usr/local/bin/binlib_validator.sh /usr/local/bin/version_matrix.sh /usr/local/bin/dep_chain_visualizer.sh \
+    /usr/local/bin/cflag_audit.sh
 
 # Stage: filesystem setup - Install base-deps
 FROM filesystem-base-deps-builder AS filesystem-libs-build-builder
@@ -646,11 +666,9 @@ RUN echo "=== BUILDING pciaccess FROM SOURCE WITH LLVM16 ===" && \
     # Cleanup
     cd / && rm -rf /tmp/libpciaccess
 
-
 # ======================
-# SECTION: libdrm Build (sysroot-focused, non-fatal) — FINAL
+# SECTION: Diagnostic Tools Setup
 # ======================
-
 # Copy diagnostic scripts
 COPY setup-scripts/check-filesystem.sh /usr/local/bin/check-filesystem.sh
 COPY setup-scripts/dependency_checker.sh /usr/local/bin/dependency_checker.sh
@@ -659,10 +677,14 @@ COPY setup-scripts/binlib_validator.sh /usr/local/bin/binlib_validator.sh
 COPY setup-scripts/version_matrix.sh /usr/local/bin/version_matrix.sh
 COPY setup-scripts/dep_chain_visualizer.sh /usr/local/bin/dep_chain_visualizer.sh
 COPY setup-scripts/cflag_audit.sh /usr/local/bin/cflag_audit.sh
+
 RUN chmod +x /usr/local/bin/check-filesystem.sh /usr/local/bin/dependency_checker.sh /usr/local/bin/file_finder.sh \
     /usr/local/bin/binlib_validator.sh /usr/local/bin/version_matrix.sh /usr/local/bin/dep_chain_visualizer.sh \
     /usr/local/bin/cflag_audit.sh
 
+# ======================
+# SECTION: libdrm Build (sysroot-focused, non-fatal)
+# ======================
 RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-libdrm-source-build" || true; \
     /usr/local/bin/check_llvm15.sh "after-libdrm-deps" || true; \
@@ -670,6 +692,7 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     git clone --depth=1 https://gitlab.freedesktop.org/mesa/drm.git libdrm || true; \
     if [ -d libdrm ]; then cd libdrm; else echo "⚠ libdrm not cloned; skipping build commands"; fi; \
     \
+    # Set up sysroot environment
     export PATH="/custom-os/compiler/bin:$PATH"; \
     export CC=/custom-os/compiler/bin/clang-16; \
     export CXX=/custom-os/compiler/bin/clang++-16; \
@@ -680,14 +703,13 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     export CXXFLAGS="$CFLAGS"; \
     export LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib"; \
     \
-    # --- SYSROOT SANITY & FIXUPS (use existing /custom-os contents; do not recopy everything) ---
+    # SYSROOT SANITY & FIXUPS
     echo "=== SYSROOT RUNTIME CHECK ==="; \
-    # print which crt/gcc/lib files we have inside sysroot
     echo "Looking for crt & runtime files under /custom-os:"; \
     ls -la /custom-os/usr/lib/crt* /custom-os/usr/lib/Scrt1.o /custom-os/usr/lib/gcc 2>/dev/null || true; \
     ls -la /custom-os/usr/lib/libgcc* /custom-os/usr/lib/libssp* 2>/dev/null || true; \
     \
-    # If Scrt1.o is missing but crt1.o exists, create a safe symlink (some toolchains expect Scrt1.o)
+    # Create necessary symlinks for missing crt files
     if [ ! -e /custom-os/usr/lib/Scrt1.o ] && [ -e /custom-os/usr/lib/crt1.o ]; then \
         echo "Creating /custom-os/usr/lib/Scrt1.o -> crt1.o (case-sensitivity fix)"; \
         ln -sf crt1.o /custom-os/usr/lib/Scrt1.o || true; \
@@ -696,51 +718,47 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
         ln -sf /custom-os/usr/lib/Scrt1.o /custom-os/lib/Scrt1.o || true; \
     fi; \
     \
-    # If crtbeginS.o (or similar) lives under /custom-os/usr/lib/gcc/... create a shallow symlink for linker convenience
+    # Create crtbegin symlinks
     CRTBEGIN=$(find /custom-os/usr/lib/gcc -name 'crtbegin*.o' 2>/dev/null | head -n1 || true); \
     if [ -n "$CRTBEGIN" ] && [ ! -e /custom-os/usr/lib/crtbeginS.o ]; then \
         echo "Linking crtbegin from: $CRTBEGIN -> /custom-os/usr/lib/crtbeginS.o"; \
         ln -sf "$CRTBEGIN" /custom-os/usr/lib/crtbeginS.o || true; \
     fi; \
     \
-    # If libssp_nonshared is missing but libssp_nonshared.a exists with another name, try to link it
+    # Create libssp symlinks
     if [ ! -e /custom-os/usr/lib/libssp_nonshared.a ] && ls /custom-os/usr/lib/libssp* 1>/dev/null 2>&1; then \
         SSP=$(ls /custom-os/usr/lib/libssp* | head -n1); \
         echo "Creating libssp_nonshared alias -> $SSP"; ln -sf "$(basename "$SSP")" /custom-os/usr/lib/libssp_nonshared.a || true; \
     fi; \
     \
-    # Show the resolved small inventory (quick)
+    # Show resolved inventory
     echo "Resolved sysroot /custom-os/usr/lib inventory (short):"; ls -la /custom-os/usr/lib | sed -n '1,60p' || true; \
     \
     # Run filesystem check
     echo "=== FILESYSTEM DIAGNOSIS ==="; \
     /usr/local/bin/check-filesystem.sh || true; \
     \
-    # --- Compiler/linker test (verbose, non-fatal) ---
+    # Compiler/linker test
     printf 'int main(void){return 0;}\n' > /tmp/meson_toolchain_test.c; \
     echo "=== COMPILER CHECK (non-fatal, verbose) ==="; \
     echo "CC -> $CC"; $CC --version 2>/dev/null || true; \
-    # Explicitly pass sysroot to the linker as well and request verbose link tracing so we can see search dirs
     $CC $CFLAGS -Wl,--sysroot=/custom-os -v -Wl,--verbose -o /tmp/meson_toolchain_test /tmp/meson_toolchain_test.c 2>/tmp/meson_toolchain_test.err || (echo "✗ compiler test failed (continuing) - show first 200 lines:" && sed -n '1,200p' /tmp/meson_toolchain_test.err); \
     if [ -x /tmp/meson_toolchain_test ]; then echo "✓ compiler test OK"; else echo "⚠ compiler test failed — meson may also fail (see above)"; fi; \
     \
-    # Run dependency checker on compiler
+    # Run diagnostic scripts
     echo "=== COMPILER DEPENDENCY CHECK ==="; \
     /usr/local/bin/dependency_checker.sh /custom-os/compiler/bin/clang-16 || true; \
     \
-    # Run binary validator on compiler
     echo "=== COMPILER VALIDATION ==="; \
     /usr/local/bin/binlib_validator.sh /custom-os/compiler/bin/clang-16 || true; \
     \
-    # Run version matrix check
     echo "=== VERSION COMPATIBILITY CHECK ==="; \
     /usr/local/bin/version_matrix.sh || true; \
     \
-    # Run CFLAGS audit
     echo "=== COMPILER FLAGS AUDIT ==="; \
     /usr/local/bin/cflag_audit.sh || true; \
     \
-    # --- meson configure / compile / install (non-fatal) ---
+    # Build with meson
     meson setup builddir \
         --prefix=/usr \
         --libdir=lib \
@@ -754,36 +772,34 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     meson compile -C builddir -j$(nproc) || echo "✗ meson compile failed (continuing)"; \
     DESTDIR="/custom-os" meson install -C builddir --no-rebuild || echo "✗ meson install failed (continuing)"; \
     \
-    # --- short post-check ---
+    # Post-build verification
     echo "=== POST BUILD SUMMARY (short) ==="; \
     echo "libdrm /custom-os/usr/lib listing (first 80 lines):"; ls -la /custom-os/usr/lib | sed -n '1,80p' || true; \
     echo "pkg-config files (if any):"; ls -la /custom-os/usr/lib/pkgconfig 2>/dev/null | sed -n '1,80p' || echo "(none)"; \
     \
-    # cleanup and finish (non-fatal)
+    # Cleanup
     cd / || true; rm -rf /libdrm 2>/dev/null || true; \
     /usr/local/bin/check_llvm15.sh "post-libdrm-source-build" || true; \
-    echo "=== libdrm RUN finished (non-fatal) ==="; \
+    echo "=== libdrm BUILD finished (non-fatal) ==="; \
     true
+
+
 # ======================
 # SECTION: libepoxy Build from Source
 # ======================
 RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-libepoxy-source-build" || true && \
     \
-    # Install meson, ninja and build dependencies (avoiding libepoxy-dev)
-    echo "=== INSTALLING NINJA AND BUILD DEPENDENCIES ===" && \
+    echo "=== INSTALLING BUILD DEPENDENCIES ===" && \
     /usr/local/bin/check_llvm15.sh "after-libepoxy-deps-install" || true && \
     \
-    # Clone libepoxy source
     echo "=== CLONING LIBEPOXY SOURCE ===" && \
     git clone --depth=1 --branch 1.5.10 https://github.com/anholt/libepoxy.git libepoxy && \
     cd libepoxy && \
     \
-    # Verify source integrity
     echo "=== SOURCE CONTAMINATION SCAN ===" && \
     grep -RIn "LLVM15\|llvm-15" . 2>/dev/null | tee /tmp/libepoxy_source_scan.log || true && \
     \
-    # Configure with meson and LLVM16 enforcement
     echo "=== CONFIGURING LIBEPOXY WITH LLVM16 EXPLICIT PATHS ===" && \
     CC=/custom-os/compiler/bin/clang-16 \
     CXX=/custom-os/compiler/bin/clang++-16 \
@@ -803,15 +819,12 @@ RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
         -Dwayland=false \
         -Dtests=false && \
     \
-    # Build with verification
     echo "=== BUILDING LIBEPOXY ===" && \
     ninja -C builddir -j"$(nproc)" 2>&1 | tee /tmp/libepoxy-build.log && \
     \
-    # Install with verification
     echo "=== INSTALLING LIBEPOXY ===" && \
     ninja -C builddir install 2>&1 | tee /tmp/libepoxy-install.log && \
     \
-    # Verify installation
     echo "=== LIBEPOXY INSTALLATION VERIFICATION ===" && \
     echo "Libraries installed:" && \
     ls -la /custom-os/usr/lib/libepoxy* 2>/dev/null || echo "No libepoxy libraries found" && \
@@ -820,7 +833,6 @@ RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
     echo "PKG-config files:" && \
     ls -la /custom-os/usr/lib/pkgconfig/epoxy.pc 2>/dev/null || echo "No epoxy.pc found" && \
     \
-    # Create necessary symlinks if needed
     echo "=== CREATING REQUIRED SYMLINKS ===" && \
     cd /custom-os/usr/lib && \
     for lib in $(ls libepoxy*.so.*.* 2>/dev/null); do \
@@ -831,15 +843,12 @@ RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
         echo "Created symlinks for $lib"; \
     done && \
     \
-    # Final contamination check
     echo "=== FINAL CONTAMINATION SCAN ===" && \
     find /custom-os/usr/lib -name "libepoxy*" -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee /tmp/libepoxy_contamination.log || true && \
     \
-    # Cleanup
     cd / && \
     rm -rf libepoxy && \
     \
-    # Final verification
     /usr/local/bin/check_llvm15.sh "post-libepoxy-source-build" || true && \
     echo "=== LIBEPOXY BUILD COMPLETE ===" && \
     if [ -f /custom-os/usr/lib/libepoxy.so ] && [ -f /custom-os/usr/include/epoxy/gl.h ]; then \
@@ -848,136 +857,6 @@ RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
         echo "⚠ WARNING: Some libepoxy components missing"; \
     fi
 
-# ======================
-# SECTION: Xorg Server Build (sysroot-focused, non-fatal) — FINAL
-# ======================
-
-RUN echo "=== BUILDING XORG-SERVER FROM SOURCE WITH LLVM16 ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-xorg-server-source-build" || true; \
-    \
-    # Clone xorg-server source
-    echo "=== CLONING XORG-SERVER SOURCE ===" && \
-    git clone --depth=1 --branch xorg-server-21.1.8 https://gitlab.freedesktop.org/xorg/xserver.git xorg-server || (echo "⚠ xorg-server not cloned; skipping build commands" && exit 0); \
-    if [ -d xorg-server ]; then cd xorg-server; else echo "⚠ xorg-server directory missing; skipping build"; exit 0; fi; \
-    \
-    # Verify source integrity
-    echo "=== SOURCE CONTAMINATION SCAN ===" && \
-    grep -RIn "LLVM15\|llvm-15" . 2>/dev/null | tee /tmp/xorg_source_scan.log || true; \
-    \
-    # Set up environment for proper sysroot build (consistent with libdrm approach)
-    export PATH="/custom-os/compiler/bin:$PATH"; \
-    export CC=/custom-os/compiler/bin/clang-16; \
-    export CXX=/custom-os/compiler/bin/clang++-16; \
-    if [ -x /custom-os/compiler/bin/llvm-config-16 ]; then export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config-16; else export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config; fi; \
-    export PKG_CONFIG_SYSROOT_DIR="/custom-os"; \
-    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
-    export CFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a"; \
-    export CXXFLAGS="$CFLAGS"; \
-    export LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib"; \
-    \
-    # Run filesystem check
-    echo "=== FILESYSTEM DIAGNOSIS ==="; \
-    /usr/local/bin/check-filesystem.sh || true; \
-    \
-    # Compiler/linker test (non-fatal)
-    printf 'int main(void){return 0;}\n' > /tmp/xorg_toolchain_test.c; \
-    echo "=== COMPILER CHECK (non-fatal, verbose) ==="; \
-    $CC $CFLAGS -Wl,--sysroot=/custom-os -v -Wl,--verbose -o /tmp/xorg_toolchain_test /tmp/xorg_toolchain_test.c 2>/tmp/xorg_toolchain_test.err || (echo "✗ compiler test failed (continuing) - show first 200 lines:" && sed -n '1,200p' /tmp/xorg_toolchain_test.err); \
-    if [ -x /tmp/xorg_toolchain_test ]; then echo "✓ compiler test OK"; else echo "⚠ compiler test failed — configure may also fail (see above)"; fi; \
-    \
-    # Configure with proper sysroot approach (relative paths, DESTDIR will handle deployment)
-    echo "=== CONFIGURING XORG-SERVER WITH PROPER SYSROOT APPROACH ===" && \
-    autoreconf -fiv && \
-    ./configure \
-        --prefix=/usr \
-        --sysconfdir=/etc \
-        --localstatedir=/var \
-        --disable-systemd-logind \
-        --disable-libunwind \
-        --enable-glamor \
-        --enable-dri \
-        --enable-dri2 \
-        --enable-dri3 \
-        --enable-xvfb \
-        --enable-xnest \
-        --enable-xephyr \
-        --disable-xorg \
-        --disable-dmx \
-        --disable-xwin \
-        --disable-xquartz \
-        --without-dtrace || (echo "✗ configure failed (continuing)" && /usr/local/bin/dep_chain_visualizer.sh "xorg configure failed"); \
-    \
-    # Build with verification
-    echo "=== BUILDING XORG-SERVER ===" && \
-    make -j"$(nproc)" 2>&1 | tee /tmp/xorg-build.log || echo "✗ make failed (continuing)"; \
-    \
-    # Install with DESTDIR for proper sysroot deployment (consistent with libdrm)
-    echo "=== INSTALLING XORG-SERVER TO SYSROOT ===" && \
-    DESTDIR="/custom-os" make install 2>&1 | tee /tmp/xorg-install.log || echo "✗ make install failed (continuing)"; \
-    \
-    # Create X11-specific organization within the sysroot
-    echo "=== ORGANIZING XORG COMPONENTS IN SYSROOT ===" && \
-    mkdir -p /custom-os/usr/x11 && \
-    mv /custom-os/usr/bin/X* /custom-os/usr/x11/ 2>/dev/null || true; \
-    mv /custom-os/usr/lib/libxserver* /custom-os/usr/x11/ 2>/dev/null || true; \
-    mkdir -p /custom-os/usr/x11/include/xorg && \
-    cp -r include/* /custom-os/usr/x11/include/xorg/ 2>/dev/null || true; \
-    \
-    # Verify installation
-    echo "=== XORG-SERVER INSTALLATION VERIFICATION ===" && \
-    echo "Binaries installed:"; \
-    ls -la /custom-os/usr/x11/X* 2>/dev/null || echo "No Xorg binaries found"; \
-    echo "Libraries installed:"; \
-    ls -la /custom-os/usr/x11/libxserver* 2>/dev/null || echo "No Xserver libraries found"; \
-    echo "Headers installed:"; \
-    ls -la /custom-os/usr/x11/include/xorg 2>/dev/null || echo "No Xorg headers found"; \
-    \
-    # Create necessary symlinks back to standard locations for compatibility
-    echo "=== CREATING COMPATIBILITY SYMLINKS ===" && \
-    for xbin in /custom-os/usr/x11/X*; do \
-        if [ -f "$xbin" ]; then \
-            ln -sf "../x11/$(basename "$xbin")" "/custom-os/usr/bin/$(basename "$xbin")" 2>/dev/null || true; \
-            echo "Created symlink for $(basename "$xbin")"; \
-        fi; \
-    done; \
-    for xlib in /custom-os/usr/x11/libxserver*; do \
-        if [ -f "$xlib" ]; then \
-            ln -sf "../x11/$(basename "$xlib")" "/custom-os/usr/lib/$(basename "$xlib")" 2>/dev/null || true; \
-            echo "Created symlink for $(basename "$xlib")"; \
-        fi; \
-    done; \
-    \
-    # Run diagnostic scripts
-    echo "=== COMPILER DEPENDENCY CHECK ==="; \
-    /usr/local/bin/dependency_checker.sh /custom-os/compiler/bin/clang-16 || true; \
-    \
-    echo "=== COMPILER VALIDATION ==="; \
-    /usr/local/bin/binlib_validator.sh /custom-os/compiler/bin/clang-16 || true; \
-    \
-    echo "=== VERSION COMPATIBILITY CHECK ==="; \
-    /usr/local/bin/version_matrix.sh || true; \
-    \
-    echo "=== COMPILER FLAGS AUDIT ==="; \
-    /usr/local/bin/cflag_audit.sh || true; \
-    \
-    # Final contamination check
-    echo "=== FINAL CONTAMINATION SCAN ===" && \
-    find /custom-os/usr -name "*xserver*" -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee /tmp/xorg_contamination.log || true; \
-    \
-    # Cleanup
-    cd / && \
-    rm -rf xorg-server 2>/dev/null || true; \
-    \
-    # Final verification
-    /usr/local/bin/check_llvm15.sh "post-xorg-server-source-build" || true; \
-    echo "=== XORG-SERVER BUILD COMPLETE ==="; \
-    if [ -f /custom-os/usr/x11/Xvfb ] && [ -f /custom-os/usr/x11/libxserver.so ]; then \
-        echo "✓ SUCCESS: Xorg server components installed with proper sysroot approach"; \
-    else \
-        echo "⚠ WARNING: Some Xorg components missing - check build logs"; \
-    fi; \
-    true
-    
 # ======================
 # SECTION: SDL3 Image Dependencies
 # ======================
@@ -988,7 +867,6 @@ RUN echo "=== INSTALLING SDL3_IMAGE DEPENDENCIES ===" && \
     apk add --no-cache libavif-dev && \
     /usr/local/bin/check_llvm15.sh "after-libavif-dev" || true && \
     \
-    # Copy libraries to custom filesystem
     echo "=== COPYING IMAGE LIBRARIES TO CUSTOM FILESYSTEM ===" && \
     mkdir -p /custom-os/usr/media/{lib,include} && \
     cp -r /usr/lib/libtiff* /custom-os/usr/media/lib/ 2>/dev/null || true && \
@@ -998,9 +876,9 @@ RUN echo "=== INSTALLING SDL3_IMAGE DEPENDENCIES ===" && \
     cp -r /usr/include/webp /custom-os/usr/media/include/ 2>/dev/null || true && \
     cp -r /usr/include/avif /custom-os/usr/media/include/ 2>/dev/null || true && \
     \
-    # Verify installation
     echo "=== VERIFYING IMAGE LIBRARIES ===" && \
     ls -la /custom-os/usr/media/lib/libtiff* /custom-os/usr/media/lib/libwebp* /custom-os/usr/media/lib/libavif* || echo "Some libraries not found"
+
 
 # ======================
 # SECTION: Python Dependencies
@@ -1009,14 +887,13 @@ RUN echo "=== INSTALLING PYTHON DEPENDENCIES ===" && \
     pip install --no-cache-dir meson==1.4.0 mako==1.3.3 && \
     /usr/local/bin/check_llvm15.sh "after-python-packages" || true && \
     \
-    # Copy Python packages to custom filesystem
     echo "=== COPYING PYTHON PACKAGES TO CUSTOM FILESYSTEM ===" && \
     mkdir -p /custom-os/usr/python/site-packages && \
-    python -c "import os, shutil; [shutil.copytree(os.path.dirname(__import__(pkg).__file__, f'/custom-os/usr/python/site-packages/{pkg}') for pkg in ['mesonbuild', 'mako']]" && \
+    python -c "import os, shutil; [shutil.copytree(os.path.dirname(__import__(pkg).__file__), f'/custom-os/usr/python/site-packages/{pkg}') for pkg in ['mesonbuild', 'mako']]" && \
     \
-    # Verify Python packages
     echo "=== VERIFYING PYTHON PACKAGES ===" && \
     ls -la /custom-os/usr/python/site-packages/{mesonbuild,mako} || echo "Python packages not found"
+
 
 # ======================
 # SECTION: SPIRV-Tools Build
@@ -1056,14 +933,12 @@ RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
     cd ../.. && \
     rm -rf spirv-tools && \
     \
-    # Verify installation
     echo "=== VERIFYING SPIRV-TOOLS INSTALLATION ===" && \
     echo "SPIRV-Tools binaries:" && \
     ls -la /custom-os/usr/vulkan/bin/spirv-* 2>/dev/null || echo "No SPIRV-Tools binaries found" && \
     echo "SPIRV-Tools libraries:" && \
     ls -la /custom-os/usr/vulkan/lib/libSPIRV-Tools* 2>/dev/null || echo "No SPIRV-Tools libraries found" && \
     \
-    # Create symlinks
     echo "=== CREATING LIBRARY SYMLINKS ===" && \
     cd /custom-os/usr/vulkan/lib && \
     for lib in $(ls libSPIRV-Tools*.so.* 2>/dev/null); do \
@@ -1074,9 +949,9 @@ RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
         echo "Created symlinks for $lib"; \
     done && \
     \
-    # Final contamination check
     /usr/local/bin/check_llvm15.sh "post-spirv-tools-source-build" || true && \
     echo "=== SPIRV-TOOLS BUILD COMPLETE ==="
+
 
 # ======================
 # SECTION: Shaderc Build
@@ -1110,14 +985,12 @@ RUN echo "=== BUILDING SHADERC FROM SOURCE TO AVOID LLVM15 ===" && \
     cd ../.. && \
     rm -rf shaderc && \
     \
-    # Verify installation
     echo "=== SHADERC INSTALLATION VERIFICATION ===" && \
     echo "Shaderc binaries:" && \
     ls -la /custom-os/usr/vulkan/bin/shaderc* 2>/dev/null || echo "No shaderc binaries found" && \
     echo "Shaderc libraries:" && \
     ls -la /custom-os/usr/vulkan/lib/libshaderc* 2>/dev/null || echo "No shaderc libraries found" && \
     \
-    # Create symlinks
     echo "=== CREATING LIBRARY SYMLINKS ===" && \
     cd /custom-os/usr/vulkan/lib && \
     for lib in $(ls libshaderc*.so.* 2>/dev/null); do \
@@ -1163,12 +1036,10 @@ RUN echo "=== BUILDING libgbm FROM SOURCE ===" && \
     cd .. && \
     rm -rf libgbm && \
     \
-    # Verify installation
     echo "=== LIBGBM INSTALLATION VERIFICATION ===" && \
     echo "libgbm libraries:" && \
     ls -la /custom-os/usr/lib/libgbm* 2>/dev/null || echo "No libgbm libraries found" && \
     \
-    # Create symlinks
     echo "=== CREATING LIBRARY SYMLINKS ===" && \
     cd /custom-os/usr/lib && \
     for lib in $(ls libgbm.so.* 2>/dev/null); do \
@@ -1188,7 +1059,6 @@ RUN echo "=== BUILDING libgbm FROM SOURCE ===" && \
 RUN echo "=== BUILDING GST-PLUGINS-BASE FROM SOURCE TO AVOID LLVM15 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-gst-plugins-base-source-build" || true && \
     \
-    # Install build dependencies
     wget https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-1.20.3.tar.xz && \
     tar -xvf gst-plugins-base-1.20.3.tar.xz && \
     cd gst-plugins-base-1.20.3 && \
@@ -1218,14 +1088,12 @@ RUN echo "=== BUILDING GST-PLUGINS-BASE FROM SOURCE TO AVOID LLVM15 ===" && \
     cd .. && \
     rm -rf gst-plugins-base-* && \
     \
-    # Verify installation
     echo "=== GST-PLUGINS-BASE INSTALLATION VERIFICATION ===" && \
     echo "GStreamer plugins:" && \
     ls -la /custom-os/usr/media/lib/gstreamer-1.0/ 2>/dev/null || echo "No GStreamer plugins found" && \
     echo "GStreamer libraries:" && \
     ls -la /custom-os/usr/media/lib/libgst* 2>/dev/null || echo "No GStreamer libraries found" && \
     \
-    # Create symlinks
     echo "=== CREATING LIBRARY SYMLINKS ===" && \
     cd /custom-os/usr/media/lib && \
     for lib in $(ls libgst*.so.* 2>/dev/null); do \
@@ -1238,6 +1106,113 @@ RUN echo "=== BUILDING GST-PLUGINS-BASE FROM SOURCE TO AVOID LLVM15 ===" && \
     \
     /usr/local/bin/check_llvm15.sh "post-gst-plugins-base-source-build" || true && \
     echo "=== GST-PLUGINS-BASE BUILD COMPLETE ==="
+RUN echo "=== BUILDING XORG-SERVER FROM SOURCE WITH LLVM16 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-xorg-server-source-build" || true; \
+    \
+    echo "=== CLONING XORG-SERVER SOURCE ===" && \
+    git clone --depth=1 --branch xorg-server-21.1.8 https://gitlab.freedesktop.org/xorg/xserver.git xorg-server || (echo "⚠ xorg-server not cloned; skipping build commands" && exit 0); \
+    if [ -d xorg-server ]; then cd xorg-server; else echo "⚠ xorg-server directory missing; skipping build"; exit 0; fi; \
+    \
+    echo "=== SOURCE CONTAMINATION SCAN ===" && \
+    grep -RIn "LLVM15\|llvm-15" . 2>/dev/null | tee /tmp/xorg_source_scan.log || true; \
+    \
+    # Set up sysroot environment
+    export PATH="/custom-os/compiler/bin:$PATH"; \
+    export CC=/custom-os/compiler/bin/clang-16; \
+    export CXX=/custom-os/compiler/bin/clang++-16; \
+    if [ -x /custom-os/compiler/bin/llvm-config-16 ]; then export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config-16; else export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config; fi; \
+    export PKG_CONFIG_SYSROOT_DIR="/custom-os"; \
+    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+    export CFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a"; \
+    export CXXFLAGS="$CFLAGS"; \
+    export LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib"; \
+    \
+    echo "=== FILESYSTEM DIAGNOSIS ==="; \
+    /usr/local/bin/check-filesystem.sh || true; \
+    \
+    # Compiler test
+    printf 'int main(void){return 0;}\n' > /tmp/xorg_toolchain_test.c; \
+    echo "=== COMPILER CHECK (non-fatal, verbose) ==="; \
+    $CC $CFLAGS -Wl,--sysroot=/custom-os -v -Wl,--verbose -o /tmp/xorg_toolchain_test /tmp/xorg_toolchain_test.c 2>/tmp/xorg_toolchain_test.err || (echo "✗ compiler test failed (continuing) - show first 200 lines:" && sed -n '1,200p' /tmp/xorg_toolchain_test.err); \
+    if [ -x /tmp/xorg_toolchain_test ]; then echo "✓ compiler test OK"; else echo "⚠ compiler test failed — configure may also fail (see above)"; fi; \
+    \
+    echo "=== CONFIGURING XORG-SERVER WITH PROPER SYSROOT APPROACH ===" && \
+    autoreconf -fiv && \
+    ./configure \
+        --prefix=/usr \
+        --sysconfdir=/etc \
+        --localstatedir=/var \
+        --disable-systemd-logind \
+        --disable-libunwind \
+        --enable-glamor \
+        --enable-dri \
+        --enable-dri2 \
+        --enable-dri3 \
+        --enable-xvfb \
+        --enable-xnest \
+        --enable-xephyr \
+        --disable-xorg \
+        --disable-dmx \
+        --disable-xwin \
+        --disable-xquartz \
+        --without-dtrace || (echo "✗ configure failed (continuing)" && /usr/local/bin/dep_chain_visualizer.sh "xorg configure failed"); \
+    \
+    echo "=== BUILDING XORG-SERVER ===" && \
+    make -j"$(nproc)" 2>&1 | tee /tmp/xorg-build.log || echo "✗ make failed (continuing)"; \
+    \
+    echo "=== INSTALLING XORG-SERVER TO SYSROOT ===" && \
+    DESTDIR="/custom-os" make install 2>&1 | tee /tmp/xorg-install.log || echo "✗ make install failed (continuing)"; \
+    \
+    echo "=== ORGANIZING XORG COMPONENTS IN SYSROOT ===" && \
+    mkdir -p /custom-os/usr/x11 && \
+    mv /custom-os/usr/bin/X* /custom-os/usr/x11/ 2>/dev/null || true; \
+    mv /custom-os/usr/lib/libxserver* /custom-os/usr/x11/ 2>/dev/null || true; \
+    mkdir -p /custom-os/usr/x11/include/xorg && \
+    cp -r include/* /custom-os/usr/x11/include/xorg/ 2>/dev/null || true; \
+    \
+    echo "=== XORG-SERVER INSTALLATION VERIFICATION ===" && \
+    echo "Binaries installed:"; \
+    ls -la /custom-os/usr/x11/X* 2>/dev/null || echo "No Xorg binaries found"; \
+    echo "Libraries installed:"; \
+    ls -la /custom-os/usr/x11/libxserver* 2>/dev/null || echo "No Xserver libraries found"; \
+    echo "Headers installed:"; \
+    ls -la /custom-os/usr/x11/include/xorg 2>/dev/null || echo "No Xorg headers found"; \
+    \
+    echo "=== CREATING COMPATIBILITY SYMLINKS ===" && \
+    for xbin in /custom-os/usr/x11/X*; do \
+        if [ -f "$xbin" ]; then \
+            ln -sf "../x11/$(basename "$xbin")" "/custom-os/usr/bin/$(basename "$xbin")" 2>/dev/null || true; \
+            echo "Created symlink for $(basename "$xbin")"; \
+        fi; \
+    done; \
+    for xlib in /custom-os/usr/x11/libxserver*; do \
+        if [ -f "$xlib" ]; then \
+            ln -sf "../x11/$(basename "$xlib")" "/custom-os/usr/lib/$(basename "$xlib")" 2>/dev/null || true; \
+            echo "Created symlink for $(basename "$xlib")"; \
+        fi; \
+    done; \
+    \
+    # Run diagnostic scripts
+    echo "=== DIAGNOSTIC CHECKS ==="; \
+    /usr/local/bin/dependency_checker.sh /custom-os/compiler/bin/clang-16 || true; \
+    /usr/local/bin/binlib_validator.sh /custom-os/compiler/bin/clang-16 || true; \
+    /usr/local/bin/version_matrix.sh || true; \
+    /usr/local/bin/cflag_audit.sh || true; \
+    \
+    echo "=== FINAL CONTAMINATION SCAN ===" && \
+    find /custom-os/usr -name "*xserver*" -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee /tmp/xorg_contamination.log || true; \
+    \
+    cd / && \
+    rm -rf xorg-server 2>/dev/null || true; \
+    \
+    /usr/local/bin/check_llvm15.sh "post-xorg-server-source-build" || true; \
+    echo "=== XORG-SERVER BUILD COMPLETE ==="; \
+    if [ -f /custom-os/usr/x11/Xvfb ] && [ -f /custom-os/usr/x11/libxserver.so ]; then \
+        echo "✓ SUCCESS: Xorg server components installed with proper sysroot approach"; \
+    else \
+        echo "⚠ WARNING: Some Xorg components missing - check build logs"; \
+    fi; \
+    true
 
 # ======================
 # SECTION: Mesa Build (sysroot-focused, non-fatal) — FINAL
