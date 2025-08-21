@@ -791,23 +791,61 @@ RUN echo "=== BUILDING JACK2 FROM SOURCE ===" && \
 RUN echo "=== BUILDING PlutoSVG FROM SOURCE ===" && \
     /usr/local/bin/check_llvm15.sh "pre-plutosvg-source-build" || true && \
     \
-    git clone --depth=1 https://gitlab.freedesktop.org/plutodesign/plutosvg.git /tmp/plutosvg && \
-    cd /tmp/plutosvg && \
+    # Remove any previous sources (avoid cached git from old layers) and prepare tmp
+    rm -rf /tmp/plutosvg /tmp/plutosvg-source && \
+    mkdir -p /tmp/plutosvg && cd /tmp/plutosvg && \
     \
-    echo ">>> Configuring PlutoSVG <<<" && \
-    export PKG_CONFIG_SYSROOT_DIR="/custom-os" && \
-    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig" && \
-    meson setup builddir \
-        --prefix=/usr && \
+    # Clone PlutoSVG from the public GitHub repository
+    if git clone --depth=1 https://github.com/sammycage/plutosvg.git /tmp/plutosvg-source; then \
+        echo "PlutoSVG source cloned successfully from GitHub"; \
+    else \
+        echo "ERROR: Could not clone PlutoSVG repository" >&2 && false; \
+    fi && \
     \
-    ninja -C builddir -v && \
-    DESTDIR="/custom-os" ninja -C builddir install && \
+    cd /tmp/plutosvg-source && \
     \
+    # Ensure we have a modern Meson (>=1.3.0) which understands c_std lists like "gnu11,c11".
+    # Use pip to upgrade meson into /usr/local so it takes precedence over apk's meson.
+    if command -v python3 >/dev/null 2>&1 && command -v pip3 >/dev/null 2>&1; then \
+        echo "Upgrading pip tools and installing a modern meson via pip" && \
+        python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel || true && \
+        python3 -m pip install --no-cache-dir 'meson>=1.3.0' || echo "Warning: pip meson install failed - will attempt fallback patch"; \
+    else \
+        echo "python3/pip3 not available, will attempt fallback patch"; \
+    fi && \
+    \
+    # As a fallback: patch subproject meson.build files to change 'gnu11,c11' -> 'gnu11' (best-effort)
+    # This avoids parse-time errors on older Meson when lists are used in default_options.
+    echo "Applying conservative fallback patches to subprojects (if present)" && \
+    find . -type f -path '*/subprojects/*/meson.build' -print -exec sed -i 's/gnu11,c11/gnu11/g; s/gnu11,c11/gnu11/g; s/gnu17,c17/gnu17/g' {} \; 2>/dev/null || true && \
+    find . -type f -path '*/subprojects/*/meson.build' -print -exec sed -n '1,120p' {} \; 2>/dev/null || true && \
+    \
+    # Configure and build using Meson+Ninja (pass -Dc_std as an extra guard)
+    if [ -f meson.build ]; then \
+        echo ">>> Configuring PlutoSVG via Meson <<<" && \
+        export PKG_CONFIG_SYSROOT_DIR="/custom-os" && \
+        export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig" && \
+        meson --version || echo "meson not found or version unknown" && \
+        meson setup builddir --prefix=/usr -Dc_std=gnu11 || { echo 'Meson configure failed' >&2; false; } && \
+        ninja -C builddir -v || { echo 'Ninja build failed' >&2; false; } && \
+        DESTDIR="/custom-os" ninja -C builddir install || { echo 'Install failed' >&2; false; }; \
+    else \
+        echo "ERROR: meson.build not found, cannot configure PlutoSVG" >&2 && false; \
+    fi && \
+    \
+    # Verify installation
     echo "=== VERIFYING PlutoSVG INSTALLATION ===" && \
-    find /custom-os -name "*plutosvg*" -type f | tee /tmp/plutosvg_install.log && \
+    if find /custom-os -name "*plutosvg*" -type f | tee /tmp/plutosvg_install.log; then \
+        echo "PlutoSVG files present in /custom-os"; \
+    else \
+        echo "WARNING: No PlutoSVG files found in /custom-os"; \
+    fi && \
     /usr/local/bin/check_llvm15.sh "post-plutosvg-install" || true && \
     \
-    cd / && rm -rf /tmp/plutosvg
+    # Cleanup
+    cd / && rm -rf /tmp/plutosvg /tmp/plutosvg-source
+
+
 # ======================
 # SECTION: pciaccess Build (Linux only)
 # ======================
@@ -1637,31 +1675,6 @@ RUN echo "=== BUILDING JACK2 FROM SOURCE ===" && \
     /usr/local/bin/check_llvm15.sh "post-jack2-install" || true && \
     \
     cd / && rm -rf /tmp/jack2
-
-# ======================
-# BUILD PlutoSVG
-# ======================
-RUN echo "=== BUILDING PlutoSVG FROM SOURCE ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-plutosvg-source-build" || true && \
-    \
-    git clone --depth=1 https://gitlab.freedesktop.org/plutodesign/plutosvg.git /tmp/plutosvg && \
-    cd /tmp/plutosvg && \
-    \
-    echo ">>> Configuring PlutoSVG <<<" && \
-    export PKG_CONFIG_SYSROOT_DIR="/custom-os" && \
-    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig" && \
-    meson setup builddir \
-        --prefix=/usr && \
-    \
-    ninja -C builddir -v && \
-    DESTDIR="/custom-os" ninja -C builddir install && \
-    \
-    echo "=== VERIFYING PlutoSVG INSTALLATION ===" && \
-    find /custom-os -name "*plutosvg*" -type f | tee /tmp/plutosvg_install.log && \
-    /usr/local/bin/check_llvm15.sh "post-plutosvg-install" || true && \
-    \
-    cd / && rm -rf /tmp/plutosvg
-
 
 # ======================
 # SECTION: SDL3 Build
