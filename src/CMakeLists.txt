@@ -21,10 +21,15 @@ endif()
 
 get_filename_component(PROJECT_ROOT "${CMAKE_SOURCE_DIR}/.." ABSOLUTE)
 
-# SDL3 configuration
+# SDL3 configuration with custom filesystem support
 if(NOT SDL3_INSTALL_DIR)
     if(ALPINE_LINUX_BUILD)
-        set(SDL3_INSTALL_DIR "/usr/local")
+        # Check for custom filesystem first, then fallback to standard paths
+        if(EXISTS "/custom-os/usr/local")
+            set(SDL3_INSTALL_DIR "/custom-os/usr/local")
+        else()
+            set(SDL3_INSTALL_DIR "/usr/local")
+        endif()
     else()
         set(SDL3_INSTALL_DIR "${PROJECT_ROOT}/build/deps/install")
     endif()
@@ -35,7 +40,35 @@ list(PREPEND CMAKE_PREFIX_PATH "${SDL3_INSTALL_DIR}")
 list(PREPEND CMAKE_INCLUDE_PATH "${SDL3_INSTALL_DIR}/include")
 list(PREPEND CMAKE_LIBRARY_PATH "${SDL3_INSTALL_DIR}/lib")
 
+# Add custom filesystem organized component paths for Alpine builds
+if(ALPINE_LINUX_BUILD AND EXISTS "/custom-os")
+    list(PREPEND CMAKE_PREFIX_PATH "/custom-os/usr")
+    list(PREPEND CMAKE_INCLUDE_PATH "/custom-os/usr/include")
+    list(PREPEND CMAKE_LIBRARY_PATH "/custom-os/usr/lib")
+
+    # Add organized component paths
+    list(APPEND CMAKE_LIBRARY_PATH "/custom-os/usr/vulkan/lib")
+    list(APPEND CMAKE_LIBRARY_PATH "/custom-os/usr/graphics/lib")
+    list(APPEND CMAKE_LIBRARY_PATH "/custom-os/usr/audio/lib")
+    list(APPEND CMAKE_LIBRARY_PATH "/custom-os/usr/x11/lib")
+    list(APPEND CMAKE_LIBRARY_PATH "/custom-os/usr/runtime/lib")
+    list(APPEND CMAKE_LIBRARY_PATH "/custom-os/compiler/lib")
+    list(APPEND CMAKE_LIBRARY_PATH "/custom-os/glibc/lib")
+
+    list(APPEND CMAKE_INCLUDE_PATH "/custom-os/usr/vulkan/include")
+    list(APPEND CMAKE_INCLUDE_PATH "/custom-os/usr/graphics/include")
+    list(APPEND CMAKE_INCLUDE_PATH "/custom-os/usr/audio/include")
+    list(APPEND CMAKE_INCLUDE_PATH "/custom-os/usr/x11/include")
+    list(APPEND CMAKE_INCLUDE_PATH "/custom-os/compiler/include")
+    list(APPEND CMAKE_INCLUDE_PATH "/custom-os/glibc/include")
+endif()
+
 set(ENV{PKG_CONFIG_PATH} "${SDL3_INSTALL_DIR}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+
+# Enhanced PKG_CONFIG_PATH for custom filesystem
+if(ALPINE_LINUX_BUILD AND EXISTS "/custom-os")
+    set(ENV{PKG_CONFIG_PATH} "/custom-os/usr/lib/pkgconfig:/custom-os/usr/vulkan/lib/pkgconfig:/custom-os/usr/graphics/lib/pkgconfig:/custom-os/usr/audio/lib/pkgconfig:/custom-os/usr/x11/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+endif()
 
 if(NATIVE_MACOS_BUILD)
     # macOS-specific SDL3 finding
@@ -105,19 +138,19 @@ if(NATIVE_MACOS_BUILD)
 else()
     # Alpine/Linux configuration
     find_package(SDL3 REQUIRED CONFIG)
-    
+
     # Use software rendering in Alpine
     # Use software rendering in Alpine
     if(ALPINE_LINUX_BUILD)
         # Look for custom-built Mesa first, then system packages
         find_library(MESA_LIBRARY NAMES mesa
-            PATHS /usr/local/lib /usr/lib
+            PATHS /custom-os/usr/local/lib /custom-os/usr/lib /custom-os/usr/graphics/lib /usr/local/lib /usr/lib
         )
         find_library(LLVMPIPE_LIBRARY NAMES llvmpipe
-            PATHS /usr/local/lib /usr/lib
+            PATHS /custom-os/usr/local/lib /custom-os/usr/lib /custom-os/usr/graphics/lib /usr/local/lib /usr/lib
         )
         find_library(OSMESA_LIBRARY NAMES OSMesa
-            PATHS /usr/local/lib /usr/lib
+            PATHS /custom-os/usr/local/lib /custom-os/usr/lib /custom-os/usr/graphics/lib /usr/local/lib /usr/lib
         )
         
         if(MESA_LIBRARY AND LLVMPIPE_LIBRARY)
@@ -129,7 +162,7 @@ else()
         endif()
         
         find_path(OPENGL_INCLUDE_DIRS NAMES GL/gl.h
-            PATHS /usr/local/include /usr/include
+            PATHS /custom-os/usr/local/include /custom-os/usr/include /custom-os/usr/graphics/include /usr/local/include /usr/include
         )
     else()
         # Generic Linux with hardware acceleration
@@ -143,11 +176,11 @@ else()
     if(ALPINE_LINUX_BUILD)
         # Custom built Vulkan (headers and loader from source)
         find_path(VULKAN_INCLUDE_DIR vulkan/vulkan.h
-            PATHS /usr/local/include
+            PATHS /custom-os/usr/local/include /custom-os/usr/include /custom-os/usr/vulkan/include /usr/local/include
             NO_DEFAULT_PATH
         )
         find_library(VULKAN_LIBRARIES vulkan
-            PATHS /usr/local/lib
+            PATHS /custom-os/usr/local/lib /custom-os/usr/lib /custom-os/usr/vulkan/lib /usr/local/lib
             NO_DEFAULT_PATH
         )
     else()
@@ -175,28 +208,28 @@ endif()
 # Additional support for all SDL3 external libraries
 if(ALPINE_LINUX_BUILD)
     find_library(SDL3_IMAGE_LIBRARY NAMES SDL3_image
-        PATHS /usr/local/lib
+        PATHS /custom-os/usr/local/lib /custom-os/usr/lib /custom-os/usr/media/lib /usr/local/lib
         NO_DEFAULT_PATH
     )
     find_library(SDL3_MIXER_LIBRARY NAMES SDL3_mixer
-        PATHS /usr/local/lib
+        PATHS /custom-os/usr/local/lib /custom-os/usr/lib /custom-os/usr/audio/lib /usr/local/lib
         NO_DEFAULT_PATH
     )
     find_library(SDL3_TTF_LIBRARY NAMES SDL3_ttf
-        PATHS /usr/local/lib
+        PATHS /custom-os/usr/local/lib /custom-os/usr/lib /custom-os/usr/graphics/lib /usr/local/lib
         NO_DEFAULT_PATH
     )
-    
+
     find_path(SDL3_IMAGE_INCLUDE_DIR NAMES SDL3/SDL_image.h
-        PATHS /usr/local/include
+        PATHS /custom-os/usr/local/include /custom-os/usr/include /custom-os/usr/media/include /usr/local/include
         NO_DEFAULT_PATH
     )
     find_path(SDL3_MIXER_INCLUDE_DIR NAMES SDL3/SDL_mixer.h
-        PATHS /usr/local/include
+        PATHS /custom-os/usr/local/include /custom-os/usr/include /custom-os/usr/audio/include /usr/local/include
         NO_DEFAULT_PATH
     )
     find_path(SDL3_TTF_INCLUDE_DIR NAMES SDL3/SDL_ttf.h
-        PATHS /usr/local/include
+        PATHS /custom-os/usr/local/include /custom-os/usr/include /custom-os/usr/graphics/include /usr/local/include
         NO_DEFAULT_PATH
     )
 endif()
@@ -206,20 +239,20 @@ endif()
 # have been a problem for the past week as this project has gotten HUGEEEEE
 if(ALPINE_LINUX_BUILD)
     find_library(SPIRV_TOOLS_LIBRARY NAMES SPIRV-Tools
-        PATHS /usr/local/lib
+        PATHS /custom-os/usr/local/lib /custom-os/usr/lib /custom-os/usr/vulkan/lib /usr/local/lib
         NO_DEFAULT_PATH
     )
     find_path(SPIRV_TOOLS_INCLUDE_DIR NAMES spirv-tools/libspirv.h
-        PATHS /usr/local/include
+        PATHS /custom-os/usr/local/include /custom-os/usr/include /custom-os/usr/vulkan/include /usr/local/include
         NO_DEFAULT_PATH
     )
-    
+
     find_library(SHADERC_LIBRARY NAMES shaderc_shared shaderc
-        PATHS /usr/local/lib
+        PATHS /custom-os/usr/local/lib /custom-os/usr/lib /custom-os/usr/vulkan/lib /usr/local/lib
         NO_DEFAULT_PATH
     )
     find_path(SHADERC_INCLUDE_DIR NAMES shaderc/shaderc.h
-        PATHS /usr/local/include
+        PATHS /custom-os/usr/local/include /custom-os/usr/include /custom-os/usr/vulkan/include /usr/local/include
         NO_DEFAULT_PATH
     )
 endif()
@@ -227,11 +260,11 @@ endif()
 # GBM stuff
 if(ALPINE_LINUX_BUILD)
     find_library(GBM_LIBRARY NAMES gbm
-        PATHS /usr/local/lib
+        PATHS /custom-os/usr/local/lib /custom-os/usr/lib /custom-os/usr/graphics/lib /usr/local/lib
         NO_DEFAULT_PATH
     )
     find_path(GBM_INCLUDE_DIR NAMES gbm.h
-        PATHS /usr/local/include
+        PATHS /custom-os/usr/local/include /custom-os/usr/include /custom-os/usr/graphics/include /usr/local/include
         NO_DEFAULT_PATH
     )
 endif()
@@ -239,11 +272,11 @@ endif()
 # Mesa libraries (built from source in Alpine)
 if(ALPINE_LINUX_BUILD)
     find_library(EGL_LIBRARY NAMES EGL
-        PATHS /usr/local/lib
+        PATHS /custom-os/usr/local/lib /custom-os/usr/lib /custom-os/usr/graphics/lib /usr/local/lib
         NO_DEFAULT_PATH
     )
     find_path(EGL_INCLUDE_DIR NAMES EGL/egl.h
-        PATHS /usr/local/include
+        PATHS /custom-os/usr/local/include /custom-os/usr/include /custom-os/usr/graphics/include /usr/local/include
         NO_DEFAULT_PATH
     )
 endif()
@@ -251,11 +284,11 @@ endif()
 # SQLite3 (built from source in Alpine)
 if(ALPINE_LINUX_BUILD)
     find_library(SQLITE3_LIBRARY NAMES sqlite3
-        PATHS /usr/local/lib
+        PATHS /custom-os/usr/local/lib /custom-os/usr/lib /custom-os/usr/db/lib /usr/local/lib
         NO_DEFAULT_PATH
     )
     find_path(SQLITE3_INCLUDE_DIR NAMES sqlite3.h
-        PATHS /usr/local/include
+        PATHS /custom-os/usr/local/include /custom-os/usr/include /custom-os/usr/db/include /usr/local/include
         NO_DEFAULT_PATH
     )
 endif()
@@ -297,7 +330,10 @@ if(ALPINE_LINUX_BUILD)
     if(SQLITE3_INCLUDE_DIR)
         list(APPEND EXTRA_INCLUDE_DIRS ${SQLITE3_INCLUDE_DIR})
     endif()
-    # Add custom built library paths
+    # Add custom built library paths - prioritize custom filesystem
+    list(APPEND EXTRA_INCLUDE_DIRS "/custom-os/usr/local/include")
+    list(APPEND EXTRA_INCLUDE_DIRS "/custom-os/usr/local/include/xorg")
+    list(APPEND EXTRA_INCLUDE_DIRS "/custom-os/usr/include")
     list(APPEND EXTRA_INCLUDE_DIRS "/usr/local/include")
     list(APPEND EXTRA_INCLUDE_DIRS "/usr/local/include/xorg")
 endif()
