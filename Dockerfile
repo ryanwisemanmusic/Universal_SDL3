@@ -633,33 +633,35 @@ RUN chmod +x /usr/local/bin/check-filesystem.sh /usr/local/bin/dependency_checke
 # Stage: filesystem setup - Install base-deps
 FROM filesystem-base-deps-builder AS filesystem-libs-build-builder
 
-#RUN apk add --no-cache libgl1-mesa-dev && /usr/local/bin/check_llvm15.sh "after-libgl1-mesa-dev" || true
-RUN echo "=== BUILDING Apache FOP 2.11 FROM SOURCE ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-fop-source-build" || true && \
+# ======================
+# SECTION: Apache FOP Integration
+# ======================
+RUN echo "=== INSTALLING Apache FOP 2.11 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-fop-install" || true && \
     \
-    # Fetch and extract FOP source
+    # Fetch and extract Apache FOP binary release
     mkdir -p /tmp/fop && \
-    wget -O /tmp/fop/fop-src.tar.gz https://downloads.apache.org/xmlgraphics/fop/source/fop-2.11-src.tar.gz && \
-    tar -xzf /tmp/fop/fop-src.tar.gz -C /tmp/fop --strip-components=1 && \
-    cd /tmp/fop && \
+    wget -O /tmp/fop/fop-bin.tar.gz https://dlcdn.apache.org/xmlgraphics/fop/binaries/fop-2.11-bin.tar.gz && \
+    tar -xzf /tmp/fop/fop-bin.tar.gz -C /tmp/fop --strip-components=1 && \
     \
-    echo ">>> Building FOP with Ant <<<" && \
-    export JAVA_HOME=/usr/lib/jvm/java-11-openjdk && \
-    ant -f build.xml && \
+    # Install into custom sysroot
+    mkdir -p /custom-os/usr/fop && \
+    cp -r /tmp/fop/* /custom-os/usr/fop/ && \
+    ln -sf /usr/fop/fop /custom-os/usr/bin/fop && \
     \
-    # Install to target filesystem
-    mkdir -p /custom-os/usr && \
-    cp -r build/* /custom-os/usr/ && \
+    # Fix permissions for fop launcher
+    chmod +x /custom-os/usr/fop/fop && \
     \
-    # Verify installation in target
-    echo "=== VERIFYING FOP INSTALLATION IN TARGET ===" && \
-    [ -f /custom-os/usr/fop ] && echo "fop binary exists" || echo "fop binary not found" && \
+    # Verify installation
+    echo "=== VERIFYING Apache FOP INSTALLATION ===" && \
+    [ -f /custom-os/usr/fop/fop ] && echo "FOP binary exists in sysroot" || echo "FOP binary not found" && \
+    /custom-os/usr/fop/fop -version || true && \
+    \
     /usr/local/bin/check_llvm15.sh "post-fop-install" || true && \
+    /usr/local/bin/check-filesystem.sh "post-fop-install" || true && \
     \
     # Cleanup
-    cd / && rm -rf /tmp/fop
-
-
+    rm -rf /tmp/fop
 
 # ======================
 # BUILD JACK2
