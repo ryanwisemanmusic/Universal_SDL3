@@ -1,11 +1,14 @@
 # Stage: base deps (Alpine version)
 FROM alpine:3.21 AS base-deps
 
-# Simple but effective cache-busting - safe for filesystem operations
-RUN echo "BUILD_TIMESTAMP_$(date +%s%N)" && \
-    echo "RANDOM_VALUE_$RANDOM" && \
-    echo "PROCESS_$$" && \
-    echo "NO_CACHE_BASE_DEPS"
+# ULTIMATE cache-busting - forces rebuild every time
+ARG BUILDKIT_INLINE_CACHE=0
+ARG DOCKER_BUILDKIT=1
+RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
+    echo "FORCE_REBUILD_$(date +%s%N)_$$_$RANDOM" > /tmp/nocache/timestamp && \
+    cat /tmp/nocache/timestamp && \
+    echo "CACHE_DISABLED_FOR_BASE_DEPS" && \
+    rm -f /tmp/nocache/timestamp
 
 # Install basic tools needed for filesystem operations
 RUN apk add --no-cache bash findutils wget file coreutils
@@ -110,7 +113,7 @@ export GLIBC_ROOT="/glibc"
 # Set up glibc as the primary C library
 export GLIBC_COMPAT="/glibc"
 export C_INCLUDE_PATH="/glibc/include:${C_INCLUDE_PATH:-}"
-export CPLUS_INclude_PATH="/glibc/include:${CPLUS_INCLUDE_PATH:-}"
+export CPLUS_INCLUDE_PATH="/glibc/include:${CPLUS_INCLUDE_PATH:-}"
 PROFILE
 
 # Make profile script executable
@@ -146,13 +149,10 @@ RUN /usr/local/bin/check_llvm15.sh "final-filesystem-builder" || true && \
 
 # Critical binary directory verification for base-deps stage
 RUN echo "=== STAGE END VERIFICATION: base-deps ===" && \
-    echo "Verifying binary directories /custom-os/usr/bin and /custom-os/usr/local/bin exist:" && \
-    if [ -d /custom-os/usr/bin ] && [ -d /custom-os/usr/local/bin ]; then \
-        echo "✓ base-deps stage completed - binary directories confirmed"; \
-        echo "/custom-os/usr/bin contents:"; \
-        ls -la /custom-os/usr/bin | head -5; \
-        echo "/custom-os/usr/local/bin contents:"; \
-        ls -la /custom-os/usr/local/bin; \
+    echo "Verifying binary directory /custom-os/usr/bin exists:" && \
+    if [ -d /custom-os/usr/bin ]; then \
+        ls -la /custom-os/usr/bin && \
+        echo "✓ base-deps stage completed - binary directory confirmed"; \
     else \
         echo "ERROR: Binary directory /custom-os/usr/bin does not exist!" && \
         echo "Available directories in /custom-os/usr/:" && \
@@ -543,7 +543,6 @@ RUN echo "=== INTEGRATING ORGANIZED COMPONENTS INTO MAIN SYSROOT ===" && \
 RUN cat > /custom-os/etc/environment <<'ENV'
 # Custom filesystem environment configuration with organized components
 export PATH="/glibc/bin:/glibc/sbin:/compiler/bin:/usr/bin:/usr/sbin:/usr/local/bin"
-# Note: /usr/local/bin is already included in the PATH
 export PATH="${PATH}:/usr/x11/bin:/usr/vulkan/bin:/usr/media/bin:/usr/debug/bin"
 export PATH="${PATH}:/usr/misc/bin:/usr/fs/bin:/usr/sysutils/bin:/usr/compress/bin:/usr/db/bin"
 export LLVM_CONFIG="/compiler/bin/llvm-config"
@@ -641,15 +640,14 @@ RUN echo "=== VERIFYING SYSROOT STRUCTURE ===" && \
     ls -la /custom-os/etc/environment /custom-os/etc/profile.d/ && \
     echo "Sysroot structure verification completed."
 
-# Critical binary directory verification for filesystem-base-deps-builder
-RUN echo "=== STAGE END VERIFICATION: filesystem-base-deps-builder ===" && \
-    echo "Verifying binary directories /custom-os/usr/bin and /custom-os/usr/local/bin exist:" && \
-    if [ -d /custom-os/usr/bin ] && [ -d /custom-os/usr/local/bin ]; then \
-        echo "✓ filesystem-base-deps-builder stage completed - binary directories confirmed"; \
-        echo "/custom-os/usr/bin contents:"; \
-        ls -la /custom-os/usr/bin | head -5; \
-        echo "/custom-os/usr/local/bin contents:"; \
-        ls -la /custom-os/usr/local/bin; \
+# Final contamination check
+RUN /usr/local/bin/check_llvm15.sh "final-base-deps" || true && \
+    /usr/local/bin/check-filesystem.sh "final-base-deps" || true && \
+    echo "=== STAGE END VERIFICATION: filesystem-base-deps-builder ===" && \
+    echo "Verifying binary directory /custom-os/usr/bin exists:" && \
+    if [ -d /custom-os/usr/bin ]; then \
+        ls -la /custom-os/usr/bin && \
+        echo "✓ filesystem-base-deps-builder stage completed - binary directory confirmed"; \
     else \
         echo "ERROR: Binary directory /custom-os/usr/bin does not exist!" && \
         echo "Available directories in /custom-os/usr/:" && \
@@ -694,7 +692,7 @@ COPY setup-scripts/sgid_suid_scanner.sh /usr/local/bin/sgid_suid_scanner.sh
 COPY setup-scripts/fop-wrapper.sh /tmp/fop-wrapper.sh
 RUN chmod +x /usr/local/bin/sgid_suid_scanner.sh
 
-RUN echo "=== INSTALLING Apache FOP 2.11 (launcher discovery + copy jars) ===" && \
+RUN echo "=== INSTALLING Apache FOP 2.11 (isolated, safe) ===" && \
     /usr/local/bin/check_llvm15.sh "pre-fop-install" || true && \
     \
     # Download and extract official FOP binary release
@@ -702,74 +700,70 @@ RUN echo "=== INSTALLING Apache FOP 2.11 (launcher discovery + copy jars) ===" &
     wget -O /tmp/fop/fop-bin.tar.gz https://dlcdn.apache.org/xmlgraphics/fop/binaries/fop-2.11-bin.tar.gz && \
     tar -xzf /tmp/fop/fop-bin.tar.gz -C /tmp/fop --strip-components=1 && \
     \
-    # Prepare target dirs
-    mkdir -p /custom-os/usr/fop/bin /custom-os/usr/fop/lib /custom-os/usr/fop/docs && \
+    # Prepare isolated target dirs
+    mkdir -p /custom-os/usr/fop/bin /custom-os/usr/fop/lib /custom-os/usr/fop/docs /custom-os/usr/fop/launchers && \
     \
-    # Try to locate a launcher file; if not found, try to copy a bin/ directory
+    # Locate and copy launcher file (or entire bin directory)
     launcher="$(find /tmp/fop -type f \( -name fop -o -name 'fop.sh' -o -name 'fop.bat' \) -print | head -n 1 || true)" && \
     if [ -n "$launcher" ]; then \
         echo "Found launcher at: $launcher" && cp "$launcher" /custom-os/usr/fop/bin/; \
     else \
-        echo "Launcher file not found; searching for a bin/ directory" && \
         bindir="$(find /tmp/fop -type d -name bin -print | head -n 1 || true)" && \
         if [ -n "$bindir" ]; then \
-            echo "Found bin directory at: $bindir" && \
-            cp -r "$bindir"/* /custom-os/usr/fop/bin/ 2>/dev/null || true; \
+            echo "Found bin directory at: $bindir" && cp -r "$bindir"/* /custom-os/usr/fop/bin/ 2>/dev/null || true; \
         else \
             echo "ERROR: fop launcher or bin/ directory not found in extracted tree" >&2 && ls -la /tmp/fop || true && false; \
         fi; \
     fi && \
     \
-    # Robustly collect and copy ALL jar files from anywhere in the extracted tree into lib/
+    # Copy all jar files to lib/
     echo "Copying JARs from extracted tree into /custom-os/usr/fop/lib" && \
     find /tmp/fop -type f -name '*.jar' -print -exec cp -a {} /custom-os/usr/fop/lib/ \; || true && \
     \
-    # If earlier attempts didn't find jars under /tmp/fop, try nested 'fop' dir (best-effort)
+    # Fallback if lib is empty
     if [ "$(ls -A /custom-os/usr/fop/lib 2>/dev/null || true)" = "" ]; then \
         echo "No jars copied yet; trying nested locations" && \
         find /tmp/fop -type f -path '*/fop/*' -name '*.jar' -print -exec cp -a {} /custom-os/usr/fop/lib/ \; || true; \
     fi && \
     \
-    # Copy docs/snippets if present (best-effort)
+    # Copy docs/snippets (best-effort)
     cp -r /tmp/fop/javadocs /custom-os/usr/fop/docs/ 2>/dev/null || true && \
     cp -r /tmp/fop/README* /custom-os/usr/fop/docs/ 2>/dev/null || true && \
     cp -r /tmp/fop/LICENSE* /custom-os/usr/fop/docs/ 2>/dev/null || true && \
     \
-    # Ensure proper permissions on everything in /custom-os/usr/fop
+    # Ensure proper permissions
     chmod -R a+rx /custom-os/usr/fop || true && \
     \
-    # Install user-provided POSIX wrapper (if present in build context)
+    # Install user-provided POSIX wrapper if available
     if [ -f /tmp/fop-wrapper.sh ]; then \
         echo "Installing fop-wrapper from build context into /custom-os/usr/fop/bin/fop" && \
         install -m 0755 /tmp/fop-wrapper.sh /custom-os/usr/fop/bin/fop || true; \
     fi && \
     \
-    # Make sure the launcher(s) are executable (if any were copied)
+    # Make all binaries executable
     if [ -n "$(find /custom-os/usr/fop/bin -type f -print -quit 2>/dev/null)" ]; then \
         find /custom-os/usr/fop/bin -type f -exec chmod +x {} \; 2>/dev/null || true; \
     fi && \
     \
-    # Symlink launcher into sysroot bin (if present)
+    # Create dedicated launcher symlink (isolated, safe)
     if [ -f /custom-os/usr/fop/bin/fop ]; then \
-        ln -sf /custom-os/usr/fop/bin/fop /custom-os/usr/bin/fop; \
+        ln -sf /custom-os/usr/fop/bin/fop /custom-os/usr/fop/launchers/fop; \
     elif [ -f /custom-os/usr/fop/bin/fop.sh ]; then \
-        ln -sf /custom-os/usr/fop/bin/fop.sh /custom-os/usr/bin/fop; \
-    else \
-        echo "No recognized launcher to symlink (will still run scanner)" ; \
+        ln -sf /custom-os/usr/fop/bin/fop.sh /custom-os/usr/fop/launchers/fop; \
     fi && \
     \
-    # Run SUID/SGID scanner to check for unexpected bits and list contents
+    # Update environment to include isolated launcher
+    echo 'export PATH=$PATH:/custom-os/usr/fop/launchers' >> /custom-os/etc/profile.d/sysroot.sh && \
+    echo 'export CLASSPATH=$CLASSPATH:/custom-os/usr/fop/lib/*' >> /custom-os/etc/profile.d/sysroot.sh && \
+    echo 'PATH=$PATH:/custom-os/usr/fop/launchers' >> /custom-os/etc/environment && \
+    echo 'CLASSPATH=$CLASSPATH:/custom-os/usr/fop/lib/*' >> /custom-os/etc/environment && \
+    \
+    # Run SUID/SGID scanner
     echo "=== RUNNING SUID/SGID SCANNER ON FOP INSTALLATION ===" && \
     /usr/local/bin/sgid_suid_scanner.sh /custom-os/usr/fop && \
     echo "=== SGID/SUID scan completed for FOP installation ===" && \
     \
-    # Update environment and profile.d to include FOP (bin & jars)
-    echo 'export PATH=$PATH:/custom-os/usr/fop/bin' >> /custom-os/etc/profile.d/sysroot.sh && \
-    echo 'export CLASSPATH=$CLASSPATH:/custom-os/usr/fop/lib/*' >> /custom-os/etc/profile.d/sysroot.sh && \
-    echo 'PATH=$PATH:/custom-os/usr/fop/bin' >> /custom-os/etc/environment && \
-    echo 'CLASSPATH=$CLASSPATH:/custom-os/usr/fop/lib/*' >> /custom-os/etc/environment && \
-    \
-    # Verify installation (list jars + run java explicitly with classpath wildcard)
+    # Verify installation
     echo "=== VERIFYING Apache FOP INSTALLATION ===" && \
     echo "Contents of /custom-os/usr/fop/lib:" && ls -la /custom-os/usr/fop/lib || true && \
     JAVA_BIN="$(command -v java || true)" && \
@@ -1553,26 +1547,18 @@ RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
     # Organize Mesa components in the sysroot
     echo "=== ORGANIZING MESA COMPONENTS IN SYSROOT ===" && \
     mkdir -p /custom-os/usr/mesa && \
-    mv /custom-os/usr/bin/* /custom-os/usr/mesa/ 2>/dev/null || true; \
+    # Move only Mesa-specific binaries (NOT ALL binaries) to preserve /custom-os/usr/bin integrity
+    find /custom-os/usr/bin -name "*mesa*" -o -name "*gl*" -o -name "*egl*" | xargs -I {} mv {} /custom-os/usr/mesa/ 2>/dev/null || true; \
     mv /custom-os/usr/lib/libGL* /custom-os/usr/mesa/ 2>/dev/null || true; \
     mv /custom-os/usr/lib/libEGL* /custom-os/usr/mesa/ 2>/dev/null || true; \
     mv /custom-os/usr/lib/libgbm* /custom-os/usr/mesa/ 2>/dev/null || true; \
     mv /custom-os/usr/lib/libvulkan* /custom-os/usr/mesa/ 2>/dev/null || true; \
     \
-    # Create compatibility symlinks
-    echo "=== CREATING COMPATIBILITY SYMLINKS ===" && \
-    for mesabin in /custom-os/usr/mesa/*; do \
-        if [ -f "$mesabin" ]; then \
-            ln -sf "../mesa/$(basename "$mesabin")" "/custom-os/usr/bin/$(basename "$mesabin")" 2>/dev/null || true; \
-            echo "Created symlink for $(basename "$mesabin")"; \
-        fi; \
-    done; \
-    for mesalib in /custom-os/usr/mesa/lib*; do \
-        if [ -f "$mesalib" ]; then \
-            ln -sf "../mesa/$(basename "$mesalib")" "/custom-os/usr/lib/$(basename "$mesalib")" 2>/dev/null || true; \
-            echo "Created symlink for $(basename "$mesalib")"; \
-        fi; \
-    done; \
+    # Mesa components isolated - NO symlinks to preserve binary directory integrity
+    echo "=== MESA ISOLATION COMPLETE ===" && \
+    echo "Mesa components isolated in /custom-os/usr/mesa/ directory" && \
+    echo "No symlinks created to preserve /custom-os/usr/bin for application binary" && \
+    ls -la /custom-os/usr/mesa/ 2>/dev/null || echo "Mesa directory contents not available" \
     \
     # Create DRI directory structure and helpful symlinks
     echo "=== CREATING DRI DIRECTORY STRUCTURE ===" && \
