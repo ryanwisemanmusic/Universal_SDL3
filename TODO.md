@@ -2,8 +2,6 @@ Alright, here are the things I'll be creating related to shell code
 - Shellcode that gets additional data on when a package is missing or not.
 - Shelcode to check the components and return whether or not they are found
 - Additional shellcode that pulls the source behind said component if possible?
-- Binary/Library Validator
-- Version Matrix Reporter
 - ldd checker for missing libraries highlighted (dependency walker)
 - automatic search suggestion so when file missing, a potential package and relevant paths from other stages
 - Check if missing files weren't copied to the build context (they only exist)
