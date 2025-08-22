@@ -175,3 +175,15 @@ run_docker.txt
 clean_docker.txt
 Docker.txt
 docs/pciaccess.md
+logs/build/build_app_build_docker.txt
+logs/build/build_base_deps_docker.txt
+logs/build/build_debug_docker.txt
+logs/build/build_filesystem_base_deps_builder_docker.txt
+logs/build/build_filesystem_libs_build_builder_docker.txt
+logs/build/build_runtime_docker.txt
+logs/clean/clean_app_build_docker.txt
+logs/clean/clean_base_deps_docker.txt
+logs/clean/clean_debug_docker.txt
+logs/clean/clean_filesystem_base_deps_builder_docker.txt
+logs/clean/clean_filesystem_libs_build_builder_docker.txt
+logs/clean/clean_runtime_docker.txt
