@@ -242,3 +242,131 @@ build-native-log:
 build-docker-log:
 	@echo "Building with Docker and logging output to build_docker.txt"
 	@$(MAKE) build-docker > build_docker.txt 2>&1
+
+# Stage-specific Docker builds
+.PHONY: build-base-deps-docker build-filesystem-base-deps-builder-docker \
+        build-filesystem-libs-build-builder-docker build-app-build-docker \
+        build-debug-docker build-runtime-docker
+
+build-base-deps-docker:
+	@echo "Building Docker stage: base-deps..."
+	@docker build --platform=linux/arm64 --target base-deps -t sdl3-base:latest .
+
+build-filesystem-base-deps-builder-docker:
+	@echo "Building Docker stage: filesystem-base-deps-builder..."
+	@docker build --platform=linux/arm64 --target filesystem-base-deps-builder -t sdl3-filesystem-base:latest .
+
+build-filesystem-libs-build-builder-docker:
+	@echo "Building Docker stage: filesystem-libs-build-builder..."
+	@docker build --platform=linux/arm64 --target filesystem-libs-build-builder -t sdl3-filesystem-libs:latest .
+
+build-app-build-docker:
+	@echo "Building Docker stage: app-build..."
+	@docker build --platform=linux/arm64 --target app-build -t sdl3-app-build:latest .
+
+build-debug-docker:
+	@echo "Building Docker stage: debug..."
+	@docker build --platform=linux/arm64 --target debug -t sdl3-debug:latest .
+
+build-runtime-docker:
+	@echo "Building Docker stage: runtime..."
+	@docker build --platform=linux/arm64 --target runtime -t mostsignificant/simplehttpserver .
+
+# Stage-specific Docker cleanup
+.PHONY: clean-base-deps-docker clean-filesystem-base-deps-builder-docker \
+        clean-filesystem-libs-build-builder-docker clean-app-build-docker \
+        clean-debug-docker clean-runtime-docker
+
+clean-base-deps-docker:
+	@echo "Cleaning Docker image: base-deps..."
+	@docker image rm -f sdl3-base:latest 2>/dev/null || true
+
+clean-filesystem-base-deps-builder-docker:
+	@echo "Cleaning Docker image: filesystem-base-deps-builder..."
+	@docker image rm -f sdl3-filesystem-base:latest 2>/dev/null || true
+
+clean-filesystem-libs-build-builder-docker:
+	@echo "Cleaning Docker image: filesystem-libs-build:latest..."
+	@docker image rm -f sdl3-filesystem-libs:latest 2>/dev/null || true
+
+clean-app-build-docker:
+	@echo "Cleaning Docker image: app-build..."
+	@docker image rm -f sdl3-app-build:latest 2>/dev/null || true
+
+clean-debug-docker:
+	@echo "Cleaning Docker image: debug..."
+	@docker image rm -f sdl3-debug:latest 2>/dev/null || true
+
+clean-runtime-docker:
+	@echo "Cleaning Docker image: runtime..."
+	@docker image rm -f mostsignificant/simplehttpserver 2>/dev/null || true
+
+# Stage-specific Docker build logs
+.PHONY: build-base-deps-docker-log build-filesystem-base-deps-builder-docker-log \
+        build-filesystem-libs-build-builder-docker-log build-app-build-docker-log \
+        build-debug-docker-log build-runtime-docker-log
+
+build-base-deps-docker-log:
+	@echo "Building Docker stage: base-deps (log)..."
+	@mkdir -p log
+	@$(MAKE) build-base-deps-docker > logs/build/build_base_deps_docker.txt 2>&1
+
+build-filesystem-base-deps-builder-docker-log:
+	@echo "Building Docker stage: filesystem-base-deps-builder (log)..."
+	@mkdir -p log
+	@$(MAKE) build-filesystem-base-deps-builder-docker > logs/build/build_filesystem_base_deps_builder_docker.txt 2>&1
+
+build-filesystem-libs-build-builder-docker-log:
+	@echo "Building Docker stage: filesystem-libs-build-builder (log)..."
+	@mkdir -p log
+	@$(MAKE) build-filesystem-libs-build-builder-docker > logs/build/build_filesystem_libs_build_builder_docker.txt 2>&1
+
+build-app-build-docker-log:
+	@echo "Building Docker stage: app-build (log)..."
+	@mkdir -p log
+	@$(MAKE) build-app-build-docker > logs/build/build_app_build_docker.txt 2>&1
+
+build-debug-docker-log:
+	@echo "Building Docker stage: debug (log)..."
+	@mkdir -p log
+	@$(MAKE) build-debug-docker > logs/build/build_debug_docker.txt 2>&1
+
+build-runtime-docker-log:
+	@echo "Building Docker stage: runtime (log)..."
+	@mkdir -p log
+	@$(MAKE) build-runtime-docker > logs/build/build_runtime_docker.txt 2>&1
+
+# Stage-specific Docker clean logs
+.PHONY: clean-base-deps-docker-log clean-filesystem-base-deps-builder-docker-log \
+        clean-filesystem-libs-build-builder-docker-log clean-app-build-docker-log \
+        clean-debug-docker-log clean-runtime-docker-log
+
+clean-base-deps-docker-log:
+	@echo "Cleaning Docker stage: base-deps (log)..."
+	@mkdir -p log
+	@$(MAKE) clean-base-deps-docker > logs/clean/clean_base_deps_docker.txt 2>&1
+
+clean-filesystem-base-deps-builder-docker-log:
+	@echo "Cleaning Docker stage: filesystem-base-deps-builder (log)..."
+	@mkdir -p log
+	@$(MAKE) clean-filesystem-base-deps-builder-docker > logs/clean/clean_filesystem_base_deps_builder_docker.txt 2>&1
+
+clean-filesystem-libs-build-builder-docker-log:
+	@echo "Cleaning Docker stage: filesystem-libs-build-builder (log)..."
+	@mkdir -p log
+	@$(MAKE) clean-filesystem-libs-build-builder-docker > logs/clean/clean_filesystem_libs_build_builder_docker.txt 2>&1
+
+clean-app-build-docker-log:
+	@echo "Cleaning Docker stage: app-build (log)..."
+	@mkdir -p log
+	@$(MAKE) clean-app-build-docker > logs/clean/clean_app_build_docker.txt 2>&1
+
+clean-debug-docker-log:
+	@echo "Cleaning Docker stage: debug (log)..."
+	@mkdir -p log
+	@$(MAKE) clean-debug-docker > logs/clean/clean_debug_docker.txt 2>&1
+
+clean-runtime-docker-log:
+	@echo "Cleaning Docker stage: runtime (log)..."
+	@mkdir -p log
+	@$(MAKE) clean-runtime-docker > logs/clean/clean_runtime_docker.txt 2>&1
