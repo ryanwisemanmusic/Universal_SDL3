@@ -1,5 +1,5 @@
 # Stage: base deps (Alpine version)
-FROM alpine:3.18 AS base-deps
+FROM alpine:3.21 AS base-deps
 
 # Install basic tools needed for filesystem operations
 RUN apk add --no-cache bash findutils wget file coreutils
@@ -168,6 +168,7 @@ RUN apk add --no-cache openjdk11 && /usr/local/bin/check_llvm15.sh "after-openjd
 RUN apk add --no-cache ant && /usr/local/bin/check_llvm15.sh "after-ant" || true
 RUN apk add --no-cache python3 && /usr/local/bin/check_llvm15.sh "after-python3" || true
 RUN apk add --no-cache py3-pip && /usr/local/bin/check_llvm15.sh "after-py3-pip" || true
+RUN apk add --no-cache mako && /usr/local/bin/check_llvm15.sh "after-mako" || true
 RUN apk add --no-cache m4 && /usr/local/bin/check_llvm15.sh "after-m4" || true
 RUN apk add --no-cache bison && /usr/local/bin/check_llvm15.sh "after-bison" || true
 RUN apk add --no-cache flex && /usr/local/bin/check_llvm15.sh "after-flex" || true
@@ -899,14 +900,19 @@ RUN chmod +x /usr/local/bin/check-filesystem.sh /usr/local/bin/dependency_checke
 # ======================
 # SECTION: libdrm Build (sysroot-focused, non-fatal)
 # ======================
-RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
+ARG LIBDRM_VER=2.4.125
+ARG LIBDRM_URL="https://dri.freedesktop.org/libdrm/libdrm-${LIBDRM_VER}.tar.xz"
+
+RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-libdrm-source-build" || true; \
     /usr/local/bin/check_llvm15.sh "after-libdrm-deps" || true; \
     \
-    git clone --depth=1 https://gitlab.freedesktop.org/mesa/drm.git libdrm || true; \
-    if [ -d libdrm ]; then cd libdrm; else echo "⚠ libdrm not cloned; skipping build commands"; fi; \
+    mkdir -p /tmp/libdrm-src && cd /tmp/libdrm-src; \
+    echo "Fetching libdrm tarball: ${LIBDRM_URL}"; \
+    curl -L "${LIBDRM_URL}" -o libdrm.tar.xz || (echo "⚠ Failed to fetch libdrm tarball"; exit 0); \
+    tar -xf libdrm.tar.xz --strip-components=1 || true; \
     \
-    # Set up sysroot environment
+    # sysroot and cross compiler setup
     export PATH="/custom-os/compiler/bin:$PATH"; \
     export CC=/custom-os/compiler/bin/clang-16; \
     export CXX=/custom-os/compiler/bin/clang++-16; \
@@ -917,62 +923,57 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
     export CXXFLAGS="$CFLAGS"; \
     export LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib"; \
     \
-    # SYSROOT SANITY & FIXUPS
+    # SYSROOT sanity & fix-ups
     echo "=== SYSROOT RUNTIME CHECK ==="; \
-    echo "Looking for crt & runtime files under /custom-os:"; \
     ls -la /custom-os/usr/lib/crt* /custom-os/usr/lib/Scrt1.o /custom-os/usr/lib/gcc 2>/dev/null || true; \
     ls -la /custom-os/usr/lib/libgcc* /custom-os/usr/lib/libssp* 2>/dev/null || true; \
     \
-    # Create necessary symlinks for missing crt files
-    if [ ! -e /custom-os/usr/lib/Scrt1.o ] && [ -e /custom-os/usr/lib/crt1.o ]; then \
-        echo "Creating /custom-os/usr/lib/Scrt1.o -> crt1.o (case-sensitivity fix)"; \
-        ln -sf crt1.o /custom-os/usr/lib/Scrt1.o || true; \
-    fi; \
-    if [ ! -e /custom-os/lib/Scrt1.o ] && [ -e /custom-os/usr/lib/Scrt1.o ]; then \
-        ln -sf /custom-os/usr/lib/Scrt1.o /custom-os/lib/Scrt1.o || true; \
-    fi; \
-    \
-    # Create crtbegin symlinks
+    [ ! -e /custom-os/usr/lib/Scrt1.o ] && [ -e /custom-os/usr/lib/crt1.o ] && ln -sf crt1.o /custom-os/usr/lib/Scrt1.o; \
+    [ ! -e /custom-os/lib/Scrt1.o ] && [ -e /custom-os/usr/lib/Scrt1.o ] && ln -sf /custom-os/usr/lib/Scrt1.o /custom-os/lib/Scrt1.o; \
     CRTBEGIN=$(find /custom-os/usr/lib/gcc -name 'crtbegin*.o' 2>/dev/null | head -n1 || true); \
-    if [ -n "$CRTBEGIN" ] && [ ! -e /custom-os/usr/lib/crtbeginS.o ]; then \
-        echo "Linking crtbegin from: $CRTBEGIN -> /custom-os/usr/lib/crtbeginS.o"; \
-        ln -sf "$CRTBEGIN" /custom-os/usr/lib/crtbeginS.o || true; \
+    [ -n "$CRTBEGIN" ] && [ ! -e /custom-os/usr/lib/crtbeginS.o ] && ln -sf "$CRTBEGIN" /custom-os/usr/lib/crtbeginS.o; \
+    [ ! -e /custom-os/usr/lib/libssp_nonshared.a ] && ls /custom-os/usr/lib/libssp* 1>/dev/null 2>&1 && \
+      ln -sf "$(basename "$(ls /custom-os/usr/lib/libssp* | head -n1)")" /custom-os/usr/lib/libssp_nonshared.a; \
+    \
+        # === musl dynamic loader fix ===
+    if [ ! -e /custom-os/lib/ld-musl-aarch64.so.1 ] && [ -e /lib/ld-musl-aarch64.so.1 ]; then \
+        echo "[musl] Linking musl loader into sysroot: /custom-os/lib/ld-musl-aarch64.so.1"; \
+        mkdir -p /custom-os/lib; \
+        ln -sf /lib/ld-musl-aarch64.so.1 /custom-os/lib/ld-musl-aarch64.so.1; \
+    else \
+        echo "[musl] Loader already present or missing in /lib — skipping link"; \
     fi; \
     \
-    # Create libssp symlinks
-    if [ ! -e /custom-os/usr/lib/libssp_nonshared.a ] && ls /custom-os/usr/lib/libssp* 1>/dev/null 2>&1; then \
-        SSP=$(ls /custom-os/usr/lib/libssp* | head -n1); \
-        echo "Creating libssp_nonshared alias -> $SSP"; ln -sf "$(basename "$SSP")" /custom-os/usr/lib/libssp_nonshared.a || true; \
+    # === sysroot library inventory (first 60 entries) ===
+    if [ -d /custom-os/usr/lib ]; then \
+        echo "[sysroot] Listing /custom-os/usr/lib (first 60 entries):"; \
+        ls -la /custom-os/usr/lib | sed -n '1,60p'; \
+    else \
+        echo "[sysroot] WARNING: /custom-os/usr/lib does not exist"; \
     fi; \
     \
-    # Show resolved inventory
-    echo "Resolved sysroot /custom-os/usr/lib inventory (short):"; ls -la /custom-os/usr/lib | sed -n '1,60p' || true; \
-    \
-    # Run filesystem check
-    echo "=== FILESYSTEM DIAGNOSIS ==="; \
-    /usr/local/bin/check-filesystem.sh || true; \
-    \
-    # Compiler/linker test
+    # === filesystem diagnosis ===
+    if [ -x /usr/local/bin/check-filesystem.sh ]; then \
+        echo "[diag] Running filesystem check"; \
+        /usr/local/bin/check-filesystem.sh || echo "[diag] WARNING: check-filesystem.sh returned nonzero"; \
+    else \
+        echo "[diag] Skipping filesystem check — script not found"; \
+    fi; \
+    # Compiler test
     printf 'int main(void){return 0;}\n' > /tmp/meson_toolchain_test.c; \
-    echo "=== COMPILER CHECK (non-fatal, verbose) ==="; \
-    echo "CC -> $CC"; $CC --version 2>/dev/null || true; \
-    $CC $CFLAGS -Wl,--sysroot=/custom-os -v -Wl,--verbose -o /tmp/meson_toolchain_test /tmp/meson_toolchain_test.c 2>/tmp/meson_toolchain_test.err || (echo "✗ compiler test failed (continuing) - show first 200 lines:" && sed -n '1,200p' /tmp/meson_toolchain_test.err); \
-    if [ -x /tmp/meson_toolchain_test ]; then echo "✓ compiler test OK"; else echo "⚠ compiler test failed — meson may also fail (see above)"; fi; \
+    echo "=== COMPILER CHECK (non-fatal) ==="; \
+    $CC --version 2>/dev/null || true; \
+    $CC $CFLAGS -Wl,--sysroot=/custom-os -v -Wl,--verbose -o /tmp/meson_toolchain_test /tmp/meson_toolchain_test.c 2>/tmp/meson_toolchain_test.err || \
+      (echo "✗ compiler test failed;" && sed -n '1,200p' /tmp/meson_toolchain_test.err); \
+    [ -x /tmp/meson_toolchain_test ] && echo "✓ compiler test OK" || echo "⚠ compiler test failed"; \
     \
-    # Run diagnostic scripts
-    echo "=== COMPILER DEPENDENCY CHECK ==="; \
-    /usr/local/bin/dependency_checker.sh /custom-os/compiler/bin/clang-16 || true; \
-    \
-    echo "=== COMPILER VALIDATION ==="; \
-    /usr/local/bin/binlib_validator.sh /custom-os/compiler/bin/clang-16 || true; \
-    \
-    echo "=== VERSION COMPATIBILITY CHECK ==="; \
+    # Diagnostics
+    /usr/local/bin/dependency_checker.sh $CC || true; \
+    /usr/local/bin/binlib_validator.sh $CC || true; \
     /usr/local/bin/version_matrix.sh || true; \
-    \
-    echo "=== COMPILER FLAGS AUDIT ==="; \
     /usr/local/bin/cflag_audit.sh || true; \
     \
-    # Build with meson
+    # Build with Meson
     meson setup builddir \
         --prefix=/usr \
         --libdir=lib \
@@ -980,21 +981,19 @@ RUN echo "=== BUILDING libdrm FROM SOURCE WITH LLVM16 ===" && \
         --sysconfdir=/etc \
         --buildtype=release \
         -Dtests=false \
-        -Dman-pages=disabled \
-        -Dcairo-tests=disabled \
-        -Dvalgrind=disabled || (echo "✗ meson setup failed (continuing)" && /usr/local/bin/dep_chain_visualizer.sh "meson setup failed"); \
-    meson compile -C builddir -j$(nproc) || echo "✗ meson compile failed (continuing)"; \
-    DESTDIR="/custom-os" meson install -C builddir --no-rebuild || echo "✗ meson install failed (continuing)"; \
+        -Dudev=true \
+        -Dvalgrind=disabled || (echo "✗ meson setup failed"; /usr/local/bin/dep_chain_visualizer.sh "meson setup failed"); \
+    meson compile -C builddir -j$(nproc) || echo "✗ meson compile failed"; \
+    DESTDIR="/custom-os" meson install -C builddir --no-rebuild || echo "✗ meson install failed"; \
     \
-    # Post-build verification
-    echo "=== POST BUILD SUMMARY (short) ==="; \
-    echo "libdrm /custom-os/usr/lib listing (first 80 lines):"; ls -la /custom-os/usr/lib | sed -n '1,80p' || true; \
-    echo "pkg-config files (if any):"; ls -la /custom-os/usr/lib/pkgconfig 2>/dev/null | sed -n '1,80p' || echo "(none)"; \
+    # Post-build summary
+    echo "=== POST BUILD SUMMARY ==="; \
+    ls -la /custom-os/usr/lib | sed -n '1,80p' || true; \
+    ls -la /custom-os/usr/lib/pkgconfig 2>/dev/null || echo "(no pkgconfig files)"; \
     \
-    # Cleanup
-    cd / || true; rm -rf /libdrm 2>/dev/null || true; \
+    cd /; rm -rf /tmp/libdrm-src; \
     /usr/local/bin/check_llvm15.sh "post-libdrm-source-build" || true; \
-    echo "=== libdrm BUILD finished (non-fatal) ==="; \
+    echo "=== libdrm BUILD finished ==="; \
     true
 
 
@@ -1097,17 +1096,29 @@ RUN echo "=== INSTALLING SDL3_IMAGE DEPENDENCIES ===" && \
 # ======================
 # SECTION: Python Dependencies
 # ======================
-RUN echo "=== INSTALLING PYTHON DEPENDENCIES ===" && \
-    pip install --no-cache-dir meson==1.4.0 mako==1.3.3 && \
-    /usr/local/bin/check_llvm15.sh "after-python-packages" || true && \
-    \
-    echo "=== COPYING PYTHON PACKAGES TO CUSTOM FILESYSTEM ===" && \
+RUN echo "=== COPYING PYTHON PACKAGES TO CUSTOM FILESYSTEM ===" && \
     mkdir -p /custom-os/usr/python/site-packages && \
-    python -c "import os, shutil; [shutil.copytree(os.path.dirname(__import__(pkg).__file__), f'/custom-os/usr/python/site-packages/{pkg}') for pkg in ['mesonbuild', 'mako']]" && \
+    for pkg in mesonbuild mako MarkupSafe; do \
+        # Find the package in the base sysroot or system Python site-packages
+        src_dir=$(find /usr/lib/python3.*/site-packages /usr/lib/python*/site-packages -type d -name "$pkg" | head -n1) && \
+        if [ -n "$src_dir" ] && [ -d "$src_dir" ]; then \
+            dst_dir="/custom-os/usr/python/site-packages/$pkg" && \
+            cp -R "$src_dir" "$dst_dir" && \
+            echo "Copied $pkg -> $dst_dir"; \
+        else \
+            echo "Python package $pkg not found in system or base sysroot"; \
+        fi; \
+    done && \
     \
-    echo "=== VERIFYING PYTHON PACKAGES ===" && \
-    ls -la /custom-os/usr/python/site-packages/{mesonbuild,mako} || echo "Python packages not found"
-
+    echo "=== VERIFYING PYTHON PACKAGES IN CUSTOM FILESYSTEM ===" && \
+    for pkg in mesonbuild mako MarkupSafe; do \
+        if [ -d "/custom-os/usr/python/site-packages/$pkg" ]; then \
+            echo "$pkg successfully copied:"; \
+            ls -la "/custom-os/usr/python/site-packages/$pkg" | head -5; \
+        else \
+            echo "$pkg missing from /custom-os/usr/python/site-packages"; \
+        fi; \
+    done
 
 # ======================
 # SECTION: SPIRV-Tools Build
