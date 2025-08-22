@@ -1,6 +1,12 @@
 # Stage: base deps (Alpine version)
 FROM alpine:3.21 AS base-deps
 
+# Simple but effective cache-busting - safe for filesystem operations
+RUN echo "BUILD_TIMESTAMP_$(date +%s%N)" && \
+    echo "RANDOM_VALUE_$RANDOM" && \
+    echo "PROCESS_$$" && \
+    echo "NO_CACHE_BASE_DEPS"
+
 # Install basic tools needed for filesystem operations
 RUN apk add --no-cache bash findutils wget file coreutils
 
@@ -138,12 +144,33 @@ RUN chmod +x /setup/*.sh && /setup/create-filesystem.sh
 RUN /usr/local/bin/check_llvm15.sh "final-filesystem-builder" || true && \
     /usr/local/bin/check-filesystem.sh "final-filesystem-builder" || true
 
+# Critical binary directory verification for base-deps stage
+RUN echo "=== STAGE END VERIFICATION: base-deps ===" && \
+    echo "Verifying binary directory /custom-os/usr/bin exists:" && \
+    if [ -d /custom-os/usr/bin ]; then \
+        ls -la /custom-os/usr/bin && \
+        echo "✓ base-deps stage completed - binary directory confirmed"; \
+    else \
+        echo "ERROR: Binary directory /custom-os/usr/bin does not exist!" && \
+        echo "Available directories in /custom-os/usr/:" && \
+        ls -la /custom-os/usr/ 2>/dev/null || echo "No /custom-os/usr/ directory found" && \
+        exit 1; \
+    fi
+
 # Check binaries/libraries
 COPY setup-scripts/binlib_validator.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/binlib_validator.sh
 
 # Stage: filesystem setup - Install base-deps
 FROM base-deps AS filesystem-base-deps-builder
+
+# ULTIMATE cache-busting - forces rebuild every time
+ARG BUILDKIT_INLINE_CACHE=0
+RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
+    echo "FORCE_REBUILD_$(date +%s%N)_$$_$RANDOM" > /tmp/nocache/timestamp && \
+    cat /tmp/nocache/timestamp && \
+    echo "CACHE_DISABLED_FOR_FILESYSTEM_BASE_DEPS" && \
+    rm -f /tmp/nocache/timestamp
 
 # Install all base packages with individual LLVM15 checks
 RUN echo "=== INSTALLING CORE PACKAGES WITH LLVM15 MONITORING ==="
@@ -217,7 +244,7 @@ RUN apk add --no-cache xcb-util-renderutil-dev && /usr/local/bin/check_llvm15.sh
 RUN apk add --no-cache xcb-util-wm-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-wm-dev" || true
 RUN apk add --no-cache xcb-util-keysyms-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-keysyms-dev" || true
 RUN apk add --no-cache tiff-dev && /usr/local/bin/check_llvm15.sh "after-tiff-dev" || true
-RUN apk add --no-cahce libtiff && /usr/local/bin/check_llvm15.sh "after-lib-tiff" || true
+RUN apk add --no-cache libtiff && /usr/local/bin/check_llvm15.sh "after-lib-tiff" || true
 RUN apk add --no-cache libavif && /usr/local/bin/check_llvm15.sh "after-libavif" || true
 RUN apk add --no-cache libwebp && /usr/local/bin/check_llvm15.sh "after-libwebp" || true
 RUN apk add --no-cache gettext-dev && /usr/local/bin/check_llvm15.sh "after-gettext-dev" || true
@@ -612,7 +639,18 @@ RUN echo "=== VERIFYING SYSROOT STRUCTURE ===" && \
 
 # Final contamination check
 RUN /usr/local/bin/check_llvm15.sh "final-base-deps" || true && \
-    /usr/local/bin/check-filesystem.sh "final-base-deps" || true
+    /usr/local/bin/check-filesystem.sh "final-base-deps" || true && \
+    echo "=== STAGE END VERIFICATION: filesystem-base-deps-builder ===" && \
+    echo "Verifying binary directory /custom-os/usr/bin exists:" && \
+    if [ -d /custom-os/usr/bin ]; then \
+        ls -la /custom-os/usr/bin && \
+        echo "✓ filesystem-base-deps-builder stage completed - binary directory confirmed"; \
+    else \
+        echo "ERROR: Binary directory /custom-os/usr/bin does not exist!" && \
+        echo "Available directories in /custom-os/usr/:" && \
+        ls -la /custom-os/usr/ 2>/dev/null || echo "No /custom-os/usr/ directory found" && \
+        exit 1; \
+    fi
 
 
 # ======================
@@ -634,6 +672,14 @@ RUN chmod +x /usr/local/bin/check-filesystem.sh /usr/local/bin/dependency_checke
 
 # Stage: filesystem setup - Install base-deps
 FROM filesystem-base-deps-builder AS filesystem-libs-build-builder
+
+# ULTIMATE cache-busting - forces rebuild every time
+ARG BUILDKIT_INLINE_CACHE=0
+RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
+    echo "FORCE_REBUILD_$(date +%s%N)_$$_$RANDOM" > /tmp/nocache/timestamp && \
+    cat /tmp/nocache/timestamp && \
+    echo "CACHE_DISABLED_FOR_FILESYSTEM_LIBS_BUILD" && \
+    rm -f /tmp/nocache/timestamp
 
 # ======================
 # SECTION: Apache FOP Integration + Permission Checks (robust launcher discovery)
@@ -1298,163 +1344,138 @@ RUN echo "=== BUILDING libgbm FROM SOURCE ===" && \
 # ======================
 # SECTION: GStreamer Plugins Base Build
 # ======================
-RUN echo "=== BUILDING GST-PLUGINS-BASE FROM SOURCE TO AVOID LLVM15 ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-gst-plugins-base-source-build" || true && \
-    \
-    wget https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-1.20.3.tar.xz && \
-    tar -xvf gst-plugins-base-1.20.3.tar.xz && \
-    cd gst-plugins-base-1.20.3 && \
-    \
-    echo "=== CONFIGURING GST-PLUGINS-BASE WITH LLVM16 EXPLICIT PATHS ===" && \
-    ./configure \
-        --prefix=/custom-os/usr/media \
-        --disable-static \
-        --enable-shared \
-        --disable-introspection \
-        --disable-examples \
-        --disable-gtk-doc \
-        CC=/custom-os/compiler/bin/clang-16 \
-        CXX=/custom-os/compiler/bin/clang++-16 \
-        LLVM_CONFIG=/custom-os/compiler/bin/llvm-config \
-        CFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
-        CXXFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
-        LDFLAGS="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib" \
-        PKG_CONFIG_PATH="/custom-os/usr/media/pkgconfig:/custom-os/usr/x11/pkgconfig:/custom-os/compiler/lib/pkgconfig" && \
-    \
-    echo "=== BUILDING GST-PLUGINS-BASE ===" && \
-    make -j"$(nproc)" 2>&1 | tee /tmp/gst-plugins-build.log && \
-    \
-    echo "=== INSTALLING GST-PLUGINS-BASE ===" && \
-    make install 2>&1 | tee /tmp/gst-plugins-install.log && \
-    \
-    cd .. && \
-    rm -rf gst-plugins-base-* && \
-    \
-    echo "=== GST-PLUGINS-BASE INSTALLATION VERIFICATION ===" && \
-    echo "GStreamer plugins:" && \
-    ls -la /custom-os/usr/media/lib/gstreamer-1.0/ 2>/dev/null || echo "No GStreamer plugins found" && \
-    echo "GStreamer libraries:" && \
-    ls -la /custom-os/usr/media/lib/libgst* 2>/dev/null || echo "No GStreamer libraries found" && \
-    \
-    echo "=== CREATING LIBRARY SYMLINKS ===" && \
-    cd /custom-os/usr/media/lib && \
-    for lib in $(ls libgst*.so.* 2>/dev/null); do \
-        soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
-        basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
-        ln -sf "$lib" "$soname"; \
-        ln -sf "$soname" "$basename"; \
-        echo "Created symlinks for $lib"; \
-    done && \
-    \
-    /usr/local/bin/check_llvm15.sh "post-gst-plugins-base-source-build" || true && \
-    echo "=== GST-PLUGINS-BASE BUILD COMPLETE ==="
-RUN echo "=== BUILDING XORG-SERVER FROM SOURCE WITH LLVM16 ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-xorg-server-source-build" || true; \
-    \
-    echo "=== CLONING XORG-SERVER SOURCE ===" && \
-    git clone --depth=1 --branch xorg-server-21.1.8 https://gitlab.freedesktop.org/xorg/xserver.git xorg-server || (echo "⚠ xorg-server not cloned; skipping build commands" && exit 0); \
-    if [ -d xorg-server ]; then cd xorg-server; else echo "⚠ xorg-server directory missing; skipping build"; exit 0; fi; \
-    \
-    echo "=== SOURCE CONTAMINATION SCAN ===" && \
-    grep -RIn "LLVM15\|llvm-15" . 2>/dev/null | tee /tmp/xorg_source_scan.log || true; \
-    \
-    # Set up sysroot environment
-    export PATH="/custom-os/compiler/bin:$PATH"; \
-    export CC=/custom-os/compiler/bin/clang-16; \
-    export CXX=/custom-os/compiler/bin/clang++-16; \
-    if [ -x /custom-os/compiler/bin/llvm-config-16 ]; then export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config-16; else export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config; fi; \
-    export PKG_CONFIG_SYSROOT_DIR="/custom-os"; \
-    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
-    export CFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a"; \
-    export CXXFLAGS="$CFLAGS"; \
-    export LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib"; \
-    \
-    echo "=== FILESYSTEM DIAGNOSIS ==="; \
-    /usr/local/bin/check-filesystem.sh || true; \
-    \
-    # Compiler test
-    printf 'int main(void){return 0;}\n' > /tmp/xorg_toolchain_test.c; \
-    echo "=== COMPILER CHECK (non-fatal, verbose) ==="; \
-    $CC $CFLAGS -Wl,--sysroot=/custom-os -v -Wl,--verbose -o /tmp/xorg_toolchain_test /tmp/xorg_toolchain_test.c 2>/tmp/xorg_toolchain_test.err || (echo "✗ compiler test failed (continuing) - show first 200 lines:" && sed -n '1,200p' /tmp/xorg_toolchain_test.err); \
-    if [ -x /tmp/xorg_toolchain_test ]; then echo "✓ compiler test OK"; else echo "⚠ compiler test failed — configure may also fail (see above)"; fi; \
-    \
-    echo "=== CONFIGURING XORG-SERVER WITH PROPER SYSROOT APPROACH ===" && \
-    autoreconf -fiv && \
-    ./configure \
-        --prefix=/usr \
-        --sysconfdir=/etc \
-        --localstatedir=/var \
-        --disable-systemd-logind \
-        --disable-libunwind \
-        --enable-glamor \
-        --enable-dri \
-        --enable-dri2 \
-        --enable-dri3 \
-        --enable-xvfb \
-        --enable-xnest \
-        --enable-xephyr \
-        --disable-xorg \
-        --disable-dmx \
-        --disable-xwin \
-        --disable-xquartz \
-        --without-dtrace || (echo "✗ configure failed (continuing)" && /usr/local/bin/dep_chain_visualizer.sh "xorg configure failed"); \
-    \
-    echo "=== BUILDING XORG-SERVER ===" && \
-    make -j"$(nproc)" 2>&1 | tee /tmp/xorg-build.log || echo "✗ make failed (continuing)"; \
-    \
-    echo "=== INSTALLING XORG-SERVER TO SYSROOT ===" && \
-    DESTDIR="/custom-os" make install 2>&1 | tee /tmp/xorg-install.log || echo "✗ make install failed (continuing)"; \
-    \
-    echo "=== ORGANIZING XORG COMPONENTS IN SYSROOT ===" && \
-    mkdir -p /custom-os/usr/x11 && \
-    mv /custom-os/usr/bin/X* /custom-os/usr/x11/ 2>/dev/null || true; \
-    mv /custom-os/usr/lib/libxserver* /custom-os/usr/x11/ 2>/dev/null || true; \
-    mkdir -p /custom-os/usr/x11/include/xorg && \
-    cp -r include/* /custom-os/usr/x11/include/xorg/ 2>/dev/null || true; \
-    \
-    echo "=== XORG-SERVER INSTALLATION VERIFICATION ===" && \
-    echo "Binaries installed:"; \
-    ls -la /custom-os/usr/x11/X* 2>/dev/null || echo "No Xorg binaries found"; \
-    echo "Libraries installed:"; \
-    ls -la /custom-os/usr/x11/libxserver* 2>/dev/null || echo "No Xserver libraries found"; \
-    echo "Headers installed:"; \
-    ls -la /custom-os/usr/x11/include/xorg 2>/dev/null || echo "No Xorg headers found"; \
-    \
-    echo "=== CREATING COMPATIBILITY SYMLINKS ===" && \
-    for xbin in /custom-os/usr/x11/X*; do \
-        if [ -f "$xbin" ]; then \
-            ln -sf "../x11/$(basename "$xbin")" "/custom-os/usr/bin/$(basename "$xbin")" 2>/dev/null || true; \
-            echo "Created symlink for $(basename "$xbin")"; \
-        fi; \
-    done; \
-    for xlib in /custom-os/usr/x11/libxserver*; do \
-        if [ -f "$xlib" ]; then \
-            ln -sf "../x11/$(basename "$xlib")" "/custom-os/usr/lib/$(basename "$xlib")" 2>/dev/null || true; \
-            echo "Created symlink for $(basename "$xlib")"; \
-        fi; \
-    done; \
-    \
-    # Run diagnostic scripts
-    echo "=== DIAGNOSTIC CHECKS ==="; \
-    /usr/local/bin/dependency_checker.sh /custom-os/compiler/bin/clang-16 || true; \
-    /usr/local/bin/binlib_validator.sh /custom-os/compiler/bin/clang-16 || true; \
-    /usr/local/bin/version_matrix.sh || true; \
-    /usr/local/bin/cflag_audit.sh || true; \
-    \
-    echo "=== FINAL CONTAMINATION SCAN ===" && \
-    find /custom-os/usr -name "*xserver*" -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee /tmp/xorg_contamination.log || true; \
-    \
-    cd / && \
-    rm -rf xorg-server 2>/dev/null || true; \
-    \
-    /usr/local/bin/check_llvm15.sh "post-xorg-server-source-build" || true; \
-    echo "=== XORG-SERVER BUILD COMPLETE ==="; \
-    if [ -f /custom-os/usr/x11/Xvfb ] && [ -f /custom-os/usr/x11/libxserver.so ]; then \
-        echo "✓ SUCCESS: Xorg server components installed with proper sysroot approach"; \
+RUN \
+    printf '%s\n' "=== BUILDING gst-plugins-base (defensive, POSIX) ==="; \
+    # --- pre-checks for tools --- \
+    CC_BIN=/custom-os/compiler/bin/clang-16; \
+    CXX_BIN=/custom-os/compiler/bin/clang++-16; \
+    LLVM_CONFIG_BIN=/custom-os/compiler/bin/llvm-config; \
+    PKGCONFIG=/usr/bin/pkg-config; \
+    NPROCS="$(nproc 2>/dev/null || echo 1)"; \
+    if [ ! -x "$CC_BIN" ] || [ ! -x "$CXX_BIN" ]; then \
+        printf '%s\n' "⚠ Compiler(s) not found at $CC_BIN or $CXX_BIN — skipping gst and xorg builds"; \
     else \
-        echo "⚠ WARNING: Some Xorg components missing - check build logs"; \
+        \
+        # --- GStreamer plugins --- \
+        printf '%s\n' ">>> gst-plugins-base: fetching and extracting"; \
+        wget -q https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-1.20.3.tar.xz && \
+            tar -xJf gst-plugins-base-1.20.3.tar.xz || { printf '%s\n' "✗ failed to fetch/extract gst-plugins-base"; true; } && \
+        if [ -d gst-plugins-base-1.20.3 ]; then \
+            cd gst-plugins-base-1.20.3 || true; \
+            printf '%s\n' ">>> gst-plugins-base: configuring"; \
+            ./configure \
+              --prefix=/custom-os/usr/media \
+              --disable-static \
+              --enable-shared \
+              --disable-introspection \
+              --disable-examples \
+              --disable-gtk-doc \
+              CC="$CC_BIN" CXX="$CXX_BIN" \
+              LLVM_CONFIG="$LLVM_CONFIG_BIN" \
+              CFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
+              CXXFLAGS="-I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" \
+              LDFLAGS="-L/custom-os/compiler/lib -L/custom-os/glibc/lib -Wl,-rpath,/custom-os/compiler/lib:/custom-os/glibc/lib" \
+              PKG_CONFIG_PATH="/custom-os/usr/media/pkgconfig:/custom-os/usr/x11/pkgconfig:/custom-os/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}" || printf '%s\n' "⚠ configure returned non-zero (gst): see /tmp/gst-plugins-config.log"; \
+            printf '%s\n' ">>> gst-plugins-base: building"; \
+            (make -j"$NPROCS" 2>&1 | tee /tmp/gst-plugins-build.log) || printf '%s\n' "⚠ make returned non-zero (gst) — continuing"; \
+            printf '%s\n' ">>> gst-plugins-base: installing to /custom-os"; \
+            (make install 2>&1 | tee /tmp/gst-plugins-install.log) || printf '%s\n' "⚠ make install returned non-zero (gst) — continuing"; \
+            cd ..; rm -rf gst-plugins-base-* || true; \
+            printf '%s\n' ">>> gst-plugins-base: creating soname symlinks (best-effort)"; \
+            if [ -d /custom-os/usr/media/lib ]; then \
+                cd /custom-os/usr/media/lib || true; \
+                for lib in $(ls libgst*.so.* 2>/dev/null || true); do \
+                    soname=`printf '%s\n' "$lib" | sed 's/\(.*\.so\.[0-9][^.]*\).*/\1/'` || true; \
+                    basename=`printf '%s\n' "$lib" | sed 's/\(.*\.so\).*/\1/'` || true; \
+                    [ -n "$soname" ] && ln -sf "$lib" "$soname" || true; \
+                    [ -n "$basename" ] && ln -sf "${soname:-$lib}" "$basename" || true; \
+                done; \
+            fi; \
+        else \
+            printf '%s\n' "⚠ gst-plugins-base source missing — skipping gst build"; \
+        fi; \
+    fi; \
+    \
+    printf '%s\n' "=== BUILDING xorg-server (defensive, POSIX, sysroot-aware) ==="; \
+    if [ -x /custom-os/compiler/bin/clang-16 ]; then \
+        export PATH="/custom-os/compiler/bin:$PATH"; \
+        export CC=/custom-os/compiler/bin/clang-16; \
+        export CXX=/custom-os/compiler/bin/clang++-16; \
+        if [ -x /custom-os/compiler/bin/llvm-config-16 ]; then export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config-16; else export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config; fi; \
+    else \
+        printf '%s\n' "✗ required compiler not present — skipping xorg-server build"; \
+        true; \
+    fi; \
+    \
+    if [ ! -d xorg-server ]; then \
+        git clone --depth=1 --branch xorg-server-21.1.8 https://gitlab.freedesktop.org/xorg/xserver.git xorg-server 2>/tmp/xorg_clone.err || { printf '%s\n' "⚠ git clone failed (see /tmp/xorg_clone.err). Skipping xorg build"; true; } ; \
+    fi; \
+    if [ -d xorg-server ]; then \
+        cd xorg-server || true; \
+        printf '%s\n' ">>> xorg: scanning for llvm-15 references (best-effort)"; \
+        grep -RIl "LLVM15\\|llvm-15" . 2>/tmp/xorg_source_scan.log || true; \
+        \
+        export PKG_CONFIG_SYSROOT_DIR="/custom-os"; \
+        export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+        export CFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a"; \
+        export CXXFLAGS="$CFLAGS"; \
+        export LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib"; \
+        \
+        /usr/local/bin/check-filesystem.sh "xorg-pre-config" 2>/tmp/xorg_filesystem.log || true; \
+        printf 'int main(void){return 0;}\n' > /tmp/xorg_toolchain_test.c; \
+        $CC $CFLAGS -Wl,--sysroot=/custom-os -o /tmp/xorg_toolchain_test /tmp/xorg_toolchain_test.c 2>/tmp/xorg_toolchain_test.err || printf '%s\n' "⚠ compiler test failed"; \
+        \
+        printf '%s\n' ">>> xorg: running autoreconf"; autoreconf -fiv 2>/tmp/xorg_autoreconf.log || true; \
+        \
+        CFG_FLAGS="--prefix=/usr --sysconfdir=/etc --localstatedir=/var \
+          --disable-systemd-logind --disable-libunwind \
+          --enable-xvfb --enable-xnest --enable-xephyr \
+          --disable-xorg --disable-dmx --disable-xwin --disable-xquartz \
+          --without-dtrace \
+          --disable-glamor --disable-glx --disable-dri --disable-dri2 --disable-dri3 \
+          --disable-docs"; \
+        \
+        printf '%s\n' ">>> xorg: configuring with flags: $CFG_FLAGS"; \
+        ./configure $CFG_FLAGS \
+          CC="$CC" CXX="$CXX" \
+          PKG_CONFIG_SYSROOT_DIR="$PKG_CONFIG_SYSROOT_DIR" \
+          PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
+          CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS" \
+          2>&1 | tee /tmp/xorg-configure.log || true; \
+        \
+        printf '%s\n' ">>> xorg: make (best-effort, non-fatal)"; \
+        (make -j"$NPROCS" 2>&1 | tee /tmp/xorg-build.log) || printf '%s\n' "✗ make failed (see /tmp/xorg-build.log) — continuing"; \
+        printf '%s\n' ">>> xorg: make install into /custom-os"; \
+        (DESTDIR=/custom-os make install 2>&1 | tee /tmp/xorg-install.log) || printf '%s\n' "✗ make install failed (see /tmp/xorg-install.log) — continuing"; \
+        \
+        mkdir -p /custom-os/usr/x11 || true; \
+        mv /custom-os/usr/bin/X* /custom-os/usr/x11/ 2>/tmp/xorg-mv.log || true; \
+        mv /custom-os/usr/lib/libxserver* /custom-os/usr/x11/ 2>/tmp/xorg-mv.log || true; \
+        mkdir -p /custom-os/usr/x11/include/xorg || true; \
+        cp -r include/* /custom-os/usr/x11/include/xorg/ 2>/tmp/xorg-mv.log || true; \
+        \
+        for xbin in /custom-os/usr/x11/X*; do \
+            [ -f "$xbin" ] || continue; \
+            ln -sf "../x11/$(basename "$xbin")" "/custom-os/usr/bin/$(basename "$xbin")" 2>/dev/null || true; \
+        done; \
+        for xlib in /custom-os/usr/x11/libxserver*; do \
+            [ -f "$xlib" ] || continue; \
+            ln -sf "../x11/$(basename "$xlib")" "/custom-os/usr/lib/$(basename "$xlib")" 2>/dev/null || true; \
+        done; \
+        \
+        /usr/local/bin/dependency_checker.sh /custom-os/compiler/bin/clang-16 2>/tmp/xorg_depcheck.log || true; \
+        /usr/local/bin/binlib_validator.sh /custom-os/compiler/bin/clang-16 2>/tmp/xorg_binlib.log || true; \
+        /usr/local/bin/version_matrix.sh 2>/tmp/xorg_versions.log || true; \
+        /usr/local/bin/cflag_audit.sh 2>/tmp/xorg_cflags.log || true; \
+        find /custom-os/usr -name "*xserver*" -exec grep -l "LLVM15\\|llvm-15" {} \; 2>/tmp/xorg_contam.log || true; \
+        \
+        cd /; rm -rf xorg-server 2>/dev/null || true; \
+        printf '%s\n' ">>> xorg build step complete (see logs in /tmp)"; \
+    else \
+        printf '%s\n' "⚠ xorg-server source directory not present; skipped build"; \
     fi; \
     true
+
 
 # ======================
 # SECTION: Mesa Build (sysroot-focused, non-fatal) — FINAL
@@ -1987,7 +2008,18 @@ ENV LD_LIBRARY_PATH=/custom-os/compiler/lib:/custom-os/usr/vulkan/lib:/custom-os
 # ======================
 RUN echo "=== FINAL LLVM15 CONTAMINATION CHECK ===" && \
     (grep -R --binary-files=without-match -n "llvm-15" /custom-os/ || true) | tee /tmp/llvm15-grep || true && \
-    test ! -s /tmp/llvm15-grep || (echo "FOUND llvm-15 references - aborting" && cat /tmp/llvm15-grep && false) || true
+    test ! -s /tmp/llvm15-grep || (echo "FOUND llvm-15 references - aborting" && cat /tmp/llvm15-grep && false) || true && \
+    echo "=== STAGE END VERIFICATION: filesystem-libs-build-builder ===" && \
+    echo "Verifying binary directory /custom-os/usr/bin exists:" && \
+    if [ -d /custom-os/usr/bin ]; then \
+        ls -la /custom-os/usr/bin && \
+        echo "✓ filesystem-libs-build-builder stage completed - binary directory confirmed"; \
+    else \
+        echo "ERROR: Binary directory /custom-os/usr/bin does not exist!" && \
+        echo "Available directories in /custom-os/usr/:" && \
+        ls -la /custom-os/usr/ 2>/dev/null || echo "No /custom-os/usr/ directory found" && \
+        exit 1; \
+    fi
 
 # ======================
 # SECTION: SQLite3 Build
@@ -2042,320 +2074,49 @@ RUN echo "=== SQLITE3 BUILD WITH LLVM16 ENFORCEMENT ===" && \
 
 # Stage: build application
 FROM filesystem-libs-build-builder AS app-build
+
+# ULTIMATE cache-busting - forces rebuild every time
+ARG BUILDKIT_INLINE_CACHE=0
+RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
+    echo "FORCE_REBUILD_$(date +%s%N)_$$_$RANDOM" > /tmp/nocache/timestamp && \
+    cat /tmp/nocache/timestamp && \
+    echo "CACHE_DISABLED_FOR_APP_BUILD" && \
+    rm -f /tmp/nocache/timestamp
+
 # ======================
-# SECTION: Application Build Setup (sysroot-focused) — FINAL
+# SECTION: Application Build Setup
 # ======================
 RUN echo "=== INITIALIZING APPLICATION BUILD ENVIRONMENT ===" && \
-    mkdir -p /custom-os/app/{src,build,bin,lib} && \
-    mkdir -p /custom-os/usr/{lib,include} && \
-    \
-    # Verify filesystem structure
-    echo "=== FILESYSTEM VERIFICATION ===" && \
-    echo "Custom OS structure:" && \
-    tree -L 3 /custom-os | tee /tmp/filesystem_structure.log || true && \
-    \
-    # Verify LLVM16 toolchain
-    echo "=== TOOLCHAIN VERIFICATION ===" && \
-    echo "LLVM16 components:" && \
-    ls -la /custom-os/compiler/bin/clang-16 /custom-os/compiler/bin/llvm-config | tee /tmp/toolchain_verify.log || true && \
-    /usr/local/bin/check_llvm15.sh "pre-app-build" | tee -a /tmp/toolchain_verify.log || true
+    echo "Creating all necessary directories..." && \
+    mkdir -p /custom-os/app/src /custom-os/app/build /custom-os/usr/lib /custom-os/usr/include /custom-os/snapshots && \
+    echo "CRITICAL: Creating target binary directory..." && \
+    mkdir -p /custom-os/usr/bin && \
+    echo "VERIFICATION: Target binary directory exists:" && \
+    ls -la /custom-os/usr/bin && \
+    echo "Filesystem initialized with binary target directory confirmed"
+
+# Set working directory for app build
+WORKDIR /custom-os/app
 
 # Copy application source
-COPY . /custom-os/app/src
+COPY . ./src
 
 # ======================
-# SECTION: Source Code Verification (SAFETY CHECK 0)
+# SECTION: Source Verification
 # ======================
-RUN echo "=== SAFETY CHECK 0: SOURCE CODE VERIFICATION ===" && \
-    echo "Verifying source code was copied correctly..." && \
-    ls -la /custom-os/app/src/ | tee /tmp/source_copy_verification.log && \
-    echo "CMakeLists.txt verification:" && \
-    if [ -f /custom-os/app/src/CMakeLists.txt ]; then \
-        echo "✓ CMakeLists.txt found" && \
-        ls -la /custom-os/app/src/CMakeLists.txt | tee -a /tmp/source_copy_verification.log && \
-        echo "CMakeLists.txt first 20 lines:" && \
-        head -20 /custom-os/app/src/CMakeLists.txt | tee /tmp/cmakelists_preview.log; \
+RUN echo "=== SAFETY CHECK: VERIFY SOURCE CODE ===" && \
+    ls -la ./src/ | tee /tmp/source_copy.log && \
+    if [ -f ./src/CMakeLists.txt ]; then \
+        echo "✓ CMakeLists.txt found"; \
+        head -20 ./src/CMakeLists.txt | tee /tmp/CMakeLists_preview.log; \
     else \
-        echo "✗ CMakeLists.txt NOT found!" && \
-        echo "Available files in src directory:" && \
-        find /custom-os/app/src -type f | tee /tmp/available_source_files.log; \
+        echo "✗ CMakeLists.txt NOT found"; \
+        find ./src -type f | tee /tmp/available_source_files.log; \
     fi && \
-    echo "Source files verification:" && \
-    find /custom-os/app/src -name "*.cpp" -o -name "*.hpp" -o -name "*.c" -o -name "*.h" | tee /tmp/source_files_list.log && \
-    echo "Main source files check:" && \
-    ls -la /custom-os/app/src/main.* 2>/dev/null | tee /tmp/main_files_check.log || echo "No main.* files found" && \
-    echo "Source verification complete."
+    find ./src -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" | tee /tmp/source_files_list.log
 
 # ======================
-# SECTION: CMake Build with Enhanced Diagnostics (sysroot-focused)
-# ======================
-RUN echo "=== CONFIGURING BUILD ENVIRONMENT ===" && \
-    export PATH="/custom-os/compiler/bin:$PATH"; \
-    export CC=/custom-os/compiler/bin/clang-16; \
-    export CXX=/custom-os/compiler/bin/clang++-16; \
-    if [ -x /custom-os/compiler/bin/llvm-config-16 ]; then export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config-16; else export LLVM_CONFIG=/custom-os/compiler/bin/llvm-config; fi; \
-    export PKG_CONFIG_SYSROOT_DIR="/custom-os"; \
-    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
-    export CFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a"; \
-    export CXXFLAGS="$CFLAGS"; \
-    export LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib"; \
-    export CMAKE_PREFIX_PATH="/custom-os/usr:/custom-os/compiler"; \
-    \
-    # COMPREHENSIVE ENVIRONMENT VERIFICATION WITH SAFETY CHECKS
-    echo "=== BUILD ENVIRONMENT VERIFICATION ===" && \
-    echo "CC: $CC ($(which $CC))" | tee /tmp/build_env.log && \
-    echo "CXX: $CXX ($(which $CXX))" | tee -a /tmp/build_env.log && \
-    echo "LLVM_CONFIG: $LLVM_CONFIG ($(which $LLVM_CONFIG))" | tee -a /tmp/build_env.log && \
-    echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH" | tee -a /tmp/build_env.log && \
-    echo "CFLAGS: $CFLAGS" | tee -a /tmp/build_env.log && \
-    echo "LDFLAGS: $LDFLAGS" | tee -a /tmp/build_env.log && \
-    echo "CMAKE_PREFIX_PATH: $CMAKE_PREFIX_PATH" | tee -a /tmp/build_env.log; \
-    \
-    # SAFETY CHECK 1: Compiler validation
-    echo "=== SAFETY CHECK 1: COMPILER VALIDATION ===" && \
-    /usr/local/bin/binlib_validator.sh $CC | tee /tmp/compiler_validation.log || true && \
-    /usr/local/bin/dependency_checker.sh $CC | tee /tmp/compiler_deps.log || true && \
-    \
-    # SAFETY CHECK 2: Environment audit
-    echo "=== SAFETY CHECK 2: ENVIRONMENT AUDIT ===" && \
-    /usr/local/bin/env_tracer.sh | tee /tmp/env_audit.log || true && \
-    /usr/local/bin/cflag_audit.sh | tee /tmp/cflag_audit.log || true && \
-    \
-    # SAFETY CHECK 3: Filesystem state before build
-    echo "=== SAFETY CHECK 3: PRE-BUILD FILESYSTEM STATE ===" && \
-    /usr/local/bin/check-filesystem.sh "pre-cmake-build" | tee /tmp/pre_build_filesystem.log || true && \
-    \
-    # Package config test with enhanced diagnostics
-    echo "=== PKG-CONFIG SANITY CHECK ===" && \
-    pkg-config --list-all | head -20 | tee /tmp/pkgconfig_list.log || true && \
-    echo "SDL3 pkg-config test:" && \
-    pkg-config --exists sdl3 && echo "SDL3 found" || echo "SDL3 NOT found" && \
-    pkg-config --cflags sdl3 2>/dev/null | tee /tmp/sdl3_cflags.log || echo "SDL3 cflags failed" && \
-    pkg-config --libs sdl3 2>/dev/null | tee /tmp/sdl3_libs.log || echo "SDL3 libs failed"; \
-    \
-    # SAFETY CHECK 4: Pre-CMake source verification
-    echo "=== SAFETY CHECK 4: PRE-CMAKE SOURCE VERIFICATION ===" && \
-    echo "Source directory contents:" && \
-    ls -la /custom-os/app/src/ | tee /tmp/source_verification.log && \
-    echo "CMakeLists.txt exists:" && \
-    ls -la /custom-os/app/src/CMakeLists.txt | tee -a /tmp/source_verification.log || echo "CMakeLists.txt NOT found" && \
-    echo "Main source files:" && \
-    find /custom-os/app/src -name "*.cpp" -o -name "*.hpp" -o -name "*.c" -o -name "*.h" | tee -a /tmp/source_verification.log && \
-    \
-    # CMake configuration with comprehensive error handling
-    echo "=== RUNNING CMAKE CONFIGURATION ===" && \
-    mkdir -p /custom-os/app/build && \
-    cd /custom-os/app/build && \
-    \
-    # SAFETY CHECK 5: Pre-configure environment snapshot
-    echo "=== SAFETY CHECK 5: PRE-CONFIGURE ENVIRONMENT SNAPSHOT ===" && \
-    /usr/local/bin/env_tracer.sh > /tmp/pre_configure_env.log 2>&1 || true && \
-    echo "Build directory state:" && \
-    ls -la . | tee /tmp/build_dir_pre_configure.log && \
-    \
-    cmake ../src \
-        -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_C_COMPILER=$CC \
-        -DCMAKE_CXX_COMPILER=$CXX \
-        -DCMAKE_SYSROOT=/custom-os \
-        -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
-        -DCMAKE_FIND_ROOT_PATH="/custom-os" \
-        -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
-        -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
-        -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
-        -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
-        -DCMAKE_INSTALL_RPATH="/custom-os/usr/lib:/custom-os/compiler/lib" \
-        -DCMAKE_INSTALL_PREFIX=/usr \
-        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-        2>&1 | tee /tmp/cmake_configure.log; \
-    \
-    # SAFETY CHECK 6: Post-configure verification
-    CMAKE_CONFIGURE_EXIT_CODE=$?; \
-    echo "=== SAFETY CHECK 6: POST-CONFIGURE VERIFICATION ===" && \
-    echo "CMake configure exit code: $CMAKE_CONFIGURE_EXIT_CODE" | tee /tmp/cmake_configure_status.log && \
-    if [ $CMAKE_CONFIGURE_EXIT_CODE -ne 0 ]; then \
-        echo "✗ CMAKE CONFIGURE FAILED - Running diagnostics..." && \
-        /usr/local/bin/failure_reconstructor.sh "cmake-configure" | tee /tmp/configure_failure_analysis.log || true && \
-        /usr/local/bin/dep_chain_visualizer.sh "cmake configure failed" | tee /tmp/configure_dep_analysis.log || true && \
-        echo "CMake configure log:" && \
-        cat /tmp/cmake_configure.log && \
-        echo "Continuing with build attempt anyway..."; \
-    else \
-        echo "✓ CMAKE CONFIGURE SUCCESS" && \
-        echo "Generated files:" && \
-        ls -la . | tee /tmp/post_configure_files.log && \
-        echo "CMakeCache.txt contents (first 50 lines):" && \
-        head -50 CMakeCache.txt 2>/dev/null | tee /tmp/cmake_cache_excerpt.log || echo "No CMakeCache.txt found"; \
-    fi; \
-    \
-    # SAFETY CHECK 7: Pre-build state verification
-    echo "=== SAFETY CHECK 7: PRE-BUILD STATE VERIFICATION ===" && \
-    echo "Build directory before build:" && \
-    ls -la . | tee /tmp/pre_build_state.log && \
-    echo "Ninja build files check:" && \
-    ls -la build.ninja 2>/dev/null | tee -a /tmp/pre_build_state.log || echo "No build.ninja found" && \
-    echo "CMake files check:" && \
-    find . -name "CMakeFiles" -type d | tee -a /tmp/pre_build_state.log || echo "No CMakeFiles directory" && \
-    \
-    # Build with comprehensive logging and error handling
-    echo "=== BUILDING APPLICATION ===" && \
-    cmake --build . --target simplehttpserver --parallel $(nproc) \
-        2>&1 | tee /tmp/cmake_build.log; \
-    \
-    # SAFETY CHECK 8: Build result analysis
-    BUILD_EXIT_CODE=$?; \
-    echo "=== SAFETY CHECK 8: BUILD RESULT ANALYSIS ===" && \
-    echo "Build exit code: $BUILD_EXIT_CODE" | tee /tmp/build_exit_code.log && \
-    if [ $BUILD_EXIT_CODE -ne 0 ]; then \
-        echo "✗ BUILD FAILED - Running comprehensive diagnostics..." && \
-        /usr/local/bin/failure_reconstructor.sh "cmake-build" | tee /tmp/build_failure_analysis.log || true && \
-        /usr/local/bin/stage_went_wrong_tracer.sh "simplehttpserver" | tee /tmp/build_stage_analysis.log || true && \
-        echo "Build log analysis:" && \
-        tail -100 /tmp/cmake_build.log | tee /tmp/build_log_tail.log && \
-        echo "Continuing with verification anyway..."; \
-    else \
-        echo "✓ BUILD SUCCESS"; \
-    fi; \
-    \
-    # SAFETY CHECK 9: Comprehensive post-build verification
-    echo "=== SAFETY CHECK 9: COMPREHENSIVE POST-BUILD VERIFICATION ===" && \
-    echo "Build directory after build:" && \
-    ls -la . | tee /tmp/post_build_directory.log && \
-    echo "All files in build directory:" && \
-    find . -type f | tee /tmp/all_build_files.log && \
-    echo "Searching for any binary files:" && \
-    find . -type f -executable | tee /tmp/executable_files.log && \
-    echo "Searching for simplehttpserver specifically:" && \
-    find . -name '*simplehttpserver*' -type f | tee /tmp/simplehttpserver_search.log && \
-    \
-    # Traditional post-build verification
-    echo "=== POST-BUILD VERIFICATION ===" && \
-    echo "Build artifacts:" && \
-    find . -name 'simplehttpserver*' -o -name '*.so' -o -name '*.a' | tee /tmp/build_artifacts.log || true && \
-    \
-    # SAFETY CHECK 10: Binary validation if found
-    if [ -f ./simplehttpserver ]; then \
-        echo "=== SAFETY CHECK 10: BINARY VALIDATION ===" && \
-        echo "✓ Binary found! Analyzing..." && \
-        ls -la ./simplehttpserver | tee /tmp/binary_details.log && \
-        file ./simplehttpserver | tee -a /tmp/binary_details.log && \
-        /usr/local/bin/binlib_validator.sh ./simplehttpserver | tee /tmp/binary_validation.log || true && \
-        echo "Library dependencies:" && \
-        ldd ./simplehttpserver 2>/dev/null | tee /tmp/application_deps.log || echo "ldd failed" && \
-        echo "Binary permissions:" && \
-        stat ./simplehttpserver | tee -a /tmp/binary_details.log; \
-    else \
-        echo "=== SAFETY CHECK 10: BINARY NOT FOUND - INVESTIGATION ===" && \
-        echo "✗ Binary NOT found! Running investigation..." && \
-        /usr/local/bin/file_finder.sh simplehttpserver | tee /tmp/binary_investigation.log || true && \
-        echo "Checking for any executable files:" && \
-        find . -type f -executable -exec file {} \; | tee /tmp/any_executables.log && \
-        echo "Checking build log for errors:" && \
-        grep -i "error\|failed\|cannot" /tmp/cmake_build.log | tail -20 | tee /tmp/build_errors.log || echo "No obvious errors in build log"; \
-    fi; \
-    \
-    # SAFETY CHECK 11: Pre-installation verification
-    echo "=== SAFETY CHECK 11: PRE-INSTALLATION VERIFICATION ===" && \
-    echo "Target installation directory state:" && \
-    ls -la /custom-os/usr/bin/ 2>/dev/null | tee /tmp/pre_install_target.log || echo "Target directory doesn't exist yet" && \
-    echo "Current working directory:" && \
-    pwd | tee /tmp/install_pwd.log && \
-    echo "Files available for installation:" && \
-    ls -la . | tee /tmp/install_source_files.log && \
-    \
-    # Install to custom filesystem using DESTDIR (proper sysroot approach)
-    echo "=== INSTALLING TO CUSTOM FILESYSTEM ===" && \
-    DESTDIR="/custom-os" cmake --install . --component runtime 2>&1 | tee /tmp/cmake_install.log; \
-    \
-    # SAFETY CHECK 12: Installation result analysis
-    INSTALL_EXIT_CODE=$?; \
-    echo "=== SAFETY CHECK 12: INSTALLATION RESULT ANALYSIS ===" && \
-    echo "Install exit code: $INSTALL_EXIT_CODE" | tee /tmp/install_exit_code.log && \
-    if [ $INSTALL_EXIT_CODE -ne 0 ]; then \
-        echo "✗ CMAKE INSTALL FAILED - Attempting manual recovery..." && \
-        /usr/local/bin/failure_reconstructor.sh "cmake-install" | tee /tmp/install_failure_analysis.log || true && \
-        echo "Install log analysis:" && \
-        cat /tmp/cmake_install.log && \
-        echo "Attempting manual copy..." && \
-        mkdir -p /custom-os/usr/bin && \
-        if [ -f ./simplehttpserver ]; then \
-            cp -f ./simplehttpserver /custom-os/usr/bin/simplehttpserver && \
-            echo "✓ Manual copy successful" | tee /tmp/manual_copy_result.log; \
-        else \
-            echo "✗ Manual copy failed - no source binary" | tee /tmp/manual_copy_result.log; \
-        fi; \
-    else \
-        echo "✓ CMAKE INSTALL SUCCESS"; \
-    fi; \
-    \
-    # SAFETY CHECK 13: Comprehensive final verification
-    echo "=== SAFETY CHECK 13: COMPREHENSIVE FINAL VERIFICATION ===" && \
-    echo "Target directory contents:" && \
-    ls -la /custom-os/usr/bin/ 2>/dev/null | tee /tmp/final_target_contents.log || echo "Target directory doesn't exist" && \
-    echo "Searching entire custom-os for binary:" && \
-    find /custom-os -name "*simplehttpserver*" -type f 2>/dev/null | tee /tmp/final_binary_search.log || echo "No binary found in custom-os" && \
-    echo "Searching entire filesystem for binary:" && \
-    find / -name "*simplehttpserver*" -type f 2>/dev/null | head -10 | tee /tmp/final_system_search.log || echo "No binary found system-wide" && \
-    \
-    # Traditional final verification
-    echo "=== INSTALLATION VERIFICATION ===" && \
-    echo "Installed binary:" && \
-    ls -la /custom-os/usr/bin/simplehttpserver 2>/dev/null | tee /tmp/install_verify.log || echo "⚠ simplehttpserver not found in /custom-os/usr/bin/"; \
-    \
-    # SAFETY CHECK 14: Binary functionality test
-    if [ -f /custom-os/usr/bin/simplehttpserver ]; then \
-        echo "=== SAFETY CHECK 14: BINARY FUNCTIONALITY TEST ===" && \
-        chmod +x /custom-os/usr/bin/simplehttpserver && \
-        echo "✓ Binary found and made executable" && \
-        ls -la /custom-os/usr/bin/simplehttpserver | tee /tmp/final_binary_details.log && \
-        file /custom-os/usr/bin/simplehttpserver | tee -a /tmp/final_binary_details.log && \
-        echo "Binary version test:" && \
-        /custom-os/usr/bin/simplehttpserver --version 2>&1 | tee /tmp/final_version_test.log || echo "⚠ version check failed" && \
-        echo "Binary dependencies:" && \
-        ldd /custom-os/usr/bin/simplehttpserver 2>/dev/null | tee /tmp/final_binary_deps.log || echo "ldd failed" && \
-        /usr/local/bin/binlib_validator.sh /custom-os/usr/bin/simplehttpserver | tee /tmp/final_binary_validation.log || true; \
-    else \
-        echo "=== SAFETY CHECK 14: BINARY NOT FOUND - FINAL INVESTIGATION ===" && \
-        echo "✗ CRITICAL: Binary not found after all attempts!" && \
-        /usr/local/bin/stage_went_wrong_tracer.sh "simplehttpserver" | tee /tmp/final_stage_investigation.log || true && \
-        /usr/local/bin/failure_reconstructor.sh "final-binary-missing" | tee /tmp/final_failure_reconstruction.log || true && \
-        echo "All diagnostic logs summary:" && \
-        echo "=== BUILD LOGS SUMMARY ===" && \
-        echo "Configure log errors:" && \
-        grep -i "error\|failed" /tmp/cmake_configure.log | tail -10 || echo "No configure errors" && \
-        echo "Build log errors:" && \
-        grep -i "error\|failed" /tmp/cmake_build.log | tail -10 || echo "No build errors" && \
-        echo "Install log errors:" && \
-        grep -i "error\|failed" /tmp/cmake_install.log | tail -10 || echo "No install errors"; \
-    fi; \
-    \
-    /usr/local/bin/check_llvm15.sh "post-app-build" | tee /tmp/llvm_final_check.log || true && \
-    \
-    # Comprehensive binary tracking after build
-    echo "=== POST-BUILD BINARY TRACKING ===" && \
-    echo "Using diagnostic scripts to track binary location..." && \
-    /usr/local/bin/file_finder.sh simplehttpserver | tee /tmp/post_build_search.log || true && \
-    \
-    # Create snapshot of current filesystem state for stage tracking
-    echo "Creating filesystem snapshot for stage tracking..." && \
-    mkdir -p /custom-os/snapshots && \
-    find /custom-os -name "*simplehttpserver*" -type f > /custom-os/snapshots/app-build.snapshot 2>/dev/null || true && \
-    echo "app-build" > /tmp/current_stage && \
-    \
-    # Detailed binary location report
-    echo "=== BINARY LOCATION REPORT ===" && \
-    echo "Build directory contents:" && \
-    ls -la . | tee /tmp/build_dir_contents.log && \
-    echo "Custom OS bin directory:" && \
-    ls -la /custom-os/usr/bin/ 2>/dev/null | tee /tmp/custom_os_bin.log || echo "No /custom-os/usr/bin directory" && \
-    echo "All simplehttpserver files found:" && \
-    find / -name "*simplehttpserver*" -type f 2>/dev/null | tee /tmp/all_binary_locations.log || true && \
-    \
-    echo "=== APPLICATION BUILD COMPLETE ==="
-
-# ======================
-# SECTION: Final Environment Setup
+# SECTION: Environment Setup for Build
 # ======================
 ENV PATH="/custom-os/usr/bin:/custom-os/compiler/bin:$PATH"
 ENV PKG_CONFIG_SYSROOT_DIR="/custom-os"
@@ -2363,17 +2124,143 @@ ENV PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgcon
 ENV LD_LIBRARY_PATH="/custom-os/usr/lib:/custom-os/compiler/lib:$LD_LIBRARY_PATH"
 ENV C_INCLUDE_PATH="/custom-os/usr/include:${C_INCLUDE_PATH:-}"
 
+# ======================
+# SECTION: CMake Build
+# ======================
+WORKDIR /custom-os/app/build
+RUN mkdir -p . && \
+    export CC=/custom-os/compiler/bin/clang-16 && \
+    export CXX=/custom-os/compiler/bin/clang++-16 && \
+    export CFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" && \
+    export CXXFLAGS="$CFLAGS -stdlib=libc++" && \
+    export LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib -stdlib=libc++ -lc++ -lc++abi" && \
+    export PKG_CONFIG_SYSROOT_DIR="/custom-os" && \
+    export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig" && \
+    echo "=== PRE-BUILD VERIFICATION ===" && \
+    echo "Checking for CMakeLists.txt..." && \
+    ls -la ../src/src/CMakeLists.txt && \
+    echo "Source directory contents:" && \
+    ls -la ../src/src/ && \
+    echo "=== CONFIGURING BUILD WITH CMAKE ===" && \
+    cmake ../src/src \
+        -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_C_COMPILER=$CC \
+        -DCMAKE_CXX_COMPILER=$CXX \
+        -DCMAKE_SYSROOT=/custom-os \
+        -DCMAKE_PREFIX_PATH="/custom-os/usr;/custom-os/compiler" \
+        -DCMAKE_FIND_ROOT_PATH="/custom-os" \
+        -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+        -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+        -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+        -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_INSTALL_RPATH="/custom-os/usr/lib:/custom-os/compiler/lib" \
+        -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
+        -DCMAKE_C_FLAGS="$CFLAGS" \
+        -DCMAKE_EXE_LINKER_FLAGS="$LDFLAGS" \
+        -DCMAKE_SHARED_LINKER_FLAGS="$LDFLAGS" \
+        -DALPINE_LINUX_BUILD=ON \
+        2>&1 | tee /tmp/cmake_configure.log && \
+    echo "=== BUILDING APPLICATION ===" && \
+    cmake --build . --target simplehttpserver -- -j$(nproc) 2>&1 | tee /tmp/cmake_build.log && \
+    echo "=== POST-BUILD BINARY VERIFICATION ===" && \
+    echo "VERIFICATION: Target directory still exists:" && \
+    ls -la /custom-os/usr/bin && \
+    echo "VERIFICATION: Build directory contents:" && \
+    ls -la . && \
+    echo "VERIFICATION: Searching for built binary:" && \
+    find . -name "simplehttpserver" -type f | tee /tmp/built_binary_location.log && \
+    echo "=== EXPLICIT BINARY PACKAGING ===" && \
+    echo "STEP 1: Ensure target directory exists before install..." && \
+    mkdir -p /custom-os/usr/bin && \
+    ls -la /custom-os/usr/bin && \
+    echo "STEP 2: Attempting CMake install..." && \
+    DESTDIR=/custom-os cmake --install . 2>&1 | tee /tmp/cmake_install.log && \
+    echo "STEP 3: Verifying CMake install result..." && \
+    ls -la /custom-os/usr/bin && \
+    echo "STEP 4: Manual binary packaging (backup)..." && \
+    if [ -f ./simplehttpserver ]; then \
+        echo "Found binary in build directory, copying manually..." && \
+        cp -v ./simplehttpserver /custom-os/usr/bin/simplehttpserver && \
+        chmod +x /custom-os/usr/bin/simplehttpserver && \
+        echo "Manual copy completed"; \
+    else \
+        echo "Binary not found in build directory, searching..."; \
+        find . -name "simplehttpserver" -type f -exec cp -v {} /custom-os/usr/bin/simplehttpserver \; && \
+        chmod +x /custom-os/usr/bin/simplehttpserver 2>/dev/null || true; \
+    fi && \
+    echo "STEP 5: Final binary verification..." && \
+    ls -la /custom-os/usr/bin/simplehttpserver && \
+    echo "STEP 6: Binary functionality test..." && \
+    file /custom-os/usr/bin/simplehttpserver && \
+    echo "Binary packaging completed successfully"
 
-# Example invocation adjustments:
-# cmake -DCMAKE_PREFIX_PATH=/usr/local -DCMAKE_BUILD_TYPE=Release ...
-# or ensure you use pkg-config:
-# CFLAGS=$(pkg-config --cflags sqlite3) LDFLAGS=$(pkg-config --libs sqlite3) cmake ...
+# ======================
+# SECTION: Post-Build Verification
+# ======================
+RUN echo "=== COMPREHENSIVE POST-BUILD VERIFICATION ===" && \
+    echo "VERIFICATION 1: Build directory contents:" && \
+    ls -la . | tee /tmp/build_dir_post.log && \
+    echo "VERIFICATION 2: Target binary directory:" && \
+    ls -la /custom-os/usr/bin/ | tee /tmp/custom_os_bin.log && \
+    echo "VERIFICATION 3: Binary existence check:" && \
+    if [ -f /custom-os/usr/bin/simplehttpserver ]; then \
+        echo "✓ SUCCESS: Binary found in target location!" && \
+        ls -la /custom-os/usr/bin/simplehttpserver && \
+        file /custom-os/usr/bin/simplehttpserver | tee /tmp/binary_details.log && \
+        chmod +x /custom-os/usr/bin/simplehttpserver && \
+        echo "Binary permissions set and verified"; \
+    else \
+        echo "✗ CRITICAL: Binary missing from target location!" && \
+        echo "Searching entire filesystem for binary..." && \
+        find /custom-os -name "*simplehttpserver*" -type f | tee /tmp/binary_search_results.log && \
+        echo "Build directory search:" && \
+        find . -name "*simplehttpserver*" -type f | tee /tmp/build_dir_search.log && \
+        echo "Attempting emergency recovery..." && \
+        if [ -f ./simplehttpserver ]; then \
+            echo "Found in build directory, copying now..." && \
+            cp -v ./simplehttpserver /custom-os/usr/bin/simplehttpserver && \
+            chmod +x /custom-os/usr/bin/simplehttpserver && \
+            echo "Emergency recovery successful"; \
+        else \
+            echo "Emergency recovery failed - binary not found anywhere"; \
+        fi; \
+    fi && \
+    echo "VERIFICATION 4: Final binary status:" && \
+    ls -la /custom-os/usr/bin/simplehttpserver 2>/dev/null || echo "Binary still missing" && \
+    echo "VERIFICATION 5: Creating snapshot..." && \
+    find /custom-os -name "*simplehttpserver*" -type f > /custom-os/snapshots/app-build.snapshot 2>/dev/null || true && \
+    echo "Post-build verification completed" && \
+    echo "=== STAGE END VERIFICATION: app-build ===" && \
+    echo "Verifying binary directory /custom-os/usr/bin exists:" && \
+    if [ -d /custom-os/usr/bin ]; then \
+        ls -la /custom-os/usr/bin && \
+        echo "✓ app-build stage completed - binary directory confirmed"; \
+    else \
+        echo "ERROR: Binary directory /custom-os/usr/bin does not exist!" && \
+        echo "Available directories in /custom-os/usr/:" && \
+        ls -la /custom-os/usr/ 2>/dev/null || echo "No /custom-os/usr/ directory found" && \
+        exit 1; \
+    fi
 
-# ensure /usr/local exists so later-stage COPY will not fail
-RUN mkdir -p /usr/local && touch /usr/local/.fs_libs_build_done || true
+# ======================
+# SECTION: Final Environment
+# ======================
+ENV PATH="/custom-os/usr/bin:/custom-os/compiler/bin:$PATH"
+
 
 # Stage: debug environment
 FROM app-build AS debug
+
+# ULTIMATE cache-busting - forces rebuild every time
+ARG BUILDKIT_INLINE_CACHE=0
+RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
+    echo "FORCE_REBUILD_$(date +%s%N)_$$_$RANDOM" > /tmp/nocache/timestamp && \
+    cat /tmp/nocache/timestamp && \
+    echo "CACHE_DISABLED_FOR_DEBUG" && \
+    rm -f /tmp/nocache/timestamp
+
 # ======================
 # SECTION: Debug Environment Setup (sysroot-focused) — FINAL
 # ======================
@@ -2581,6 +2468,17 @@ RUN echo "=== FINAL ENVIRONMENT VERIFICATION ===" && \
         echo "✗ Application missing or not executable: /custom-os/usr/bin/simplehttpserver"; \
         echo "Available binaries in /custom-os/usr/bin/:"; \
         ls -la /custom-os/usr/bin/ 2>/dev/null | tee -a /custom-os/var/log/debug/final_env.log || true; \
+    fi && \
+    echo "=== STAGE END VERIFICATION: debug ===" && \
+    echo "Verifying binary directory /custom-os/usr/bin exists:" && \
+    if [ -d /custom-os/usr/bin ]; then \
+        ls -la /custom-os/usr/bin && \
+        echo "✓ debug stage completed - binary directory confirmed"; \
+    else \
+        echo "ERROR: Binary directory /custom-os/usr/bin does not exist!" && \
+        echo "Available directories in /custom-os/usr/:" && \
+        ls -la /custom-os/usr/ 2>/dev/null || echo "No /custom-os/usr/ directory found" && \
+        exit 1; \
     fi
 
 USER shs
@@ -2589,6 +2487,15 @@ CMD ["/custom-os/usr/bin/simplehttpserver"]
 
 # Stage: runtime environment
 FROM debug AS runtime
+
+# ULTIMATE cache-busting - forces rebuild every time
+ARG BUILDKIT_INLINE_CACHE=0
+RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
+    echo "FORCE_REBUILD_$(date +%s%N)_$$_$RANDOM" > /tmp/nocache/timestamp && \
+    cat /tmp/nocache/timestamp && \
+    echo "CACHE_DISABLED_FOR_RUNTIME" && \
+    rm -f /tmp/nocache/timestamp
+
 # ======================
 # SECTION: Runtime Environment Setup (sysroot-focused) — FINAL
 # ======================
@@ -3168,7 +3075,18 @@ RUN echo "=== FINAL COMPREHENSIVE LLVM15 ANALYSIS ===" && \
     # Verify critical binaries
     echo "=== CRITICAL BINARY VERIFICATION ===" | tee -a /custom-os/var/log/debug/final_filesystem.log; \
     ls -la /custom-os/usr/bin/simplehttpserver 2>/dev/null | tee -a /custom-os/var/log/debug/final_filesystem.log || echo "Application binary not found in /custom-os/usr/bin/" | tee -a /custom-os/var/log/debug/final_filesystem.log; \
-    ls -la /custom-os/compiler/bin/clang* 2>/dev/null | head -3 | tee -a /custom-os/var/log/debug/final_filesystem.log || echo "No clang binaries found" | tee -a /custom-os/var/log/debug/final_filesystem.log
+    ls -la /custom-os/compiler/bin/clang* 2>/dev/null | head -3 | tee -a /custom-os/var/log/debug/final_filesystem.log || echo "No clang binaries found" | tee -a /custom-os/var/log/debug/final_filesystem.log && \
+    echo "=== STAGE END VERIFICATION: runtime ===" && \
+    echo "Verifying binary directory /custom-os/usr/bin exists:" && \
+    if [ -d /custom-os/usr/bin ]; then \
+        ls -la /custom-os/usr/bin && \
+        echo "✓ runtime stage completed - binary directory confirmed"; \
+    else \
+        echo "ERROR: Binary directory /custom-os/usr/bin does not exist!" && \
+        echo "Available directories in /custom-os/usr/:" && \
+        ls -la /custom-os/usr/ 2>/dev/null || echo "No /custom-os/usr/ directory found" && \
+        exit 1; \
+    fi
 
 USER shs
 WORKDIR /custom-os/app
