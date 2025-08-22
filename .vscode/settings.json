@@ -4,5 +4,12 @@
   "files.associations": {
     "*.dbclient-js": "javascript",
     "iostream": "cpp"
-  }
+  },
+  "vsicons.associations.files": [
+    {
+      "icon": "text", 
+      "extensions": ["ans", "ansi"],
+      "format": "txt"
+    }
+  ]
 }
