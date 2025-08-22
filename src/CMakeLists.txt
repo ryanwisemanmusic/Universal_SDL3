@@ -4,6 +4,23 @@ project(simplehttpserver)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# -------------------------------
+# Compiler selection with fallback
+# -------------------------------
+if(EXISTS "/custom-os/compiler/bin/clang-16")
+    set(CMAKE_C_COMPILER "/custom-os/compiler/bin/clang-16")
+    set(CMAKE_CXX_COMPILER "/custom-os/compiler/bin/clang++-16")
+    message(STATUS "Using custom compiler at /custom-os/compiler/bin")
+else()
+    find_program(CMAKE_C_COMPILER NAMES clang-16 clang)
+    find_program(CMAKE_CXX_COMPILER NAMES clang++-16 clang++)
+    if(NOT CMAKE_C_COMPILER OR NOT CMAKE_CXX_COMPILER)
+        message(FATAL_ERROR "No suitable C/C++ compiler found")
+    else()
+        message(STATUS "Using system compiler: ${CMAKE_C_COMPILER} / ${CMAKE_CXX_COMPILER}")
+    endif()
+endif()
+
 # Detect build environment
 if(APPLE)
     set(NATIVE_MACOS_BUILD TRUE)
