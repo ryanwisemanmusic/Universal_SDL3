@@ -74,38 +74,20 @@ RUN echo "=== INSTALLING LLVM16 + CLANG16 (isolated) ===" && \
     apk add --no-cache llvm16-dev llvm16-libs clang16 && \
     echo "=== LLVM16 + Clang16 installed ==="
 
-# Move all developer/debug binaries to debug-tools
-RUN mkdir -p /custom-os/usr/debug-tools/bin && \
-    find /usr/bin -maxdepth 1 -type f \
-        \( -name "clang-*" -o -name "scan-build*" -o -name "llvm-*" \) \
-        -exec mv {} /custom-os/usr/debug-tools/bin/ \; || true && \
-    echo "=== Debug binaries isolated ==="
-
-# Copy LLVM16 installation to custom filesystem compiler directory
-RUN echo "=== COPYING LLVM16 TO CUSTOM FILESYSTEM ===" && \
-    mkdir -p /custom-os/compiler/bin /custom-os/compiler/lib /custom-os/compiler/include && \
-    \
-    # Copy clang binaries explicitly
-    cp -v /custom-os/usr/debug-tools/bin/clang-16 /custom-os/compiler/bin/ 2>/dev/null || true && \
-    cp -v /custom-os/usr/debug-tools/bin/clang++-16 /custom-os/compiler/bin/ 2>/dev/null || true && \
-    cp -v /custom-os/usr/debug-tools/bin/clang-cpp-16 /custom-os/compiler/bin/ 2>/dev/null || true && \
-    \
-    # Optional: create simple symlinks for easier invocation
-    ln -sf clang-16 /custom-os/compiler/bin/clang || true && \
-    ln -sf clang++-16 /custom-os/compiler/bin/clang++ || true && \
-    \
-    # Copy LLVM tools if available
-    cp -v /custom-os/usr/debug-tools/bin/llvm-*16 /custom-os/compiler/bin/ 2>/dev/null || true && \
-    \
-    # Copy headers + libraries
-    cp -r /usr/lib/clang/16.* /custom-os/compiler/include/ 2>/dev/null || true && \
-    cp -r /usr/include/llvm16 /custom-os/compiler/include/ 2>/dev/null || true && \
-    cp -r /usr/lib/libLLVM-16* /custom-os/compiler/lib/ 2>/dev/null || true && \
-    cp -r /usr/lib/libclang*16* /custom-os/compiler/lib/ 2>/dev/null || true && \
-    \
-    # Verify
-    echo "=== FINAL COMPILER BINARIES ===" && ls -la /custom-os/compiler/bin/ || true && \
-    echo "=== SAMPLE LIBS COPIED ===" && ls -la /custom-os/compiler/lib/ | head -10 || true
+# --- Ensure clang is available in /custom-os/compiler/bin (copy + symlink) ---
+RUN mkdir -p /custom-os/compiler/bin /custom-os/compiler/lib /custom-os/compiler/include && \
+    echo "=== POPULATING /custom-os/compiler/bin from /usr/bin ===" && \
+    cp -v /usr/bin/clang-16 /custom-os/compiler/bin/ 2>/dev/null || cp -v /usr/bin/clang /custom-os/compiler/bin/ 2>/dev/null || true && \
+    cp -v /usr/bin/clang++-16 /custom-os/compiler/bin/ 2>/dev/null || cp -v /usr/bin/clang++ /custom-os/compiler/bin/ 2>/dev/null || true && \
+    cp -v /usr/bin/llvm-* /custom-os/compiler/bin/ 2>/dev/null || true && \
+    chmod a+x /custom-os/compiler/bin/* 2>/dev/null || true && \
+    if [ -f /custom-os/compiler/bin/clang ] && [ ! -f /custom-os/compiler/bin/clang-16 ]; then \
+        ln -sf /custom-os/compiler/bin/clang /custom-os/compiler/bin/clang-16 || true; \
+    fi && \
+    if [ -f /custom-os/compiler/bin/clang++ ] && [ ! -f /custom-os/compiler/bin/clang++-16 ]; then \
+        ln -sf /custom-os/compiler/bin/clang++ /custom-os/compiler/bin/clang++-16 || true; \
+    fi && \
+    echo "=== /custom-os/compiler/bin contents ===" && ls -la /custom-os/compiler/bin || true
 
 # ======================
 # Environment setup
@@ -170,6 +152,9 @@ RUN chmod +x /usr/local/bin/binlib_validator.sh
 
 # Stage: filesystem setup - Install base-deps
 FROM base-deps AS filesystem-base-deps-builder
+
+RUN echo ">>> check /custom-os/compiler/bin" && ls -la /custom-os/compiler/bin || true
+RUN echo ">>> check for libc++" && ls -la /custom-os/compiler/lib | head -20 || true
 
 # ULTIMATE cache-busting - forces rebuild every time
 ARG BUILDKIT_INLINE_CACHE=0
@@ -2136,24 +2121,46 @@ ENV C_INCLUDE_PATH="/custom-os/usr/include:${C_INCLUDE_PATH:-}"
 # ======================
 WORKDIR /custom-os/app/build
 RUN mkdir -p . && \
-    export CC=/custom-os/compiler/bin/clang-16 && \
-    export CXX=/custom-os/compiler/bin/clang++-16 && \
-    export CFLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" && \
-    export CXXFLAGS="$CFLAGS -stdlib=libc++" && \
-    export LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib -stdlib=libc++ -lc++ -lc++abi" && \
+    # --- Detect compiler location (prefer /custom-os/compiler/bin, fallback to system) ---
+    if [ -x /custom-os/compiler/bin/clang-16 ]; then \
+        CC=/custom-os/compiler/bin/clang-16; CXX=/custom-os/compiler/bin/clang++-16; \
+    elif [ -x /custom-os/compiler/bin/clang ]; then \
+        CC=/custom-os/compiler/bin/clang; CXX=/custom-os/compiler/bin/clang++; \
+    elif command -v clang-16 >/dev/null 2>&1; then \
+        CC=$(command -v clang-16); CXX=$(command -v clang++-16 || command -v clang++); \
+    elif command -v clang >/dev/null 2>&1; then \
+        CC=$(command -v clang); CXX=$(command -v clang++); \
+    else \
+        echo "ERROR: No clang compiler found (tried /custom-os/compiler/bin and PATH)"; exit 1; \
+    fi && \
+    echo "Using compilers: CC=${CC} CXX=${CXX}" && \
+    export CC CXX && \
+    \
+    # --- Setup flags and decide whether libc++ is available ---
+    SYSROOT_FLAGS="--sysroot=/custom-os -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a" && \
+    # If libc++ exists in compiler lib, prefer it; otherwise fallback to libstdc++
+    if [ -f /custom-os/compiler/lib/libc++.so ] || [ -f /custom-os/usr/lib/libc++.so ]; then \
+        echo "libc++ detected in sysroot; enabling -stdlib=libc++"; \
+        CXXFLAGS="${SYSROOT_FLAGS} -stdlib=libc++"; \
+        LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib -stdlib=libc++ -lc++ -lc++abi"; \
+    else \
+        echo "libc++ NOT found; falling back to libstdc++ (no -stdlib=libc++)"; \
+        CXXFLAGS="${SYSROOT_FLAGS}"; \
+        LDFLAGS="--sysroot=/custom-os -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib"; \
+    fi && \
+    export CFLAGS="${SYSROOT_FLAGS}" && export CXXFLAGS && export LDFLAGS && \
     export PKG_CONFIG_SYSROOT_DIR="/custom-os" && \
     export PKG_CONFIG_PATH="/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig" && \
-    echo "=== PRE-BUILD VERIFICATION ===" && \
-    echo "Checking for CMakeLists.txt..." && \
-    ls -la ../src/src/CMakeLists.txt && \
-    echo "Source directory contents:" && \
-    ls -la ../src/src/ && \
-    echo "=== CONFIGURING BUILD WITH CMAKE ===" && \
+    \
+    echo "=== PRE-BUILD VERIFICATION ===" && echo "Compiler: $CC" && echo "CXXFLAGS: $CXXFLAGS" && echo "LDFLAGS: $LDFLAGS" && \
+    echo "Checking for CMakeLists.txt..." && ls -la ../src/src/CMakeLists.txt && echo "Source dir:" && ls -la ../src/src/ && \
+    \
+    # Run cmake configure & build (pass explicit compilers so there's no ambiguity)
     cmake ../src/src \
         -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_C_COMPILER=$CC \
-        -DCMAKE_CXX_COMPILER=$CXX \
+        -DCMAKE_C_COMPILER="${CC}" \
+        -DCMAKE_CXX_COMPILER="${CXX}" \
         -DCMAKE_SYSROOT=/custom-os \
         -DCMAKE_PREFIX_PATH="/custom-os/usr;/custom-os/compiler" \
         -DCMAKE_FIND_ROOT_PATH="/custom-os" \
@@ -2163,93 +2170,17 @@ RUN mkdir -p . && \
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
         -DCMAKE_INSTALL_PREFIX=/usr \
         -DCMAKE_INSTALL_RPATH="/custom-os/usr/lib:/custom-os/compiler/lib" \
-        -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
-        -DCMAKE_C_FLAGS="$CFLAGS" \
-        -DCMAKE_EXE_LINKER_FLAGS="$LDFLAGS" \
-        -DCMAKE_SHARED_LINKER_FLAGS="$LDFLAGS" \
+        -DCMAKE_CXX_FLAGS="${CXXFLAGS}" \
+        -DCMAKE_C_FLAGS="${CFLAGS}" \
+        -DCMAKE_EXE_LINKER_FLAGS="${LDFLAGS}" \
+        -DCMAKE_SHARED_LINKER_FLAGS="${LDFLAGS}" \
         -DALPINE_LINUX_BUILD=ON \
         2>&1 | tee /tmp/cmake_configure.log && \
     echo "=== BUILDING APPLICATION ===" && \
     cmake --build . --target simplehttpserver -- -j$(nproc) 2>&1 | tee /tmp/cmake_build.log && \
-    echo "=== POST-BUILD BINARY VERIFICATION ===" && \
-    echo "VERIFICATION: Target directory still exists:" && \
-    ls -la /custom-os/usr/bin && \
-    echo "VERIFICATION: Build directory contents:" && \
-    ls -la . && \
-    echo "VERIFICATION: Searching for built binary:" && \
-    find . -name "simplehttpserver" -type f | tee /tmp/built_binary_location.log && \
-    echo "=== EXPLICIT BINARY PACKAGING ===" && \
-    echo "STEP 1: Ensure target directory exists before install..." && \
-    mkdir -p /custom-os/usr/bin && \
-    ls -la /custom-os/usr/bin && \
-    echo "STEP 2: Attempting CMake install..." && \
-    DESTDIR=/custom-os cmake --install . 2>&1 | tee /tmp/cmake_install.log && \
-    echo "STEP 3: Verifying CMake install result..." && \
-    ls -la /custom-os/usr/bin && \
-    echo "STEP 4: Manual binary packaging (backup)..." && \
-    if [ -f ./simplehttpserver ]; then \
-        echo "Found binary in build directory, copying manually..." && \
-        cp -v ./simplehttpserver /custom-os/usr/bin/simplehttpserver && \
-        chmod +x /custom-os/usr/bin/simplehttpserver && \
-        echo "Manual copy completed"; \
-    else \
-        echo "Binary not found in build directory, searching..."; \
-        find . -name "simplehttpserver" -type f -exec cp -v {} /custom-os/usr/bin/simplehttpserver \; && \
-        chmod +x /custom-os/usr/bin/simplehttpserver 2>/dev/null || true; \
-    fi && \
-    echo "STEP 5: Final binary verification..." && \
-    ls -la /custom-os/usr/bin/simplehttpserver && \
-    echo "STEP 6: Binary functionality test..." && \
-    file /custom-os/usr/bin/simplehttpserver && \
-    echo "Binary packaging completed successfully"
+    echo "=== INSTALL (DESTDIR) ===" && \
+    DESTDIR=/custom-os cmake --install . 2>&1 | tee /tmp/cmake_install.log
 
-# ======================
-# SECTION: Post-Build Verification
-# ======================
-RUN echo "=== COMPREHENSIVE POST-BUILD VERIFICATION ===" && \
-    echo "VERIFICATION 1: Build directory contents:" && \
-    ls -la . | tee /tmp/build_dir_post.log && \
-    echo "VERIFICATION 2: Target binary directory:" && \
-    ls -la /custom-os/usr/bin/ | tee /tmp/custom_os_bin.log && \
-    echo "VERIFICATION 3: Binary existence check:" && \
-    if [ -f /custom-os/usr/bin/simplehttpserver ]; then \
-        echo "✓ SUCCESS: Binary found in target location!" && \
-        ls -la /custom-os/usr/bin/simplehttpserver && \
-        file /custom-os/usr/bin/simplehttpserver | tee /tmp/binary_details.log && \
-        chmod +x /custom-os/usr/bin/simplehttpserver && \
-        echo "Binary permissions set and verified"; \
-    else \
-        echo "✗ CRITICAL: Binary missing from target location!" && \
-        echo "Searching entire filesystem for binary..." && \
-        find /custom-os -name "*simplehttpserver*" -type f | tee /tmp/binary_search_results.log && \
-        echo "Build directory search:" && \
-        find . -name "*simplehttpserver*" -type f | tee /tmp/build_dir_search.log && \
-        echo "Attempting emergency recovery..." && \
-        if [ -f ./simplehttpserver ]; then \
-            echo "Found in build directory, copying now..." && \
-            cp -v ./simplehttpserver /custom-os/usr/bin/simplehttpserver && \
-            chmod +x /custom-os/usr/bin/simplehttpserver && \
-            echo "Emergency recovery successful"; \
-        else \
-            echo "Emergency recovery failed - binary not found anywhere"; \
-        fi; \
-    fi && \
-    echo "VERIFICATION 4: Final binary status:" && \
-    ls -la /custom-os/usr/bin/simplehttpserver 2>/dev/null || echo "Binary still missing" && \
-    echo "VERIFICATION 5: Creating snapshot..." && \
-    find /custom-os -name "*simplehttpserver*" -type f > /custom-os/snapshots/app-build.snapshot 2>/dev/null || true && \
-    echo "Post-build verification completed" && \
-    echo "=== STAGE END VERIFICATION: app-build ===" && \
-    echo "Verifying binary directory /custom-os/usr/bin exists:" && \
-    if [ -d /custom-os/usr/bin ]; then \
-        ls -la /custom-os/usr/bin && \
-        echo "✓ app-build stage completed - binary directory confirmed"; \
-    else \
-        echo "ERROR: Binary directory /custom-os/usr/bin does not exist!" && \
-        echo "Available directories in /custom-os/usr/:" && \
-        ls -la /custom-os/usr/ 2>/dev/null || echo "No /custom-os/usr/ directory found" && \
-        exit 1; \
-    fi
 
 # ======================
 # SECTION: Final Environment
