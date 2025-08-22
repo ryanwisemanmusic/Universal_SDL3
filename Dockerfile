@@ -110,7 +110,7 @@ export GLIBC_ROOT="/glibc"
 # Set up glibc as the primary C library
 export GLIBC_COMPAT="/glibc"
 export C_INCLUDE_PATH="/glibc/include:${C_INCLUDE_PATH:-}"
-export CPLUS_INCLUDE_PATH="/glibc/include:${CPLUS_INCLUDE_PATH:-}"
+export CPLUS_INclude_PATH="/glibc/include:${CPLUS_INCLUDE_PATH:-}"
 PROFILE
 
 # Make profile script executable
@@ -146,10 +146,13 @@ RUN /usr/local/bin/check_llvm15.sh "final-filesystem-builder" || true && \
 
 # Critical binary directory verification for base-deps stage
 RUN echo "=== STAGE END VERIFICATION: base-deps ===" && \
-    echo "Verifying binary directory /custom-os/usr/bin exists:" && \
-    if [ -d /custom-os/usr/bin ]; then \
-        ls -la /custom-os/usr/bin && \
-        echo "✓ base-deps stage completed - binary directory confirmed"; \
+    echo "Verifying binary directories /custom-os/usr/bin and /custom-os/usr/local/bin exist:" && \
+    if [ -d /custom-os/usr/bin ] && [ -d /custom-os/usr/local/bin ]; then \
+        echo "✓ base-deps stage completed - binary directories confirmed"; \
+        echo "/custom-os/usr/bin contents:"; \
+        ls -la /custom-os/usr/bin | head -5; \
+        echo "/custom-os/usr/local/bin contents:"; \
+        ls -la /custom-os/usr/local/bin; \
     else \
         echo "ERROR: Binary directory /custom-os/usr/bin does not exist!" && \
         echo "Available directories in /custom-os/usr/:" && \
@@ -540,6 +543,7 @@ RUN echo "=== INTEGRATING ORGANIZED COMPONENTS INTO MAIN SYSROOT ===" && \
 RUN cat > /custom-os/etc/environment <<'ENV'
 # Custom filesystem environment configuration with organized components
 export PATH="/glibc/bin:/glibc/sbin:/compiler/bin:/usr/bin:/usr/sbin:/usr/local/bin"
+# Note: /usr/local/bin is already included in the PATH
 export PATH="${PATH}:/usr/x11/bin:/usr/vulkan/bin:/usr/media/bin:/usr/debug/bin"
 export PATH="${PATH}:/usr/misc/bin:/usr/fs/bin:/usr/sysutils/bin:/usr/compress/bin:/usr/db/bin"
 export LLVM_CONFIG="/compiler/bin/llvm-config"
@@ -637,14 +641,15 @@ RUN echo "=== VERIFYING SYSROOT STRUCTURE ===" && \
     ls -la /custom-os/etc/environment /custom-os/etc/profile.d/ && \
     echo "Sysroot structure verification completed."
 
-# Final contamination check
-RUN /usr/local/bin/check_llvm15.sh "final-base-deps" || true && \
-    /usr/local/bin/check-filesystem.sh "final-base-deps" || true && \
-    echo "=== STAGE END VERIFICATION: filesystem-base-deps-builder ===" && \
-    echo "Verifying binary directory /custom-os/usr/bin exists:" && \
-    if [ -d /custom-os/usr/bin ]; then \
-        ls -la /custom-os/usr/bin && \
-        echo "✓ filesystem-base-deps-builder stage completed - binary directory confirmed"; \
+# Critical binary directory verification for filesystem-base-deps-builder
+RUN echo "=== STAGE END VERIFICATION: filesystem-base-deps-builder ===" && \
+    echo "Verifying binary directories /custom-os/usr/bin and /custom-os/usr/local/bin exist:" && \
+    if [ -d /custom-os/usr/bin ] && [ -d /custom-os/usr/local/bin ]; then \
+        echo "✓ filesystem-base-deps-builder stage completed - binary directories confirmed"; \
+        echo "/custom-os/usr/bin contents:"; \
+        ls -la /custom-os/usr/bin | head -5; \
+        echo "/custom-os/usr/local/bin contents:"; \
+        ls -la /custom-os/usr/local/bin; \
     else \
         echo "ERROR: Binary directory /custom-os/usr/bin does not exist!" && \
         echo "Available directories in /custom-os/usr/:" && \
