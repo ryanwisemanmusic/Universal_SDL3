@@ -24,7 +24,7 @@ RUN mkdir -p /custom-os/compiler/bin /custom-os/compiler/lib /custom-os/compiler
 # Create glibc directory structure
 RUN mkdir -p /custom-os/glibc/lib /custom-os/glibc/bin /custom-os/glibc/sbin /custom-os/glibc/include
 
-# Copy the LLVM15 debug script for monitoring from your build context (setup-scripts/)
+# Copy the LLVM15 debug script for monitoring
 COPY setup-scripts/check_llvm15.sh /usr/local/bin/check_llvm15.sh
 RUN chmod +x /usr/local/bin/check_llvm15.sh
 
@@ -32,7 +32,7 @@ RUN chmod +x /usr/local/bin/check_llvm15.sh
 COPY setup-scripts/check-filesystem.sh /usr/local/bin/check-filesystem.sh
 RUN chmod +x /usr/local/bin/check-filesystem.sh
 
-# Remove any preinstalled LLVM/Clang (on the builder)
+# Remove any preinstalled LLVM/Clang
 RUN apk del --no-cache llvm clang || true
 
 # Run LLVM15 check before any installations
@@ -43,111 +43,115 @@ RUN wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/s
     wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-2.35-r1.apk && \
     wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-bin-2.35-r1.apk && \
     wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-dev-2.35-r1.apk && \
-    # Install packages and suppress ARM64 ldconfig warnings
     apk add --no-cache --allow-untrusted \
         glibc-2.35-r1.apk \
         glibc-bin-2.35-r1.apk \
         glibc-dev-2.35-r1.apk 2>&1 | grep -v "unknown machine 183" || true && \
-    # Create a wrapper that suppresses the ARM64 warnings (if ldconfig exists)
     if [ -x /usr/glibc-compat/sbin/ldconfig ]; then \
         mv /usr/glibc-compat/sbin/ldconfig /usr/glibc-compat/sbin/ldconfig.real && \
         echo '#!/bin/sh' > /usr/glibc-compat/sbin/ldconfig && \
         echo '/usr/glibc-compat/sbin/ldconfig.real "$@" 2>&1 | grep -v "unknown machine 183" || true' >> /usr/glibc-compat/sbin/ldconfig && \
         chmod +x /usr/glibc-compat/sbin/ldconfig; \
     fi && \
-    # Clean up
     rm -f /sbin/ldconfig || true && \
     rm -f *.apk || true && \
     /usr/local/bin/check_llvm15.sh "after-glibc" || true
 
-# Copy glibc installation to custom filesystem glibc directory
+# Copy glibc runtime to custom filesystem
 RUN echo "=== COPYING GLIBC TO CUSTOM FILESYSTEM ===" && \
     mkdir -p /custom-os/glibc/{lib,bin,sbin} && \
-    # copy only runtime libs & binaries (no development headers)
     cp -r /usr/glibc-compat/lib/* /custom-os/glibc/lib/ 2>/dev/null || true && \
     cp -r /usr/glibc-compat/bin/* /custom-os/glibc/bin/ 2>/dev/null || true && \
     cp -r /usr/glibc-compat/sbin/* /custom-os/glibc/sbin/ 2>/dev/null || true && \
-    # DO NOT copy include/ - avoid mismatched headers for cross builds
     echo "GLIBC runtime copied to custom filesystem (no headers)." && \
     ls -la /custom-os/glibc/lib/ | head -10 || echo "No glibc libraries found"
 
-# Force install LLVM 16 only - but install to custom location
-RUN /usr/local/bin/check_llvm15.sh "pre-llvm16" || true && \
-    apk add --no-cache llvm16-dev llvm16-libs clang16
+# ======================
+# LLVM16 + Clang16
+# ======================
+RUN echo "=== INSTALLING LLVM16 + CLANG16 (isolated) ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-llvm16" || true && \
+    apk add --no-cache llvm16-dev llvm16-libs clang16 && \
+    echo "=== LLVM16 + Clang16 installed ==="
+
+# Move all developer/debug binaries to debug-tools
+RUN mkdir -p /custom-os/usr/debug-tools/bin && \
+    find /usr/bin -maxdepth 1 -type f \
+        \( -name "clang-*" -o -name "scan-build*" -o -name "llvm-*" \) \
+        -exec mv {} /custom-os/usr/debug-tools/bin/ \; || true && \
+    echo "=== Debug binaries isolated ==="
 
 # Copy LLVM16 installation to custom filesystem compiler directory
 RUN echo "=== COPYING LLVM16 TO CUSTOM FILESYSTEM ===" && \
-    # Copy LLVM16 binaries (if present)
-    cp -r /usr/lib/llvm16/* /custom-os/compiler/ 2>/dev/null || true && \
-    # Copy clang binaries
-    find /usr/bin -name "*clang*16*" -exec cp {} /custom-os/compiler/bin/ \; 2>/dev/null || true && \
-    # Copy any additional LLVM16 libs that might be elsewhere
-    find /usr/lib -name "*llvm16*" -type f -exec cp {} /custom-os/compiler/lib/ \; 2>/dev/null || true && \
-    # Verify installation
-    echo "LLVM16/Clang installed to custom filesystem:" && \
-    ls -la /custom-os/compiler/bin/ | grep -E "(clang|llvm)" || echo "No clang/llvm binaries found" && \
-    ls -la /custom-os/compiler/lib/ | head -10 || echo "No libraries found"
+    mkdir -p /custom-os/compiler/bin /custom-os/compiler/lib /custom-os/compiler/include && \
+    \
+    # Copy clang binaries explicitly
+    cp -v /custom-os/usr/debug-tools/bin/clang-16 /custom-os/compiler/bin/ 2>/dev/null || true && \
+    cp -v /custom-os/usr/debug-tools/bin/clang++-16 /custom-os/compiler/bin/ 2>/dev/null || true && \
+    cp -v /custom-os/usr/debug-tools/bin/clang-cpp-16 /custom-os/compiler/bin/ 2>/dev/null || true && \
+    \
+    # Optional: create simple symlinks for easier invocation
+    ln -sf clang-16 /custom-os/compiler/bin/clang || true && \
+    ln -sf clang++-16 /custom-os/compiler/bin/clang++ || true && \
+    \
+    # Copy LLVM tools if available
+    cp -v /custom-os/usr/debug-tools/bin/llvm-*16 /custom-os/compiler/bin/ 2>/dev/null || true && \
+    \
+    # Copy headers + libraries
+    cp -r /usr/lib/clang/16.* /custom-os/compiler/include/ 2>/dev/null || true && \
+    cp -r /usr/include/llvm16 /custom-os/compiler/include/ 2>/dev/null || true && \
+    cp -r /usr/lib/libLLVM-16* /custom-os/compiler/lib/ 2>/dev/null || true && \
+    cp -r /usr/lib/libclang*16* /custom-os/compiler/lib/ 2>/dev/null || true && \
+    \
+    # Verify
+    echo "=== FINAL COMPILER BINARIES ===" && ls -la /custom-os/compiler/bin/ || true && \
+    echo "=== SAMPLE LIBS COPIED ===" && ls -la /custom-os/compiler/lib/ | head -10 || true
 
-# Set up environment configuration for the custom filesystem
-# Create environment setup script that will be sourced in the final stage
+# ======================
+# Environment setup
+# ======================
 RUN cat > /custom-os/etc/environment <<'ENV' && \
     echo "=== CREATING ENVIRONMENT SETUP ===" && \
     cat /custom-os/etc/environment
-# Custom filesystem environment configuration
 export PATH="/glibc/bin:/glibc/sbin:/compiler/bin:${PATH}"
 export LLVM_CONFIG="/compiler/bin/llvm-config"
 export LD_LIBRARY_PATH="/glibc/lib:/compiler/lib:/usr/local/lib:/usr/lib"
 export GLIBC_ROOT="/glibc"
 ENV
 
-# Create a profile script for interactive shells
 RUN mkdir -p /custom-os/etc/profile.d && \
     cat > /custom-os/etc/profile.d/compiler.sh <<'PROFILE'
 #!/bin/sh
-# Compiler and glibc environment setup
 export PATH="/glibc/bin:/glibc/sbin:/compiler/bin:${PATH}"
 export LLVM_CONFIG="/compiler/bin/llvm-config"
 export LD_LIBRARY_PATH="/glibc/lib:/compiler/lib:/usr/local/lib:/usr/lib"
 export GLIBC_ROOT="/glibc"
-
-# Set up glibc as the primary C library
 export GLIBC_COMPAT="/glibc"
 export C_INCLUDE_PATH="/glibc/include:${C_INCLUDE_PATH:-}"
 export CPLUS_INCLUDE_PATH="/glibc/include:${CPLUS_INCLUDE_PATH:-}"
 PROFILE
-
-# Make profile script executable
 RUN chmod +x /custom-os/etc/profile.d/compiler.sh
 
-# Create a glibc-specific configuration script
 RUN cat > /custom-os/etc/profile.d/glibc.sh <<'GLIBC_PROFILE'
 #!/bin/sh
-# glibc-specific environment setup
 export GLIBC_ROOT="/glibc"
 export GLIBC_COMPAT="/glibc"
-
-# Ensure glibc ldconfig is used
 export PATH="/glibc/sbin:/glibc/bin:${PATH}"
-
-# Set up library paths for glibc
 export LD_LIBRARY_PATH="/glibc/lib:${LD_LIBRARY_PATH:-}"
-
-# Set up include paths for glibc
 export C_INCLUDE_PATH="/glibc/include:${C_INCLUDE_PATH:-}"
 export CPLUS_INCLUDE_PATH="/glibc/include:${CPLUS_INCLUDE_PATH:-}"
 GLIBC_PROFILE
-
 RUN chmod +x /custom-os/etc/profile.d/glibc.sh
 
 # Copy and execute setup scripts
 COPY setup-scripts/ /setup/
 RUN chmod +x /setup/*.sh && /setup/create-filesystem.sh
 
-# Final LLVM15 contamination check && filesystem analyzer
+# Final LLVM15 contamination check & filesystem analyzer
 RUN /usr/local/bin/check_llvm15.sh "final-filesystem-builder" || true && \
     /usr/local/bin/check-filesystem.sh "final-filesystem-builder" || true
 
-# Critical binary directory verification for base-deps stage
+# Critical binary directory verification
 RUN echo "=== STAGE END VERIFICATION: base-deps ===" && \
     echo "Verifying binary directory /custom-os/usr/bin exists:" && \
     if [ -d /custom-os/usr/bin ]; then \
@@ -155,14 +159,14 @@ RUN echo "=== STAGE END VERIFICATION: base-deps ===" && \
         echo "✓ base-deps stage completed - binary directory confirmed"; \
     else \
         echo "ERROR: Binary directory /custom-os/usr/bin does not exist!" && \
-        echo "Available directories in /custom-os/usr/:" && \
         ls -la /custom-os/usr/ 2>/dev/null || echo "No /custom-os/usr/ directory found" && \
         exit 1; \
     fi
 
-# Check binaries/libraries
+# Copy bin/lib validator
 COPY setup-scripts/binlib_validator.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/binlib_validator.sh
+
 
 # Stage: filesystem setup - Install base-deps
 FROM base-deps AS filesystem-base-deps-builder
@@ -308,18 +312,24 @@ RUN echo "=== COPYING BASE PACKAGES TO CUSTOM FILESYSTEM ===" && \
 # ======================
 # SECTION: Debug Tools
 # ======================
-RUN echo "=== INSTALLING DEBUG TOOLS ==="
-RUN apk add --no-cache strace && /usr/local/bin/check_llvm15.sh "after-strace" || true
-RUN apk add --no-cache file && /usr/local/bin/check_llvm15.sh "after-file" || true
-RUN apk add --no-cache tree && /usr/local/bin/check_llvm15.sh "after-tree" || true
-RUN apk add --no-cache valgrind-dev && /usr/local/bin/check_llvm15.sh "after-valgrind-dev" || true
-
-
-# Copy debug tools to organized locations
-RUN mkdir -p /custom-os/usr/debug/bin && \
+RUN echo "=== INSTALLING DEBUG TOOLS ===" && \
+    apk add --no-cache strace file tree valgrind-dev && \
+    /usr/local/bin/check_llvm15.sh "after-debug-tools" || true && \
+    \
+    # Organize debug tools into dedicated sysroot location
+    mkdir -p /custom-os/usr/debug/bin && \
     cp /usr/bin/strace /custom-os/usr/debug/bin/ && \
-    cp /usr/bin/file /custom-os/usr/debug/bin/ && \
-    cp /usr/bin/tree /custom-os/usr/debug/bin/
+    cp /usr/bin/file   /custom-os/usr/debug/bin/ && \
+    cp /usr/bin/tree   /custom-os/usr/debug/bin/ && \
+    \
+    # Ensure they don’t pollute /usr/bin (remove originals)
+    rm -f /usr/bin/strace /usr/bin/file /usr/bin/tree && \
+    \
+    # Make sure they are executable
+    chmod -R a+rx /custom-os/usr/debug/bin || true && \
+    \
+    echo "Debug tools installed into /custom-os/usr/debug/bin only."
+
 
 # ======================
 # SECTION: X11 Protocol Packages
@@ -520,9 +530,9 @@ RUN mkdir -p /custom-os/usr/db/{bin,lib,include} && \
 # SECTION: Sysroot Integration
 # ======================
 RUN echo "=== INTEGRATING ORGANIZED COMPONENTS INTO MAIN SYSROOT ===" && \
-    # Ensure all organized component libraries are also accessible from main sysroot paths
     mkdir -p /custom-os/usr/lib /custom-os/usr/bin /custom-os/usr/include && \
-    # Create symlinks or copy critical libraries to main sysroot lib directory
+    \
+    # Libraries from subsystems
     find /custom-os/usr/x11/lib -name "*.so*" -exec ln -sf {} /custom-os/usr/lib/ \; 2>/dev/null || true && \
     find /custom-os/usr/audio/lib -name "*.so*" -exec ln -sf {} /custom-os/usr/lib/ \; 2>/dev/null || true && \
     find /custom-os/usr/graphics/lib -name "*.so*" -exec ln -sf {} /custom-os/usr/lib/ \; 2>/dev/null || true && \
@@ -535,8 +545,15 @@ RUN echo "=== INTEGRATING ORGANIZED COMPONENTS INTO MAIN SYSROOT ===" && \
     find /custom-os/usr/db/lib -name "*.so*" -exec ln -sf {} /custom-os/usr/lib/ \; 2>/dev/null || true && \
     find /custom-os/usr/fs/lib -name "*.so*" -exec ln -sf {} /custom-os/usr/lib/ \; 2>/dev/null || true && \
     find /custom-os/usr/sysutils/lib -name "*.so*" -exec ln -sf {} /custom-os/usr/lib/ \; 2>/dev/null || true && \
-    # Link essential binaries to main sysroot bin directory  
-    find /custom-os/usr/*/bin -name "*" -type f -exec ln -sf {} /custom-os/usr/bin/ \; 2>/dev/null || true && \
+    \
+    # Link essential binaries, EXCLUDING debug tools
+    for dir in /custom-os/usr/*/bin; do \
+        case "$dir" in \
+            /custom-os/usr/debug/bin) echo "Skipping debug bin directory ($dir)";; \
+            *) find "$dir" -maxdepth 1 -type f -exec ln -sf {} /custom-os/usr/bin/ \; ;; \
+        esac; \
+    done && \
+    \
     echo "Sysroot integration completed."
 
 # Update environment configuration to include organized component paths
@@ -787,10 +804,8 @@ RUN echo "=== INSTALLING Apache FOP 2.11 (isolated, safe) ===" && \
 RUN echo "=== BUILDING JACK2 FROM SOURCE ===" && \
     /usr/local/bin/check_llvm15.sh "pre-jack2-source-build" || true && \
     \
-    # Setup temporary build directory
     mkdir -p /tmp/jack2 && cd /tmp/jack2 && \
     \
-    # Clone JACK2 from GitHub (official repository)
     if git clone --depth=1 https://github.com/jackaudio/jack2.git /tmp/jack2-source; then \
         echo "JACK2 source cloned successfully"; \
     else \
@@ -799,14 +814,12 @@ RUN echo "=== BUILDING JACK2 FROM SOURCE ===" && \
     \
     cd /tmp/jack2-source && \
     \
-    # Try Waf build system first
     if [ -x ./waf ]; then \
         echo ">>> Using waf build system <<<"; \
         ./waf configure --prefix=/usr --libdir=/usr/lib && \
         ./waf build && \
         DESTDIR="/custom-os" ./waf install; \
     else \
-        # Fallback to autotools
         echo ">>> Waf not found, trying autotools <<<"; \
         if [ -x ./configure ]; then \
             ./configure --prefix=/usr --libdir=/usr/lib --with-sysroot=/custom-os && \
@@ -817,18 +830,21 @@ RUN echo "=== BUILDING JACK2 FROM SOURCE ===" && \
         fi; \
     fi && \
     \
-    # Verify installation
-    echo "=== VERIFYING JACK2 INSTALLATION ===" && \
-    if find /custom-os -name "*jack*" -type f | tee /tmp/jack2_install.log; then \
-        echo "JACK2 files present in /custom-os"; \
-    else \
-        echo "WARNING: No JACK2 files found in /custom-os"; \
+    echo "=== RELOCATING JACK2 BINARIES ===" && \
+    mkdir -p /custom-os/usr/jack/bin && \
+    # Move executables to jack-specific bin directory
+    if [ -d /custom-os/usr/bin ]; then \
+        find /custom-os/usr/bin -maxdepth 1 -type f -name "jack*" -exec mv -v {} /custom-os/usr/jack/bin/ \; || true; \
     fi && \
+    \
+    echo "=== VERIFYING JACK2 INSTALLATION ===" && \
+    find /custom-os/usr/jack/bin -type f -name "jack*" -ls && \
+    find /custom-os/usr/lib -type f -name "libjack*" -ls && \
     \
     /usr/local/bin/check_llvm15.sh "post-jack2-install" || true && \
     \
-    # Cleanup
     cd / && rm -rf /tmp/jack2 /tmp/jack2-source
+
 
 
 # ======================
