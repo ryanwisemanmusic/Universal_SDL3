@@ -2,7 +2,7 @@
 set -eu
 
 echo "=== Filesystem Scanner Started ==="
-ROOT="/custom-os"
+ROOT="/lilyspark"
 
 if [ ! -d "$ROOT" ]; then
     echo "✗ ERROR: Root directory $ROOT not found!"

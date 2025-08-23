@@ -1,3 +1,4 @@
+/*
 #include "main.hpp"
 
 
@@ -41,5 +42,14 @@ int main(int argc, char* argv[]) {
 
     // Clean up
     SDL_Quit();
+    return 0;
+}
+
+ */
+#include <stdio.h>
+ using namespace std;
+int main()
+{
+    printf("Hello World \n");
     return 0;
 }

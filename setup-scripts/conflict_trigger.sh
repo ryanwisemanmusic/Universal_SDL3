@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-SCAN_ROOT="/custom-os"
-REPORT_FILE="/custom-os/permission_report.txt"
+SCAN_ROOT="/lilyspark"
+REPORT_FILE="/lilyspark/permission_report.txt"
 
 echo "🔍 Scanning for permission issues in $SCAN_ROOT"
 

@@ -2,7 +2,7 @@
 set -eu
 
 CONTEXT_ROOT="/context"
-SEARCH_ROOT="/custom-os"
+SEARCH_ROOT="/lilyspark"
 
 echo "=== Build Context Inspector ==="
 echo "Comparing $CONTEXT_ROOT with $SEARCH_ROOT"

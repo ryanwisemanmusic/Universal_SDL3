@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-ANALYSIS_DIR="/custom-os/layer_analysis"
+ANALYSIS_DIR="/lilyspark/layer_analysis"
 mkdir -p "$ANALYSIS_DIR"
 
 analyze_layer() {
@@ -39,13 +39,13 @@ analyze_layer() {
 }
 
 # Analyze current layer
-analyze_layer "/custom-os"
+analyze_layer "/lilyspark"
 
 # Compare with previous layers if available
-if [ -d "/custom-os/previous_layers" ]; then
+if [ -d "/lilyspark/previous_layers" ]; then
     echo "\n🔄 Comparing with previous layers"
-    for layer in "/custom-os/previous_layers"/*; do
+    for layer in "/lilyspark/previous_layers"/*; do
         echo "vs $(basename "$layer"):"
-        du -sh "/custom-os" "$layer" | sort -h
+        du -sh "/lilyspark" "$layer" | sort -h
     done
 fi

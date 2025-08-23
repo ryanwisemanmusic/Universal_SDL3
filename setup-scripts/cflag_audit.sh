@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-SCAN_ROOT="${1:-/custom-os/compiler}"
-REPORT_FILE="/custom-os/compiler_flags_report.txt"
+SCAN_ROOT="${1:-/lilyspark/compiler}"
+REPORT_FILE="/lilyspark/compiler_flags_report.txt"
 
 # Security-sensitive flags
 INSECURE_FLAGS="(-fno-stack-protector|-z execstack)"

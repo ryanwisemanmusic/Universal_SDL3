@@ -5,7 +5,7 @@ echo "=== Custom Filesystem Setup Started ==="
 
 # Verify core directory structure
 echo "Verifying core directories..."
-for dir in /custom-os/bin /custom-os/sbin /custom-os/usr/bin /custom-os/usr/lib /custom-os/compiler; do
+for dir in /lilyspark/bin /lilyspark/sbin /lilyspark/usr/bin /lilyspark/usr/lib /lilyspark/compiler; do
     if [ -d "$dir" ]; then
         echo "✓ Directory exists: $dir"
     else
@@ -17,7 +17,7 @@ done
 # Verify LLVM/Clang installation in compiler directory
 echo ""
 echo "=== LLVM/Clang Installation Verification ==="
-COMPILER_DIR="/custom-os/compiler"
+COMPILER_DIR="/lilyspark/compiler"
 
 # Check for LLVM binaries
 LLVM_BINARIES=$(find "$COMPILER_DIR/bin" -name "*llvm*" 2>/dev/null | wc -l)
@@ -54,45 +54,45 @@ echo ""
 echo "=== Environment Configuration Verification ==="
 
 # Check for environment file
-if [ -f "/custom-os/etc/environment" ]; then
-    echo "✓ Environment file exists: /custom-os/etc/environment"
+if [ -f "/lilyspark/etc/environment" ]; then
+    echo "✓ Environment file exists: /lilyspark/etc/environment"
     echo "  Contents:"
     while IFS= read -r line; do
         echo "    $line"
-    done < /custom-os/etc/environment
+    done < /lilyspark/etc/environment
 else
-    echo "✗ WARNING: Environment file missing: /custom-os/etc/environment"
+    echo "✗ WARNING: Environment file missing: /lilyspark/etc/environment"
 fi
 
 # Check for profile script
-if [ -f "/custom-os/etc/profile.d/compiler.sh" ]; then
-    echo "✓ Profile script exists: /custom-os/etc/profile.d/compiler.sh"
-    if [ -x "/custom-os/etc/profile.d/compiler.sh" ]; then
+if [ -f "/lilyspark/etc/profile.d/compiler.sh" ]; then
+    echo "✓ Profile script exists: /lilyspark/etc/profile.d/compiler.sh"
+    if [ -x "/lilyspark/etc/profile.d/compiler.sh" ]; then
         echo "✓ Profile script is executable"
     else
         echo "✗ WARNING: Profile script is not executable"
     fi
 else
-    echo "✗ WARNING: Profile script missing: /custom-os/etc/profile.d/compiler.sh"
+    echo "✗ WARNING: Profile script missing: /lilyspark/etc/profile.d/compiler.sh"
 fi
 
 # Verify that the environment configuration points to the right paths
 echo ""
 echo "=== Environment Path Verification ==="
-if [ -f "/custom-os/etc/environment" ]; then
-    if grep -q "/compiler/bin" /custom-os/etc/environment; then
+if [ -f "/lilyspark/etc/environment" ]; then
+    if grep -q "/compiler/bin" /lilyspark/etc/environment; then
         echo "✓ PATH configuration includes /compiler/bin"
     else
         echo "✗ WARNING: PATH configuration missing /compiler/bin"
     fi
     
-    if grep -q "/compiler/bin/llvm-config" /custom-os/etc/environment; then
+    if grep -q "/compiler/bin/llvm-config" /lilyspark/etc/environment; then
         echo "✓ LLVM_CONFIG points to /compiler/bin/llvm-config"
     else
         echo "✗ WARNING: LLVM_CONFIG not configured correctly"
     fi
     
-    if grep -q "/compiler/lib" /custom-os/etc/environment; then
+    if grep -q "/compiler/lib" /lilyspark/etc/environment; then
         echo "✓ LD_LIBRARY_PATH includes /compiler/lib"
     else
         echo "✗ WARNING: LD_LIBRARY_PATH missing /compiler/lib"

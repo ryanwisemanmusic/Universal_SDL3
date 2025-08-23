@@ -2,7 +2,7 @@
 set -eu
 
 ERROR_MSG="$*"
-DEPS_FILE="/custom-os/dependency_chains.log"
+DEPS_FILE="/lilyspark/dependency_chains.log"
 
 echo "🕸️  Dependency Chain Analysis"
 echo "========================="
@@ -31,7 +31,7 @@ for comp in $components; do
         
         # Check reverse dependencies
         echo "  Required By:"
-        find /custom-os -type f -exec sh -c "ldd {} 2>/dev/null | grep -q \"$comp\" && echo \"    {}\"" \; | head -5
+        find /lilyspark -type f -exec sh -c "ldd {} 2>/dev/null | grep -q \"$comp\" && echo \"    {}\"" \; | head -5
     fi
     
     # Check environment relationships

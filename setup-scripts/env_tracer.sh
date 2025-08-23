@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-ENV_LOG="/custom-os/env_changes.log"
+ENV_LOG="/lilyspark/env_changes.log"
 STAGE="$1"
 
 echo "🌱 Environment changes in stage: $STAGE" >> "$ENV_LOG"

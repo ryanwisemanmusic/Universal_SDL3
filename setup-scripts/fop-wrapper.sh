@@ -1,7 +1,7 @@
 #!/bin/sh
 # Minimal POSIX FOP launcher wrapper
 # Location in repo: setup-scripts/fop-wrapper.sh
-# Installed in container as: /custom-os/usr/fop/bin/fop
+# Installed in container as: /lilyspark/usr/fop/bin/fop
 # This wrapper finds java and runs the FOP CLI main class using jars under ../lib
 
 # Fail early on errors where appropriate

@@ -2,7 +2,7 @@
 set -eu
 
 MISSING_FILE="$1"
-SNAPSHOT_DIR="/custom-os/snapshots"
+SNAPSHOT_DIR="/lilyspark/snapshots"
 STAGE_FILE="/tmp/current_stage"
 
 # Get current stage
@@ -30,6 +30,6 @@ done
 
 # Show copy operations that might affect this file
 echo "\n📋 Relevant Docker operations:"
-if [ -f "/custom-os/docker_operations.log" ]; then
-    grep "$(basename "$MISSING_FILE")" "/custom-os/docker_operations.log" || echo "    No related COPY/ADD operations found"
+if [ -f "/lilyspark/docker_operations.log" ]; then
+    grep "$(basename "$MISSING_FILE")" "/lilyspark/docker_operations.log" || echo "    No related COPY/ADD operations found"
 fi

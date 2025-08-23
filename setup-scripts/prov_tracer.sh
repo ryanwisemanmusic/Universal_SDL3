@@ -2,7 +2,7 @@
 set -eu
 
 TARGET="$1"
-PROVENANCE_LOG="/custom-os/provenance.log"
+PROVENANCE_LOG="/lilyspark/provenance.log"
 
 echo "🔎 Provenance Trace: $TARGET"
 echo "===================="

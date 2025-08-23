@@ -1,22 +1,23 @@
+
 //==================================================
 // Foundational Headers - General System Headers
 //==================================================
 
 //So standard headers are recognized. So long as it is C/C++ library, it
 //should be loaded.
-#include <assert.h>
-#include <ctype.h>
-#include <fcntl.h>
-#include <iostream>
-#include <math.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <cstdint>
+//#include <assert.h>
+//#include <ctype.h>
+//#include <fcntl.h>
+//#include <iostream>
+//#include <math.h>
+//#include <stdarg.h>
+//#include <stdbool.h>
+//#include <stddef.h>
+//#include <stdint.h>
+//#include <stdio.h>
+//#include <string.h>
+//#include <unistd.h>
+//#include <cstdint>
 
 //==================================================
 // Foundational Headers - Networking Headers
@@ -34,6 +35,8 @@ networking from the start because isn't that like foundational and a
 critical problem if someone were to build a kernel with Alpine but
 never substantiated sys
 */
+
+/*
 #pragma once
 #include <arpa/inet.h>
 #include <errno.h>
@@ -215,6 +218,30 @@ never substantiated sys
 #include <GL/glxmd.h>
 #include <GL/glxtokens.h>
 
+
+
+
+
+
+ */
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //==================================================
 // Foundational Headers - Other NonSDL Headers
 //==================================================
@@ -255,3 +282,4 @@ Additional problematic headers:
 
 So I'm supressing this so we don't get anymore issues
 */
+

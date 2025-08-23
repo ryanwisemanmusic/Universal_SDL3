@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-SCAN_ROOT="${1:-/custom-os/compiler}"
-REPORT_FILE="/custom-os/symbol_report.txt"
+SCAN_ROOT="${1:-/lilyspark/compiler}"
+REPORT_FILE="/lilyspark/symbol_report.txt"
 
 echo "🔍 Checking debug symbols in $SCAN_ROOT"
 echo "================================" > "$REPORT_FILE"

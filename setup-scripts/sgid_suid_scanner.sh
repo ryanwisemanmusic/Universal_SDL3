@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-SCAN_ROOT="${1:-/custom-os}"
-REPORT_FILE="/custom-os/suid_sgid_report.txt"
+SCAN_ROOT="${1:-/lilyspark}"
+REPORT_FILE="/lilyspark/suid_sgid_report.txt"
 
 echo "🔍 Scanning for SUID/SGID binaries in $SCAN_ROOT"
 echo "================================" > "$REPORT_FILE"

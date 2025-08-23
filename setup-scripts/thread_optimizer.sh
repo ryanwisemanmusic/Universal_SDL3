@@ -2,7 +2,7 @@
 set -eu
 
 DOCKERFILE="$1"
-OPTIMIZATION_REPORT="/custom-os/parallel_build_plan.log"
+OPTIMIZATION_REPORT="/lilyspark/parallel_build_plan.log"
 CPUS=$(nproc)
 
 echo "⚡ Parallel Build Optimization Plan"

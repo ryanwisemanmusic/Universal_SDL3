@@ -2,7 +2,7 @@
 set -eu
 
 MISSING_FILE="$1"
-DOCKERFILE_SUGGESTIONS="/custom-os/src_build_suggestions.txt"
+DOCKERFILE_SUGGESTIONS="/lilyspark/src_build_suggestions.txt"
 
 echo "🔍 Attempting to find source for: $MISSING_FILE"
 echo "===================================="
@@ -45,7 +45,7 @@ search_source() {
     echo "    wget https://example.com/source.tar.gz && \\" >> "$DOCKERFILE_SUGGESTIONS"
     echo "    tar xvf source.tar.gz && \\" >> "$DOCKERFILE_SUGGESTIONS"
     echo "    cd source && \\" >> "$DOCKERFILE_SUGGESTIONS"
-    echo "    ./configure --prefix=/custom-os && \\" >> "$DOCKERFILE_SUGGESTIONS"
+    echo "    ./configure --prefix=/lilyspark && \\" >> "$DOCKERFILE_SUGGESTIONS"
     echo "    make -j$(nproc) && make install" >> "$DOCKERFILE_SUGGESTIONS"
 }
 

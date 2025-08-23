@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-SNAPSHOT_DIR="/custom-os/snapshots"
+SNAPSHOT_DIR="/lilyspark/snapshots"
 CURRENT_STAGE="${1:-unknown-stage}"
 
 mkdir -p "$SNAPSHOT_DIR"
@@ -11,10 +11,10 @@ take_snapshot() {
     echo "📸 Taking filesystem snapshot for stage: $CURRENT_STAGE"
     
     # Record metadata for all files
-    find /custom-os -type f -exec stat -c "%n %U %G %a %s %y" {} \; | sort > "$snapshot_file"
+    find /lilyspark -type f -exec stat -c "%n %U %G %a %s %y" {} \; | sort > "$snapshot_file"
     
     # Record directory structure
-    find /custom-os -type d -exec stat -c "%n %U %G %a" {} \; | sort >> "$snapshot_file"
+    find /lilyspark -type d -exec stat -c "%n %U %G %a" {} \; | sort >> "$snapshot_file"
     
     echo "Snapshot saved to $snapshot_file"
 }

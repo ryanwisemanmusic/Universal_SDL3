@@ -3,8 +3,8 @@ set -eu
 
 FAILED_COMMAND="$1"
 DOCKERFILE="/Dockerfile"
-BUILD_LOG="/custom-os/build.log"
-RECONSTRUCT_DIR="/custom-os/reconstruct"
+BUILD_LOG="/lilyspark/build.log"
+RECONSTRUCT_DIR="/lilyspark/reconstruct"
 
 mkdir -p "$RECONSTRUCT_DIR"
 

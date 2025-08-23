@@ -2,7 +2,7 @@
 set -eu
 
 DOCKERFILE="$1"
-CACHE_REPORT="/custom-os/cache_predictions.log"
+CACHE_REPORT="/lilyspark/cache_predictions.log"
 
 echo "🔮 Cache Invalidation Predictions for $DOCKERFILE"
 echo "====================================" > "$CACHE_REPORT"
