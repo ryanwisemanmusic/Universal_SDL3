@@ -4,6 +4,7 @@ FROM alpine:3.21 AS base-deps
 # Install bare essentials
 RUN apk add --no-cache bash wget coreutils findutils file
 
+# Container Directory - different from repo directory (container in abstract space)
 RUN mkdir -p \
     # our OS's main folder
     /lilyspark \
@@ -26,6 +27,16 @@ RUN mkdir -p \
     /lilyspark/usr/local/sbin \
     /lilyspark/usr/local/lib \
     /lilyspark/usr/local/share \
+    # User's OS dependencies - Still Essential
+    /lilyspark/usr/local/lib \
+    /lilyspark/usr/local/lib/device_management \
+    /lilyspark/usr/local/lib/documentation \
+    /lilyspark/usr/local/lib/graphics \
+    /lilyspark/usr/local/lib/java \
+    /lilyspark/usr/local/lib/math \
+    /lilyspark/usr/local/lib/python \
+    /lilyspark/usr/local/lib/wayland \
+    /lilyspark/usr/local/lib/x11 \
     # Third-party libraries
     /lilyspark/opt \
     /lilyspark/opt/include \
@@ -114,6 +125,17 @@ RUN /usr/local/bin/check_llvm15.sh "final" || true && \
 RUN echo "=== Verifying /lilyspark/usr/bin ===" && \
     ls -la /lilyspark/usr/bin || echo "Missing /lilyspark/usr/bin"
 
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+
 # Stage: filesystem setup - Install base-deps
 FROM base-deps AS filesystem-base-deps-builder
 
@@ -134,20 +156,29 @@ RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
 # Vanilla requirements
 RUN apk add --no-cache bash && /usr/local/bin/check_llvm15.sh "after-bash" || true
 RUN apk add --no-cache curl && /usr/local/bin/check_llvm15.sh "after-curl" || true
+RUN apk add --no-cache ncurses-dev && /usr/local/bin/check_llvm15.sh "after-ncurses-dev" || true
+RUN apk add --no-cache ca-certificates && /usr/local/bin/check_llvm15.sh "after-ca-certificates" || true
 RUN apk add --no-cache build-base && /usr/local/bin/check_llvm15.sh "after-build-base" || true
 RUN apk add --no-cache linux-headers && /usr/local/bin/check_llvm15.sh "after-linux-headers" || true
+RUN apk add --no-cache musl-dev && /usr/local/bin/check_llvm15.sh "after-musl-dev" || true
 RUN apk add --no-cache pkgconf && /usr/local/bin/check_llvm15.sh "after-pkgconf" || true
+RUN apk add --no-cache tar && /usr/local/bin/check_llvm15.sh "after-tar" || true
 RUN apk add --no-cache git && /usr/local/bin/check_llvm15.sh "after-git" || true
+RUN apk add --no-cache m4 && /usr/local/bin/check_llvm15.sh "after-m4" || true
+RUN apk add --no-cache expat-dev && /usr/local/bin/check_llvm15.sh "after-expat-dev" || true
 RUN apk add --no-cache make && /usr/local/bin/check_llvm15.sh "after-make" || true
 RUN apk add --no-cache cmake && /usr/local/bin/check_llvm15.sh "after-cmake" || true
+RUN apk add --no-cache bison && /usr/local/bin/check_llvm15.sh "after-bison" || true
+RUN apk add --no-cache flex && /usr/local/bin/check_llvm15.sh "after-flex" || true
+RUN apk add --no-cache zlib-dev && /usr/local/bin/check_llvm15.sh "after-zlib-dev" || true
 
 # Render essentials
 RUN apk add --no-cache meson && /usr/local/bin/check_llvm15.sh "after-meson" || true
 RUN apk add --no-cache ninja && /usr/local/bin/check_llvm15.sh "after-ninja" || true
 
-# ======================
+# ===============================
 # Copy essentials into /lilyspark
-# ======================
+# ===============================
 RUN echo "=== COPYING CORE SYSROOT FILES TO /lilyspark ===" && \
     mkdir -p /lilyspark/usr/{bin,lib,include,share} /lilyspark/lib && \
     \
@@ -175,14 +206,140 @@ RUN echo "=== COPYING CORE SYSROOT FILES TO /lilyspark ===" && \
     ls -la /lilyspark/usr/bin | head -10 || true && \
     ls -la /lilyspark/usr/lib | head -10 || true
 
-# ======================
-# Debug tools (minimal)
-# ======================
+# ===============================
+# Debug tools - May change folder
+# ===============================
 RUN apk add --no-cache file tree && \
     mkdir -p /lilyspark/usr/debug/bin && \
     cp /usr/bin/file /usr/bin/tree /lilyspark/usr/debug/bin/ 2>/dev/null || true && \
     chmod -R a+rx /lilyspark/usr/debug/bin && \
     echo "Debug tools isolated into /lilyspark/usr/debug/bin"
+
+# =========================
+# Other Essential Libraries
+# =========================
+# Device Management Libraries - /lilyspark/usr/local/lib/device_management
+RUN apk add --no-cache eudev-dev && /usr/local/bin/check_llvm15.sh "after-eudev-dev" || true
+
+# Copy Libraries To Directory
+RUN echo "=== COPYING DEVICE MANAGEMENT LIBRARIES ===" && \
+    cp -a /usr/include/eudev /lilyspark/usr/local/lib/device_management/ 2>/dev/null || true && \
+    cp -a /usr/lib/libudev* /lilyspark/usr/local/lib/device_management/ 2>/dev/null || true && \
+    echo "--- DEVICE MANAGEMENT CHECK ---" && \
+    ls -la /lilyspark/usr/local/lib/device_management | head -10 || true
+
+#
+#
+#
+
+# Documentation Libraries - /lilyspark/usr/local/lib/documentation
+RUN apk add --no-cache xmlto && /usr/local/bin/check_llvm15.sh "after-xmlto" || true
+
+# Copy Libraries To Directory
+RUN echo "=== COPYING DOCUMENTATION LIBRARIES ===" && \
+    cp -a /usr/bin/xmlto /lilyspark/usr/local/lib/documentation/ 2>/dev/null || true && \
+    cp -a /usr/share/xmlto /lilyspark/usr/local/lib/documentation/ 2>/dev/null || true && \
+    echo "--- DOCUMENTATION CHECK ---" && \
+    ls -la /lilyspark/usr/local/lib/documentation | head -10 || true
+
+#
+#
+#
+
+# Graphics Libraries - /lilyspark/usr/local/lib/graphics
+RUN apk add --no-cache harfbuzz-dev && /usr/local/bin/check_llvm15.sh "after-harfbuzz-dev" || true
+
+# Copy Libraries To Directory
+RUN echo "=== COPYING GRAPHICS LIBRARIES ===" && \
+    cp -a /usr/include/harfbuzz /lilyspark/usr/local/lib/graphics/ 2>/dev/null || true && \
+    cp -a /usr/lib/libharfbuzz* /lilyspark/usr/local/lib/graphics/ 2>/dev/null || true && \
+    echo "--- GRAPHICS CHECK ---" && \
+    ls -la /lilyspark/usr/local/lib/graphics | head -10 || true
+
+#
+#
+#
+
+# Java Libraries - /lilyspark/usr/local/lib/java
+RUN apk add --no-cache openjdk11 && /usr/local/bin/check_llvm15.sh "after-openjdk11" || true
+RUN apk add --no-cache ant && /usr/local/bin/check_llvm15.sh "after-ant" || true
+
+# Copy Libraries To Directory
+RUN echo "=== COPYING JAVA LIBRARIES ===" && \
+    cp -a /usr/lib/jvm/java-11-openjdk /lilyspark/usr/local/lib/java/ 2>/dev/null || true && \
+    cp -a /usr/bin/ant /lilyspark/usr/local/lib/java/ 2>/dev/null || true && \
+    echo "--- JAVA CHECK ---" && \
+    ls -la /lilyspark/usr/local/lib/java | head -10 || true
+
+#
+#
+#
+
+# Math Libraries - /lilyspark/usr/local/lib/math
+RUN apk add --no-cache eigen-dev && /usr/local/bin/check_llvm15.sh "after-eigen-dev" || true
+
+# Copy Libraries To Directory
+RUN echo "=== COPYING MATH LIBRARIES ===" && \
+    cp -a /usr/include/eigen3 /lilyspark/usr/local/lib/math/ 2>/dev/null || true && \
+    echo "--- MATH CHECK ---" && \
+    ls -la /lilyspark/usr/local/lib/math | head -10 || true
+
+#
+#
+#
+
+# Python Libraries - /lilyspark/usr/local/lib/python
+RUN apk add --no-cache python3 && /usr/local/bin/check_llvm15.sh "after-python3" || true
+RUN apk add --no-cache py3-pip && /usr/local/bin/check_llvm15.sh "after-py3-pip" || true
+RUN apk add --no-cache mako && /usr/local/bin/check_llvm15.sh "after-mako" || true
+
+# Copy Libraries To Directory
+RUN echo "=== COPYING PYTHON LIBRARIES ===" && \
+    cp -a /usr/lib/python3* /lilyspark/usr/local/lib/python/ 2>/dev/null || true && \
+    cp -a /usr/bin/python3 /lilyspark/usr/local/lib/python/ 2>/dev/null || true && \
+    cp -a /usr/lib/python3*/site-packages/mako /lilyspark/usr/local/lib/python/ 2>/dev/null || true && \
+    echo "--- PYTHON CHECK ---" && \
+    ls -la /lilyspark/usr/local/lib/python | head -10 || true
+
+#
+#
+#
+
+# Wayland Libraries - /lilyspark/usr/local/lib/wayland
+RUN apk add --no-cache wayland-dev && /usr/local/bin/check_llvm15.sh "after-wayland-dev" || true
+RUN apk add --no-cache wayland-protocols && /usr/local/bin/check_llvm15.sh "after-wayland-protocols" || true
+
+# Copy Libraries To Directory
+RUN echo "=== COPYING WAYLAND LIBRARIES ===" && \
+    cp -a /usr/include/wayland* /lilyspark/usr/local/lib/wayland/ 2>/dev/null || true && \
+    cp -a /usr/lib/libwayland* /lilyspark/usr/local/lib/wayland/ 2>/dev/null || true && \
+    echo "--- WAYLAND CHECK ---" && \
+    ls -la /lilyspark/usr/local/lib/wayland | head -10 || true
+
+#
+#
+#
+
+# X11 Libraries - /lilyspark/usr/local/lib/x11
+RUN apk add --no-cache libx11-dev && /usr/local/bin/check_llvm15.sh "after-libx11-dev" || true
+
+# Copy Libraries To Directory
+RUN echo "=== COPYING X11 LIBRARIES ===" && \
+    cp -a /usr/include/X11 /lilyspark/usr/local/lib/x11/ 2>/dev/null || true && \
+    cp -a /usr/lib/libX11* /lilyspark/usr/local/lib/x11/ 2>/dev/null || true && \
+    echo "--- X11 CHECK ---" && \
+    ls -la /lilyspark/usr/local/lib/x11 | head -10 || true
+
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
 
 # Stage: filesystem-libs (minimal version for C++ Hello World)
 FROM filesystem-base-deps-builder AS filesystem-libs-build-builder
