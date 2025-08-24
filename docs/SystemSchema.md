@@ -1,58 +1,96 @@
 Brainstorming a new system
 
 
-/custom-os/
-    /custom-os/root
+/lilyspark/
+    /lilyspark/root
 
-    /custom-os/home 
 
-    /custom-os/usr/
-        /custom-os/usr/lib/
+    /lilyspark/home 
 
-        /custom-os/usr/bin/
 
-        /custom-os/usr/sbin/
+    /lilyspark/usr/
+        /lilyspark/usr/lib/
+            - gcc library
+            - g++ library
+            - musl-dev library
+            - binutils library
+            - make library
 
-        /custom-os/usr/local/
-            /custom-os/usr/local/lib/
+        /lilyspark/usr/bin/
+            - bash                      (binary)
+            - cmake                     (binary)
+            - coreutils                 (binary)
+            - file                      (binary)
+            - findutils                 (binary)
+            - meson                     (binary)
+            - ninja                     (binary)
+            - wget                      (binary)
+        
+        /lilyspark/usr/debug/
+            lilyspark/usr/debug/bin/
+                - file                  (binary)
+                - tree                  (binary)
+        /lilyspark/usr/include
+            - linux-headers
 
-            /custom-os/usr/local/bin/
+        /lilyspark/usr/sbin/
 
-            /custom-os/usr/local/sbin/
+        /lilyspark/usr/local/
+            /lilyspark/usr/local/lib/
 
-        /custom-os/usr/share/
+            /lilyspark/usr/local/bin/
+
+            /lilyspark/usr/local/sbin/
+
+        /lilyspark/usr/share/
     
-    /custom-os/compiler/
-        /custom-os/compiler/include
 
-        /custom-os/compiler/lib
+    /lilyspark/compiler/
+        /lilyspark/compiler/include
+            - llvm16-dev headers
 
-        /custom-os/compiler/bin/
+        /lilyspark/compiler/lib
+            - llvm16 libraries
+
+        /lilyspark/compiler/bin/
             - clang-16
             - clang++-16
             - llvm-config-16
 
-    /custom-os/glibc/
-        /custom-os/glibc/include
 
-        /custom-os/glibc/lib/
+    /lilyspark/dist
 
-        /custom-os/glibc/bin
 
-        /custom-os/glibc/sbin
+    /lilyspark/glibc/
+        /lilyspark/glibc/include
+            -glibc-dev headers
 
-    /custom-os/bin/ 
+        /lilyspark/glibc/lib/
+            - glibc runtime components
 
-    /custom-os/sbin/ 
+        /lilyspark/glibc/bin
+            - glibc bin tools
 
-    /custom-os/tmp/ 
+        /lilyspark/glibc/sbin
+            - glibc bin tools
 
-    /custom-os/var/
 
-    /custom-os/etc/ 
-        /custom-os/etc/environment
+    /lilyspark/bin/ 
 
-        /custom-os/etc/profile.d
+
+    /lilyspark/sbin/ 
+
+
+    /lilyspark/tmp/ 
+
+
+    /lilyspark/var/
+
+
+    /lilyspark/etc/ 
+        /lilyspark/etc/environment
+
+        /lilyspark/etc/profile.d
             - compiler.sh
             - glibc.sh
 
