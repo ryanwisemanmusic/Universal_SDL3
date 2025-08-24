@@ -59,10 +59,8 @@ RUN mkdir -p \
     /lilyspark/usr/local/lib/x11 \
     # Third-party libraries
     /lilyspark/opt \
-    /lilyspark/opt/bin \
-    /lilyspark/opt/include \
-    /lilyspark/opt/lib \
     /lilyspark/opt/lib/graphics \
+    /lilyspark/opt/lib/java \
     # Main Compiler
     /lilyspark/compiler/bin \
     /lilyspark/compiler/lib \
@@ -866,8 +864,98 @@ RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
 # ===========================
 # Build From Source Libraries
 # ===========================
-# Graphics Libraries - /lilyspark/opt/lib/graphics
-
+# Apache FOP is considered a Java library, stored at /lilyspark/opt/lib/java (no need to mkdir directory in the code)
+RUN echo "=== INSTALLING Apache FOP 2.11 (isolated, safe) ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-fop-install" || true && \
+    \
+    # Download and extract official FOP binary release
+    mkdir -p /tmp/fop && \
+    wget -O /tmp/fop/fop-bin.tar.gz https://dlcdn.apache.org/xmlgraphics/fop/binaries/fop-2.11-bin.tar.gz && \
+    tar -xzf /tmp/fop/fop-bin.tar.gz -C /tmp/fop --strip-components=1 && \
+    \
+    # Prepare isolated target dirs
+    mkdir -p /lilyspark/opt/lib/java/fop/bin \
+             /lilyspark/opt/lib/java/fop/lib \
+             /lilyspark/opt/lib/java/fop/docs \
+             /lilyspark/opt/lib/java/fop/launchers && \
+    \
+    # Locate and copy launcher file (or entire bin directory)
+    launcher="$(find /tmp/fop -type f \( -name fop -o -name 'fop.sh' -o -name 'fop.bat' \) -print | head -n 1 || true)" && \
+    if [ -n "$launcher" ]; then \
+        echo "Found launcher at: $launcher" && cp "$launcher" /lilyspark/opt/lib/java/fop/bin/; \
+    else \
+        bindir="$(find /tmp/fop -type d -name bin -print | head -n 1 || true)" && \
+        if [ -n "$bindir" ]; then \
+            echo "Found bin directory at: $bindir" && cp -r "$bindir"/* /lilyspark/opt/lib/java/fop/bin/ 2>/dev/null || true; \
+        else \
+            echo "ERROR: fop launcher or bin/ directory not found in extracted tree" >&2 && ls -la /tmp/fop || true && false; \
+        fi; \
+    fi && \
+    \
+    # Copy all jar files to lib/
+    echo "Copying JARs from extracted tree into /lilyspark/opt/lib/java/fop/lib" && \
+    find /tmp/fop -type f -name '*.jar' -print -exec cp -a {} /lilyspark/opt/lib/java/fop/lib/ \; || true && \
+    \
+    # Fallback if lib is empty
+    if [ "$(ls -A /lilyspark/opt/lib/java/fop/lib 2>/dev/null || true)" = "" ]; then \
+        echo "No jars copied yet; trying nested locations" && \
+        find /tmp/fop -type f -path '*/fop/*' -name '*.jar' -print -exec cp -a {} /lilyspark/opt/lib/java/fop/lib/ \; || true; \
+    fi && \
+    \
+    # Copy docs/snippets (best-effort)
+    cp -r /tmp/fop/javadocs /lilyspark/opt/lib/java/fop/docs/ 2>/dev/null || true && \
+    cp -r /tmp/fop/README* /lilyspark/opt/lib/java/fop/docs/ 2>/dev/null || true && \
+    cp -r /tmp/fop/LICENSE* /lilyspark/opt/lib/java/fop/docs/ 2>/dev/null || true && \
+    \
+    # Ensure proper permissions
+    chmod -R a+rx /lilyspark/opt/lib/java/fop || true && \
+    \
+    # Install user-provided POSIX wrapper if available
+    if [ -f /tmp/fop-wrapper.sh ]; then \
+        echo "Installing fop-wrapper from build context into /lilyspark/opt/lib/java/fop/bin/fop" && \
+        install -m 0755 /tmp/fop-wrapper.sh /lilyspark/opt/lib/java/fop/bin/fop || true; \
+    fi && \
+    \
+    # Make all binaries executable
+    if [ -n "$(find /lilyspark/opt/lib/java/fop/bin -type f -print -quit 2>/dev/null)" ]; then \
+        find /lilyspark/opt/lib/java/fop/bin -type f -exec chmod +x {} \; 2>/dev/null || true; \
+    fi && \
+    \
+    # Create dedicated launcher symlink (isolated, safe)
+    if [ -f /lilyspark/opt/lib/java/fop/bin/fop ]; then \
+        ln -sf /lilyspark/opt/lib/java/fop/bin/fop /lilyspark/opt/lib/java/fop/launchers/fop; \
+    elif [ -f /lilyspark/opt/lib/java/fop/bin/fop.sh ]; then \
+        ln -sf /lilyspark/opt/lib/java/fop/bin/fop.sh /lilyspark/opt/lib/java/fop/launchers/fop; \
+    fi && \
+    \
+    # Update environment to include isolated launcher
+    echo 'export PATH=$PATH:/lilyspark/opt/lib/java/fop/launchers' >> /lilyspark/etc/profile.d/sysroot.sh && \
+    echo 'export CLASSPATH=$CLASSPATH:/lilyspark/opt/lib/java/fop/lib/*' >> /lilyspark/etc/profile.d/sysroot.sh && \
+    echo 'PATH=$PATH:/lilyspark/opt/lib/java/fop/launchers' >> /lilyspark/etc/environment && \
+    echo 'CLASSPATH=$CLASSPATH:/lilyspark/opt/lib/java/fop/lib/*' >> /lilyspark/etc/environment && \
+    \
+    # Run SUID/SGID scanner
+    echo "=== RUNNING SUID/SGID SCANNER ON FOP INSTALLATION ===" && \
+    /usr/local/bin/sgid_suid_scanner.sh /lilyspark/opt/lib/java/fop && \
+    echo "=== SGID/SUID scan completed for FOP installation ===" && \
+    \
+    # Verify installation
+    echo "=== VERIFYING Apache FOP INSTALLATION ===" && \
+    echo "Contents of /lilyspark/opt/lib/java/fop/lib:" && ls -la /lilyspark/opt/lib/java/fop/lib || true && \
+    JAVA_BIN="$(command -v java || true)" && \
+    if [ -n "$JAVA_BIN" ]; then \
+        echo "Found java at: $JAVA_BIN"; \
+        echo "Attempting explicit java -cp '/lilyspark/opt/lib/java/fop/lib/*' org.apache.fop.cli.Main -version"; \
+        "$JAVA_BIN" -cp "/lilyspark/opt/lib/java/fop/lib/*" org.apache.fop.cli.Main -version || echo "Explicit java run returned non-zero"; \
+    else \
+        echo "Java not found in PATH; ensure openjdk11 installed in this stage"; \
+    fi && \
+    \
+    /usr/local/bin/check_llvm15.sh "post-fop-install" || true && \
+    /usr/local/bin/check-filesystem.sh "post-fop-install" || true && \
+    \
+    # Cleanup
+    rm -rf /tmp/fop
 
 # ======================
 # SECTION: Core C/C++ libs (tiny subset)
