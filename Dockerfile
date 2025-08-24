@@ -1,6 +1,15 @@
 # Stage: base deps (Alpine version)
 FROM alpine:3.21 AS base-deps
 
+# ULTIMATE cache-busting - forces rebuild every time
+ARG BUILDKIT_INLINE_CACHE=0
+ARG DOCKER_BUILDKIT=1
+RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
+    echo "FORCE_REBUILD_$(date +%s%N)_$$_$RANDOM" > /tmp/nocache/timestamp && \
+    cat /tmp/nocache/timestamp && \
+    echo "CACHE_DISABLED_FOR_DEBUG_STAGE" && \
+    rm -f /tmp/nocache/timestamp
+
 # Install bare essentials
 RUN apk add --no-cache bash wget coreutils findutils file
 
@@ -116,7 +125,7 @@ RUN cp -r /usr/glibc-compat/lib/* /lilyspark/glibc/lib/ 2>/dev/null || true && \
     cp -r /usr/glibc-compat/bin/* /lilyspark/glibc/bin/ 2>/dev/null || true && \
     cp -r /usr/glibc-compat/sbin/* /lilyspark/glibc/sbin/ 2>/dev/null || true
 
-# Install LLVM16 + Clang16 - FIXED VERSION
+# Install LLVM16 + Clang16
 RUN apk add --no-cache llvm16-dev llvm16-libs clang16 && \
     echo "=== LLVM16 INSTALLATION VERIFICATION ===" && \
     echo "System LLVM16 binaries:" && \
@@ -135,13 +144,47 @@ RUN apk add --no-cache llvm16-dev llvm16-libs clang16 && \
     echo "Contents of /lilyspark/compiler/lib:" && \
     ls -la /lilyspark/compiler/lib/ | head -10
 
+# ======================
 # Environment setup
-RUN cat > /lilyspark/etc/environment <<'ENV'
-export PATH="/glibc/bin:/glibc/sbin:/compiler/bin:${PATH}"
-export LLVM_CONFIG="/compiler/bin/llvm-config"
-export LD_LIBRARY_PATH="/glibc/lib:/compiler/lib:/usr/local/lib:/usr/lib"
-export GLIBC_ROOT="/glibc"
+# ======================
+RUN cat > /lilyspark/etc/environment <<'ENV' && \
+    echo "=== CREATING ENVIRONMENT SETUP ===" && \
+    cat /lilyspark/etc/environment
+export PATH="/lilyspark/glibc/bin:/lilyspark/glibc/sbin:/lilyspark/compiler/bin:${PATH}"
+export LLVM_CONFIG="/lilyspark/compiler/bin/llvm-config"
+export LD_LIBRARY_PATH="/lilyspark/glibc/lib:/lilyspark/compiler/lib:/usr/local/lib:/usr/lib"
+export GLIBC_ROOT="/lilyspark/glibc"
 ENV
+
+RUN mkdir -p /lilyspark/etc/profile.d && \
+    cat > /lilyspark/etc/profile.d/compiler.sh <<'PROFILE'
+#!/bin/sh
+export PATH="/lilyspark/glibc/bin:/lilyspark/glibc/sbin:/lilyspark/compiler/bin:${PATH}"
+export LLVM_CONFIG="/lilyspark/compiler/bin/llvm-config"
+export LD_LIBRARY_PATH="/lilyspark/glibc/lib:/lilyspark/compiler/lib:/usr/local/lib:/usr/lib"
+export GLIBC_ROOT="/lilyspark/glibc"
+export GLIBC_COMPAT="/lilyspark/glibc"
+export C_INCLUDE_PATH="/lilyspark/glibc/include:${C_INCLUDE_PATH:-}"
+export CPLUS_INCLUDE_PATH="/lilyspark/glibc/include:${CPLUS_INCLUDE_PATH:-}"
+PROFILE
+RUN chmod +x /lilyspark/etc/profile.d/compiler.sh
+
+RUN cat > /lilyspark/etc/profile.d/glibc.sh <<'GLIBC_PROFILE'
+#!/bin/sh
+export GLIBC_ROOT="/lilyspark/glibc"
+export GLIBC_COMPAT="/lilyspark/glibc"
+export PATH="/lilyspark/glibc/sbin:/lilyspark/glibc/bin:${PATH}"
+export LD_LIBRARY_PATH="/lilyspark/glibc/lib:${LD_LIBRARY_PATH:-}"
+export C_INCLUDE_PATH="/lilyspark/glibc/include:${C_INCLUDE_PATH:-}"
+export CPLUS_INCLUDE_PATH="/lilyspark/glibc/include:${CPLUS_INCLUDE_PATH:-}"
+GLIBC_PROFILE
+RUN chmod +x /lilyspark/etc/profile.d/glibc.sh
+
+RUN echo "=== ENVIRONMENT SETUP VERIFICATION ===" && \
+    echo "Environment file:" && cat /lilyspark/etc/environment && \
+    echo "Compiler profile:" && cat /lilyspark/etc/profile.d/compiler.sh && \
+    echo "Glibc profile:" && cat /lilyspark/etc/profile.d/glibc.sh && \
+    echo "All environment files created successfully"
 
 # Quick filesystem checks
 RUN /usr/local/bin/check_llvm15.sh "final" || true && \
@@ -165,17 +208,21 @@ RUN echo "=== Verifying /lilyspark/usr/bin ===" && \
 # Stage: filesystem setup - Install base-deps
 FROM base-deps AS filesystem-base-deps-builder
 
+# ULTIMATE cache-busting - forces rebuild every time
+ARG BUILDKIT_INLINE_CACHE=0
+RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
+    echo "FORCE_REBUILD_$(date +%s%N)_$$_$RANDOM" > /tmp/nocache/timestamp && \
+    cat /tmp/nocache/timestamp && \
+    echo "CACHE_DISABLED_FOR_FILESYSTEM_BASE_DEPS" && \
+    rm -f /tmp/nocache/timestamp
 
 # Quick checks
 RUN echo ">>> check /lilyspark/compiler/bin" && ls -la /lilyspark/compiler/bin || true
 RUN echo ">>> check for libc++" && ls -la /lilyspark/compiler/lib | head -20 || true
 
-# Force rebuild each time
-ARG BUILDKIT_INLINE_CACHE=0
-RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
-    echo "FORCE_REBUILD_FS_STAGE2_$(date +%s%N)" > /tmp/nocache/timestamp && \
-    cat /tmp/nocache/timestamp && rm -f /tmp/nocache/timestamp
-
+            #Check if sysroot integration is properly updated below. It probably is not
+            #So this is absolutely something we will focus on tomorrow. This comment is 
+            #a reminder for this TODO
 # ======================
 # Core packages ONLY
 # ======================
@@ -242,6 +289,32 @@ RUN echo "=== COPYING CORE SYSROOT FILES TO /lilyspark ===" && \
     ls -la /lilyspark/usr/bin | head -10 || true && \
     ls -la /lilyspark/usr/lib | head -10 || true
 
+# Sysroot Verification: Core Packages
+RUN echo "=== VERIFYING CORE SYSROOT INTEGRATION ===" && \
+    echo "Checking essential library presence:" && \
+    [ -f /lilyspark/lib/ld-musl-*.so.1 ] && echo "✓ musl dynamic linker found" || echo "⚠ musl dynamic linker missing" && \
+    [ -f /lilyspark/lib/libc.musl-*.so.1 ] && echo "✓ musl libc found" || echo "⚠ musl libc missing" && \
+    [ -f /lilyspark/usr/lib/libgcc_s.so.1 ] && echo "✓ libgcc_s found" || echo "⚠ libgcc_s missing" && \
+    [ -f /lilyspark/usr/lib/libstdc++.so.6 ] && echo "✓ libstdc++ found" || echo "⚠ libstdc++ missing" && \
+    \
+    echo "Checking header presence:" && \
+    [ -d /lilyspark/usr/include/linux ] && echo "✓ Linux headers found" || echo "⚠ Linux headers missing" && \
+    [ -d /lilyspark/usr/include/ncurses ] && echo "✓ ncurses headers found" || echo "⚠ ncurses headers missing" && \
+    [ -d /lilyspark/usr/include/openssl ] && echo "✓ OpenSSL headers found" || echo "⚠ OpenSSL headers missing" && \
+    \
+    echo "Checking toolchain components:" && \
+    [ -f /lilyspark/usr/lib/crt1.o ] && echo "✓ crt1.o found" || echo "⚠ crt1.o missing" && \
+    [ -f /lilyspark/usr/lib/crti.o ] && echo "✓ crti.o found" || echo "⚠ crti.o missing" && \
+    [ -f /lilyspark/usr/lib/crtn.o ] && echo "✓ crtn.o found" || echo "⚠ crtn.o missing" && \
+    \
+    echo "Core library count in /lilyspark/usr/lib:" && \
+    ls -1 /lilyspark/usr/lib/*.so* | wc -l && \
+    echo "=== CORE SYSROOT VERIFICATION COMPLETE ==="
+
+#
+#
+#
+
 # ===============================
 # Debug tools - May change folder
 # ===============================
@@ -250,6 +323,10 @@ RUN apk add --no-cache file tree valgrind-dev linux-tools-dev && \
     cp /usr/bin/file /usr/bin/tree /lilyspark/usr/debug/bin/ 2>/dev/null || true && \
     chmod -R a+rx /lilyspark/usr/debug/bin && \
     echo "Debug tools isolated into /lilyspark/usr/debug/bin"
+
+#
+#
+#
 
 # =========================
 # Other Essential Libraries
@@ -295,6 +372,15 @@ RUN echo "=== COPYING AUDIO LIBRARIES ===" && \
     \
     echo "--- AUDIO CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/audio | head -20 || true
+    
+        # Sysroot Integration: Audio Libraries
+RUN echo "=== INTEGRATING AUDIO LIBRARIES INTO SYSROOT ===" && \
+    # Create symlinks from the audio-specific directory to the main sysroot
+    find /lilyspark/usr/local/lib/audio -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    # Quick verification
+    echo "Audio libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{sndio,vorbis,ogg,FLAC,modplug,mpg123,opus,alsa,pulse,samplerate,portaudio}*.so* 2>/dev/null | wc -l || echo "No audio libs found yet") && \
+    echo "=== AUDIO SYSROOT INTEGRATION COMPLETE ==="
 
 #
 #
@@ -304,10 +390,17 @@ RUN echo "=== COPYING AUDIO LIBRARIES ===" && \
 RUN apk add --no-cache pipewire-dev && /usr/local/bin/check_llvm15.sh "after-pipewire-dev" || true
 
     # Copy Libraries To Directory
-RUN echo "=== COPYING AUDIO LIBRARIES ===" && \
+RUN echo "=== COPYING A/V LIBRARIES ===" && \
     cp -a /usr/lib/libpipewire* /lilyspark/usr/local/lib/av/ || true && \
     echo "--- A/V CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/av | head -20 || true
+
+        # Sysroot Integration: A/V Libraries
+RUN echo "=== INTEGRATING A/V LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/av -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "A/V libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/libpipewire*.so* 2>/dev/null | wc -l || echo "No A/V libs found yet") && \
+    echo "=== A/V SYSROOT INTEGRATION COMPLETE ==="
 
 #
 #
@@ -323,6 +416,13 @@ RUN echo "=== COPYING COMPRESSION LIBRARIES ===" && \
     cp -a /usr/lib/libzstd* /lilyspark/usr/local/lib/compression/ 2>/dev/null || true && \
     echo "--- COMPRESSION CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/compression | head -10 || true
+
+        # Sysroot Integration: Compression Libraries
+RUN echo "=== INTEGRATING COMPRESSION LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/compression -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "Compression libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{lzma,zstd}*.so* 2>/dev/null | wc -l || echo "No compression libs found yet") && \
+    echo "=== COMPRESSION SYSROOT INTEGRATION COMPLETE ==="
 
 #
 #
@@ -345,6 +445,13 @@ RUN echo "=== COPYING DATABASE LIBRARIES ===" && \
     echo "--- DATABASE CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/database | head -10 || true
 
+        # Sysroot Integration: Database Libraries
+RUN echo "=== INTEGRATING DATABASE LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/database -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "Database libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{sqlite,edit,icu,tcl,lz4}*.so* 2>/dev/null | wc -l || echo "No database libs found yet") && \
+    echo "=== DATABASE SYSROOT INTEGRATION COMPLETE ==="
+
 #
 #
 #
@@ -355,7 +462,6 @@ RUN apk add --no-cache pciutils-dev && /usr/local/bin/check_llvm15.sh "after-pci
 RUN apk add --no-cache libusb-dev && /usr/local/bin/check_llvm15.sh "after-libusb-dev" || true
 
     # Copy Libraries To Directory
-# Copy Libraries To Directory
 RUN echo "=== COPYING DEVICE MANAGEMENT LIBRARIES ===" && \
     cp -a /usr/include/eudev /lilyspark/usr/local/lib/device_management/ 2>/dev/null || true && \
     cp -a /usr/lib/libudev* /lilyspark/usr/local/lib/device_management/ 2>/dev/null || true && \
@@ -364,6 +470,12 @@ RUN echo "=== COPYING DEVICE MANAGEMENT LIBRARIES ===" && \
     echo "--- DEVICE MANAGEMENT CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/device_management | head -10 || true
 
+        # Sysroot Integration: Device Management Libraries
+RUN echo "=== INTEGRATING DEVICE MANAGEMENT LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/device_management -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "Device Management libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{udev,pci,usb}*.so* 2>/dev/null | wc -l || echo "No device management libs found yet") && \
+    echo "=== DEVICE MANAGEMENT SYSROOT INTEGRATION COMPLETE ==="
 #
 #
 #
@@ -377,6 +489,14 @@ RUN echo "=== COPYING DOCUMENTATION LIBRARIES ===" && \
     cp -a /usr/share/xmlto /lilyspark/usr/local/lib/documentation/ 2>/dev/null || true && \
     echo "--- DOCUMENTATION CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/documentation | head -10 || true
+
+        # Sysroot Integration: Documentation Libraries
+RUN echo "=== INTEGRATING DOCUMENTATION TOOLS INTO SYSROOT ===" && \
+    # Link any shared libraries from documentation directory (xmlto may have dependencies)
+    find /lilyspark/usr/local/lib/documentation -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "Documentation tools integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{xmlto}*.so* 2>/dev/null | wc -l || echo "No documentation libs found (xmlto is primarily a binary tool)") && \
+    echo "=== DOCUMENTATION SYSROOT INTEGRATION COMPLETE ==="
 
 #
 #
@@ -405,6 +525,12 @@ RUN echo "=== COPYING GRAPHICS LIBRARIES ===" && \
     echo "--- GRAPHICS CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/graphics | head -10 || true
 
+RUN echo "=== INTEGRATING GRAPHICS LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/graphics -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "Graphics libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{harfbuzz,freetype,fontconfig,vulkan}*.so* 2>/dev/null | wc -l || echo "No graphics libs found yet") && \
+    echo "=== GRAPHICS SYSROOT INTEGRATION COMPLETE ==="
+
 #
 #
 #
@@ -418,6 +544,14 @@ RUN echo "=== COPYING I18N LIBRARIES ===" && \
     cp -a /usr/lib/libgettext* /lilyspark/usr/local/lib/i18n/ 2>/dev/null || true && \
     echo "--- I18N CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/i18n | head -10 || true
+
+    # Sysroot Integration: i18n Libraries
+RUN echo "=== INTEGRATING I18N LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/i18n -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "i18n libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/libgettext*.so* 2>/dev/null | wc -l || echo "No i18n libs found yet") && \
+    echo "=== I18N SYSROOT INTEGRATION COMPLETE ==="
+
 #
 #
 #
@@ -437,6 +571,14 @@ RUN echo "=== COPYING IMAGE LIBRARIES ===" && \
     cp -a /usr/lib/libjpeg* /usr/lib/libpng* /usr/lib/libtiff* /usr/lib/libavif* /usr/lib/libwebp* /lilyspark/usr/local/lib/image/ 2>/dev/null || true && \
     echo "--- IMAGE CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/image | head -10 || true
+
+        # Sysroot Integration: Image Libraries
+RUN echo "=== INTEGRATING IMAGE LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/image -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "Image libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{jpeg,png,tiff,avif,webp}*.so* 2>/dev/null | wc -l || echo "No image libs found yet") && \
+    echo "=== IMAGE SYSROOT INTEGRATION COMPLETE ==="
+
 #
 #
 #
@@ -452,6 +594,14 @@ RUN echo "=== COPYING JAVA LIBRARIES ===" && \
     echo "--- JAVA CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/java | head -10 || true
 
+        # Sysroot Integration: Java Libraries
+RUN echo "=== INTEGRATING JAVA LIBRARIES INTO SYSROOT ===" && \
+    # Link shared libraries (.so files) from Java runtime
+    find /lilyspark/usr/local/lib/java -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    # Also link any important Java binaries if they exist as shared objects
+    echo "Java libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{jvm,java}*.so* 2>/dev/null | wc -l || echo "No Java runtime libs found yet") && \
+    echo "=== JAVA SYSROOT INTEGRATION COMPLETE ==="
 #
 #
 #
@@ -465,6 +615,14 @@ RUN echo "=== COPYING MATH LIBRARIES ===" && \
     echo "--- MATH CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/math | head -10 || true
 
+# Sysroot Integration: Math Libraries
+RUN echo "=== INTEGRATING MATH LIBRARIES INTO SYSROOT ===" && \
+    # Link any shared libraries from math directory (Eigen is header-only but check anyway)
+    find /lilyspark/usr/local/lib/math -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "Math libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{eigen}*.so* 2>/dev/null | wc -l || echo "No math libs found (Eigen is header-only)") && \
+    echo "=== MATH SYSROOT INTEGRATION COMPLETE ==="
+
 #
 #
 #
@@ -477,12 +635,19 @@ RUN apk add --no-cache libmnl-dev && /usr/local/bin/check_llvm15.sh "after-libmn
 RUN apk add --no-cache net-tools && /usr/local/bin/check_llvm15.sh "after-net-tools" || true
 RUN apk add --no-cache iproute2 && /usr/local/bin/check_llvm15.sh "after-iproute2" || true
 
-# Copy Libraries To Directory
+    # Copy Libraries To Directory
 RUN echo "=== COPYING NETWORKING LIBRARIES ===" && \
     cp -a /usr/include/pcap* /usr/include/unwind* /usr/include/dbus-1.0 /usr/include/libmnl* /lilyspark/usr/local/lib/networking/ 2>/dev/null || true && \
     cp -a /usr/lib/libpcap* /usr/lib/libunwind* /usr/lib/libdbus* /usr/lib/libmnl* /lilyspark/usr/local/lib/networking/ 2>/dev/null || true && \
     echo "--- NETWORKING CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/networking | head -10 || true
+
+        # Sysroot Integration: Networking Libraries
+RUN echo "=== INTEGRATING NETWORKING LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/networking -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "Networking libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{pcap,unwind,dbus,mnl}*.so* 2>/dev/null | wc -l || echo "No networking libs found yet") && \
+    echo "=== NETWORKING SYSROOT INTEGRATION COMPLETE ==="
 
 #
 #
@@ -504,6 +669,15 @@ RUN echo "=== COPYING PYTHON LIBRARIES ===" && \
     cp -a /usr/bin/pip3 /lilyspark/usr/local/lib/python/ 2>/dev/null || true && \
     echo "--- PYTHON CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/python | head -10 || true
+
+        # Sysroot Integration: Python Libraries
+RUN echo "=== INTEGRATING PYTHON LIBRARIES INTO SYSROOT ===" && \
+    # Link Python shared libraries and any extension modules (.so files)
+    find /lilyspark/usr/local/lib/python -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "Python libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/libpython*.so* 2>/dev/null | wc -l || echo "No Python runtime libs found yet") && \
+    echo "=== PYTHON SYSROOT INTEGRATION COMPLETE ==="
+
 #
 #
 #
@@ -520,6 +694,14 @@ RUN echo "=== COPYING SECURITY LIBRARIES ===" && \
     cp -a /usr/lib/libseccomp* /lilyspark/usr/local/lib/security/ 2>/dev/null || true && \
     echo "--- SECURITY CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/security | head -10 || true
+
+        # Sysroot Integration: Security Libraries
+RUN echo "=== INTEGRATING SECURITY LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/security -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "Security libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{selinux,seccomp}*.so* 2>/dev/null | wc -l || echo "No security libs found yet") && \
+    echo "=== SECURITY SYSROOT INTEGRATION COMPLETE ==="
+
 #
 #
 #
@@ -545,6 +727,14 @@ RUN echo "=== COPYING SYSTEM LIBRARIES ===" && \
     cp -a /usr/lib/libext2fs* /usr/lib/libxfs* /usr/lib/libbtrfs* /lilyspark/usr/local/lib/system/ 2>/dev/null || true && \
     echo "--- SYSTEM CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/system | head -10 || true
+
+        # Sysroot Integration: System Libraries
+RUN echo "=== INTEGRATING SYSTEM LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/system -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "System libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{uring,cap,atomic_ops,ext2fs,xfs,btrfs}*.so* 2>/dev/null | wc -l || echo "No system libs found yet") && \
+    echo "=== SYSTEM SYSROOT INTEGRATION COMPLETE ==="
+
 #
 #
 #
@@ -572,6 +762,13 @@ RUN echo "=== COPYING VIDEO LIBRARIES ===" && \
     echo "--- VIDEO CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/video | head -10 || true
 
+# Sysroot Integration: Video Libraries
+RUN echo "=== INTEGRATING VIDEO LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/video -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "Video libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/libv4l*.so* 2>/dev/null | wc -l || echo "No video libs found yet") && \
+    echo "=== VIDEO SYSROOT INTEGRATION COMPLETE ==="
+
 #
 #
 #
@@ -587,6 +784,13 @@ RUN echo "=== COPYING WAYLAND LIBRARIES ===" && \
     cp -a /usr/lib/libwayland* /lilyspark/usr/local/lib/wayland/ 2>/dev/null || true && \
     echo "--- WAYLAND CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/wayland | head -10 || true
+
+# Sysroot Integration: Wayland Libraries
+RUN echo "=== INTEGRATING WAYLAND LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/wayland -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "Wayland libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/libwayland*.so* 2>/dev/null | wc -l || echo "No Wayland libs found yet") && \
+    echo "=== WAYLAND SYSROOT INTEGRATION COMPLETE ==="
 
 #
 #
@@ -634,6 +838,13 @@ RUN echo "=== COPYING X11 LIBRARIES ===" && \
     echo "--- X11 CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/x11 | head -20 || true
 
+# Sysroot Integration: X11 Libraries
+RUN echo "=== INTEGRATING X11 LIBRARIES INTO SYSROOT ===" && \
+    find /lilyspark/usr/local/lib/x11 -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "X11 libraries integrated. Count:" && \
+    (ls -1 /lilyspark/usr/lib/lib{X11,xcb,Xext,Xrender,Xfixes,Xdamage,Xcomposite,Xinerama,Xi,Xcursor,Xrandr,Xshmfence,XXF86VM,xkbcommon,xkbfile,xfont2}*.so* 2>/dev/null | wc -l || echo "No X11 libs found yet") && \
+    echo "=== X11 SYSROOT INTEGRATION COMPLETE ==="
+
 #
 #
 #
@@ -643,11 +854,13 @@ RUN echo "=== COPYING X11 LIBRARIES ===" && \
 # Stage: filesystem-libs (minimal version for C++ Hello World)
 FROM filesystem-base-deps-builder AS filesystem-libs-build-builder
 
-# Cache busting
+# ULTIMATE cache-busting - forces rebuild every time
 ARG BUILDKIT_INLINE_CACHE=0
 RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
-    echo "FORCE_REBUILD_STAGE3_$(date +%s%N)" > /tmp/nocache/timestamp && \
-    cat /tmp/nocache/timestamp && rm -f /tmp/nocache/timestamp
+    echo "FORCE_REBUILD_$(date +%s%N)_$$_$RANDOM" > /tmp/nocache/timestamp && \
+    cat /tmp/nocache/timestamp && \
+    echo "CACHE_DISABLED_FOR_FILESYSTEM_LIBS_BUILD" && \
+    rm -f /tmp/nocache/timestamp
 
 
 # ===========================
