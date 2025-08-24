@@ -11,6 +11,7 @@ RUN mkdir -p \
     /lilyspark/sysroot \
     /lilyspark/sysroot/kern \
     /lilyspark/sysroot/asm \
+    /lilyspark/sysroot/os/bin \
     # For anything OS related, Level 1
     /lilyspark/src \
     # Home directory
@@ -43,9 +44,7 @@ RUN mkdir -p \
     /lilyspark/dist \
     # App
     /lilyspark/app/build_files \
-    #Old folders for the sake of porting over to sane file structure
-    /lilyspark/bin \
-    /lilyspark/sbin \
+    # MISC
     /lilyspark/etc \
     /lilyspark/var \
     /lilyspark/tmp && \
@@ -54,6 +53,7 @@ RUN mkdir -p \
     echo "Checking /lilyspark/compiler/bin:" && ls -la /lilyspark/compiler/bin && \
     echo "Checking /lilyspark/compiler/lib:" && ls -la /lilyspark/compiler/lib && \
     echo "All directories created successfully"
+
 
 # Copy debug + inspection scripts
 COPY setup-scripts/check_llvm15.sh /usr/local/bin/check_llvm15.sh
@@ -118,17 +118,6 @@ RUN echo "=== Verifying /lilyspark/usr/bin ===" && \
 FROM base-deps AS filesystem-base-deps-builder
 
 
-RUN mkdir -p \
-    /lilyspark/usr/local/ \
-    /lilyspark//opt/include \
-    /opt/lib \
-    /lilyspark/glibc/include && \
-    echo "=== DIRECTORY CREATION VERIFICATION ===" && \
-    echo "Checking /lilyspark/usr/bin:" && ls -la /lilyspark/usr/bin && \
-    echo "Checking /lilyspark/compiler/bin:" && ls -la /lilyspark/compiler/bin && \
-    echo "Checking /lilyspark/compiler/lib:" && ls -la /lilyspark/compiler/lib && \
-    echo "All directories created successfully"
-
 # Quick checks
 RUN echo ">>> check /lilyspark/compiler/bin" && ls -la /lilyspark/compiler/bin || true
 RUN echo ">>> check for libc++" && ls -la /lilyspark/compiler/lib | head -20 || true
@@ -140,19 +129,21 @@ RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
     cat /tmp/nocache/timestamp && rm -f /tmp/nocache/timestamp
 
 # ======================
-# Core packages (minimal set for C++ hello world)
+# Core packages ONLY
 # ======================
-RUN apk add --no-cache \
-    bash \
-    build-base \
-    cmake \
-    ninja \
-    git \
-    linux-headers \
-    && /usr/local/bin/check_llvm15.sh "after-core" || true
+# Vanilla requirements
+RUN apk add --no-cache bash && /usr/local/bin/check_llvm15.sh "after-bash" || true
+RUN apk add --no-cache curl && /usr/local/bin/check_llvm15.sh "after-curl" || true
+RUN apk add --no-cache build-base && /usr/local/bin/check_llvm15.sh "after-build-base" || true
+RUN apk add --no-cache linux-headers && /usr/local/bin/check_llvm15.sh "after-linux-headers" || true
+RUN apk add --no-cache pkgconf && /usr/local/bin/check_llvm15.sh "after-pkgconf" || true
+RUN apk add --no-cache git && /usr/local/bin/check_llvm15.sh "after-git" || true
+RUN apk add --no-cache make && /usr/local/bin/check_llvm15.sh "after-make" || true
+RUN apk add --no-cache cmake && /usr/local/bin/check_llvm15.sh "after-cmake" || true
 
-RUN apk add --no-cache meson ninja \
-    && echo "Meson and Ninja installed for Mesa build"
+# Render essentials
+RUN apk add --no-cache meson && /usr/local/bin/check_llvm15.sh "after-meson" || true
+RUN apk add --no-cache ninja && /usr/local/bin/check_llvm15.sh "after-ninja" || true
 
 # ======================
 # Copy essentials into /lilyspark
@@ -213,7 +204,6 @@ RUN echo ">>> Installing minimal C/C++ dev libs for Hello World" && \
 # SECTION: Copy sysroot libs into /lilyspark
 # ======================
 RUN echo ">>> Copying libc & stdc++ into /lilyspark sysroot" && \
-    mkdir -p /lilyspark/usr/lib /lilyspark/usr/include /lilyspark/lib && \
     cp -a /usr/include/* /lilyspark/usr/include/ 2>/dev/null || true && \
     cp -a /usr/lib/libstdc++* /lilyspark/usr/lib/ 2>/dev/null || true && \
     cp -a /usr/lib/libgcc* /lilyspark/usr/lib/ 2>/dev/null || true && \
@@ -277,11 +267,7 @@ RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
 # ======================
 RUN echo "=== INITIALIZING APPLICATION BUILD ENVIRONMENT ===" && \
     echo "Creating all necessary directories..." && \
-    mkdir -p /lilyspark/app/src /lilyspark/app/build /lilyspark/usr/lib /lilyspark/usr/include /lilyspark/snapshots && \
-    echo "CRITICAL: Creating target binary directory..." && \
-    mkdir -p /lilyspark/usr/bin && \
-    echo "VERIFICATION: Target binary directory exists:" && \
-    ls -la /lilyspark/usr/bin && \
+    mkdir -p /lilyspark/app/src /lilyspark/app/build /lilyspark/snapshots && \
     echo "Filesystem initialized with binary target directory confirmed"
 
 # Set working directory for app build
@@ -318,7 +304,6 @@ ENV C_INCLUDE_PATH="/lilyspark/usr/include"
 
 # Ensure sysroot libraries exist before building
 RUN echo "=== POPULATING SYSROOT LIBRARIES (BUILD) ===" && \
-    mkdir -p /lilyspark/usr/lib /lilyspark/glibc/lib /lilyspark/lib && \
     cp -v /usr/lib/libstdc++.so* /lilyspark/usr/lib/ 2>/dev/null || true && \
     cp -v /usr/lib/libgcc* /lilyspark/usr/lib/ 2>/dev/null || true && \
     cp -v /usr/lib/libm.so* /lilyspark/glibc/lib/ 2>/dev/null || true && \
@@ -381,10 +366,7 @@ RUN echo "CACHEBUST_DEBUG=${CACHEBUST_DEBUG}" && echo "CACHE_DISABLED_FOR_DEBUG_
 
 # Debug environment folders
 RUN mkdir -p /lilyspark/app/build \
-             /lilyspark/usr/{bin,lib,include,share} \
-             /lilyspark/glibc/lib \
-             /lilyspark/var/log/debug \
-             /lilyspark/snapshots && \
+             /lilyspark/var/log/debug && \
     echo "Folders created:" && ls -la /lilyspark/app && ls -la /lilyspark/usr
 
 # Copy build artifacts from app-build
@@ -435,8 +417,7 @@ RUN cmake /lilyspark/app/build_files \
     DESTDIR=$SYSROOT cmake --install . 2>&1 | tee /tmp/debug_cmake_install.log
 
 # Binary verification
-RUN mkdir -p $SYSROOT/usr/bin && \
-    if [ ! -f $SYSROOT/usr/bin/simplehttpserver ] && [ -f ./simplehttpserver ]; then \
+RUN if [ ! -f $SYSROOT/usr/bin/simplehttpserver ] && [ -f ./simplehttpserver ]; then \
         cp -v ./simplehttpserver $SYSROOT/usr/bin/simplehttpserver && chmod +x $SYSROOT/usr/bin/simplehttpserver; \
     fi && \
     ls -la $SYSROOT/usr/bin/simplehttpserver || true
@@ -463,7 +444,7 @@ FROM debug AS runtime
 
 # Create necessary directories
 USER root
-RUN mkdir -p /lilyspark/usr/bin /lilyspark/var/log/debug /lilyspark/snapshots /lilyspark/usr/lib/runtime
+RUN mkdir -p /lilyspark/usr/lib/runtime
 
 # Copy application binary from app-build stage
 COPY --from=app-build /lilyspark/app/build/simplehttpserver /lilyspark/usr/bin/
