@@ -59,6 +59,7 @@ RUN mkdir -p \
     /lilyspark/usr/local/lib/x11 \
     # Third-party libraries
     /lilyspark/opt \
+    /lilyspark/opt/lib/audio \
     /lilyspark/opt/lib/graphics \
     /lilyspark/opt/lib/java \
     # Main Compiler
@@ -956,6 +957,116 @@ RUN echo "=== INSTALLING Apache FOP 2.11 (isolated, safe) ===" && \
     \
     # Cleanup
     rm -rf /tmp/fop
+
+# JACK2 is considered an audio library at /lilyspark/opt/lib/audio
+# ======================
+# BUILD JACK2
+# ======================
+RUN echo "=== BUILDING JACK2 FROM SOURCE ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-jack2-source-build" || true && \
+    \
+    mkdir -p /tmp/jack2 && cd /tmp/jack2 && \
+    \
+    if git clone --depth=1 https://github.com/jackaudio/jack2.git /tmp/jack2-source; then \
+        echo "JACK2 source cloned successfully"; \
+    else \
+        echo "ERROR: Could not clone JACK2 repository" >&2 && false; \
+    fi && \
+    \
+    cd /tmp/jack2-source && \
+    \
+    if [ -x ./waf ]; then \
+        echo ">>> Using waf build system <<<"; \
+        ./waf configure --prefix=/usr --libdir=/usr/lib && \
+        ./waf build && \
+        DESTDIR="/lilyspark/opt/lib/audio/jack2" ./waf install; \
+    else \
+        echo ">>> Waf not found, trying autotools <<<"; \
+        if [ -x ./configure ]; then \
+            ./configure --prefix=/usr --libdir=/usr/lib --with-sysroot=/lilyspark/opt/lib/audio/jack2 && \
+            make -j$(nproc) && \
+            make DESTDIR="/lilyspark/opt/lib/audio/jack2" install; \
+        else \
+            echo "ERROR: No recognized build system found (waf or autotools)" >&2 && false; \
+        fi; \
+    fi && \
+    \
+    echo "=== RELOCATING JACK2 BINARIES ===" && \
+    mkdir -p /lilyspark/opt/lib/audio/jack2/bin && \
+    # Move executables to jack-specific bin directory
+    if [ -d /lilyspark/opt/lib/audio/jack2/usr/bin ]; then \
+        find /lilyspark/opt/lib/audio/jack2/usr/bin -maxdepth 1 -type f -name "jack*" -exec mv -v {} /lilyspark/opt/lib/audio/jack2/bin/ \; || true; \
+    fi && \
+    \
+    echo "=== VERIFYING JACK2 INSTALLATION ===" && \
+    find /lilyspark/opt/lib/audio/jack2/bin -type f -name "jack*" -ls && \
+    find /lilyspark/opt/lib/audio/jack2/usr/lib -type f -name "libjack*" -ls && \
+    \
+    /usr/local/bin/check_llvm15.sh "post-jack2-install" || true && \
+    \
+    cd / && rm -rf /tmp/jack2 /tmp/jack2-source
+
+# ======================
+# BUILD PlutoSVG
+# ======================
+# This is a graphics library, so its path is: /lilyspark/opt/lib/audio
+RUN echo "=== BUILDING PlutoSVG FROM SOURCE ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-plutosvg-source-build" || true && \
+    \
+    # Remove any previous sources (avoid cached git from old layers) and prepare tmp
+    rm -rf /tmp/plutosvg /tmp/plutosvg-source && \
+    mkdir -p /tmp/plutosvg && cd /tmp/plutosvg && \
+    \
+    # Clone PlutoSVG from the public GitHub repository
+    if git clone --depth=1 https://github.com/sammycage/plutosvg.git /tmp/plutosvg-source; then \
+        echo "PlutoSVG source cloned successfully from GitHub"; \
+    else \
+        echo "ERROR: Could not clone PlutoSVG repository" >&2 && false; \
+    fi && \
+    \
+    cd /tmp/plutosvg-source && \
+    \
+    # Ensure we have a modern Meson (>=1.3.0) which understands c_std lists like "gnu11,c11".
+    # Use pip to upgrade meson into /usr/local so it takes precedence over apk's meson.
+    if command -v python3 >/dev/null 2>&1 && command -v pip3 >/dev/null 2>&1; then \
+        echo "Upgrading pip tools and installing a modern meson via pip" && \
+        python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel || true && \
+        python3 -m pip install --no-cache-dir 'meson>=1.3.0' || echo "Warning: pip meson install failed - will attempt fallback patch"; \
+    else \
+        echo "python3/pip3 not available, will attempt fallback patch"; \
+    fi && \
+    \
+    # As a fallback: patch subproject meson.build files to change 'gnu11,c11' -> 'gnu11' (best-effort)
+    # This avoids parse-time errors on older Meson when lists are used in default_options.
+    echo "Applying conservative fallback patches to subprojects (if present)" && \
+    find . -type f -path '*/subprojects/*/meson.build' -print -exec sed -i 's/gnu11,c11/gnu11/g; s/gnu11,c11/gnu11/g; s/gnu17,c17/gnu17/g' {} \; 2>/dev/null || true && \
+    find . -type f -path '*/subprojects/*/meson.build' -print -exec sed -n '1,120p' {} \; 2>/dev/null || true && \
+    \
+    # Configure and build using Meson+Ninja (pass -Dc_std as an extra guard)
+    if [ -f meson.build ]; then \
+        echo ">>> Configuring PlutoSVG via Meson <<<" && \
+        export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/graphics" && \
+        export PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig" && \
+        meson --version || echo "meson not found or version unknown" && \
+        meson setup builddir --prefix=/usr -Dc_std=gnu11 || { echo 'Meson configure failed' >&2; false; } && \
+        ninja -C builddir -v || { echo 'Ninja build failed' >&2; false; } && \
+        DESTDIR="/lilyspark/opt/lib/graphics" ninja -C builddir install || { echo 'Install failed' >&2; false; }; \
+    else \
+        echo "ERROR: meson.build not found, cannot configure PlutoSVG" >&2 && false; \
+    fi && \
+    \
+    # Verify installation
+    echo "=== VERIFYING PlutoSVG INSTALLATION ===" && \
+    if find /lilyspark/opt/lib/graphics -name "*plutosvg*" -type f | tee /tmp/plutosvg_install.log; then \
+        echo "PlutoSVG files present in /lilyspark/opt/lib/graphics"; \
+    else \
+        echo "WARNING: No PlutoSVG files found in /lilyspark/opt/lib/graphics"; \
+    fi && \
+    /usr/local/bin/check_llvm15.sh "post-plutosvg-install" || true && \
+    \
+    # Cleanup
+    cd / && rm -rf /tmp/plutosvg /tmp/plutosvg-source
+
 
 # ======================
 # SECTION: Core C/C++ libs (tiny subset)
