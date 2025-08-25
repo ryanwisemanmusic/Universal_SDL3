@@ -62,6 +62,7 @@ RUN mkdir -p \
     /lilyspark/opt/lib/audio \
     /lilyspark/opt/lib/graphics \
     /lilyspark/opt/lib/java \
+    /lilyspark/opt/lib/sys \
     # Main Compiler
     /lilyspark/compiler/bin \
     /lilyspark/compiler/lib \
@@ -1066,6 +1067,138 @@ RUN echo "=== BUILDING PlutoSVG FROM SOURCE ===" && \
     \
     # Cleanup
     cd / && rm -rf /tmp/plutosvg /tmp/plutosvg-source
+
+# ======================
+# SECTION: pciaccess Build (Linux only)
+# ======================
+RUN echo "=== BUILDING pciaccess FROM SOURCE WITH LLVM16 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-pciaccess-source-build" || true && \
+    \
+    git clone --depth=1 https://gitlab.freedesktop.org/xorg/lib/libpciaccess.git /tmp/libpciaccess && \
+    cd /tmp/libpciaccess && \
+    \
+    echo ">>> Configuring libpciaccess <<<" && \
+    # CRITICAL: Set environment to find dependencies in target sysroot
+    export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/sys" && \
+    export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig" && \
+    \
+    # Use minimal meson options - let it auto-detect what's available
+    meson setup builddir \
+        --prefix=/usr && \
+    \
+    ninja -C builddir -v && \
+    # CRITICAL: Install to target filesystem, not host
+    DESTDIR="/lilyspark/opt/lib/sys" ninja -C builddir install && \
+    \
+    # Verify installation in target
+    echo "=== VERIFYING PCIACCESS INSTALLATION IN TARGET ===" && \
+    find /lilyspark/opt/lib/sys -name "*pciaccess*" -type f | tee /tmp/pciaccess_install.log && \
+    echo "pciaccess.pc file contents:" && \
+    cat /lilyspark/opt/lib/sys/usr/lib/pkgconfig/pciaccess.pc || echo "pciaccess.pc not found" && \
+    \
+    /usr/local/bin/check_llvm15.sh "post-pciaccess-install" || true && \
+    \
+    # Cleanup
+    cd / && rm -rf /tmp/libpciaccess
+
+# ======================
+# SECTION: libdrm Build (sysroot-focused, non-fatal)
+# ======================
+ARG LIBDRM_VER=2.4.125
+ARG LIBDRM_URL="https://dri.freedesktop.org/libdrm/libdrm-${LIBDRM_VER}.tar.xz"
+
+RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-libdrm-source-build" || true; \
+    /usr/local/bin/check_llvm15.sh "after-libdrm-deps" || true; \
+    \
+    mkdir -p /tmp/libdrm-src && cd /tmp/libdrm-src; \
+    echo "Fetching libdrm tarball: ${LIBDRM_URL}"; \
+    curl -L "${LIBDRM_URL}" -o libdrm.tar.xz || (echo "⚠ Failed to fetch libdrm tarball"; exit 0); \
+    tar -xf libdrm.tar.xz --strip-components=1 || true; \
+    \
+    # sysroot and cross compiler setup
+    export PATH="/lilyspark/opt/lib/sys/compiler/bin:$PATH"; \
+    export CC=/lilyspark/opt/lib/sys/compiler/bin/clang-16; \
+    export CXX=/lilyspark/opt/lib/sys/compiler/bin/clang++-16; \
+    if [ -x /lilyspark/opt/lib/sys/compiler/bin/llvm-config-16 ]; then export LLVM_CONFIG=/lilyspark/opt/lib/sys/compiler/bin/llvm-config-16; else export LLVM_CONFIG=/lilyspark/opt/lib/sys/compiler/bin/llvm-config; fi; \
+    export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/sys"; \
+    export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/opt/lib/sys/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+    export CFLAGS="--sysroot=/lilyspark/opt/lib/sys -I/lilyspark/opt/lib/sys/usr/include -I/lilyspark/opt/lib/sys/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a"; \
+    export CXXFLAGS="$CFLAGS"; \
+    export LDFLAGS="--sysroot=/lilyspark/opt/lib/sys -L/lilyspark/opt/lib/sys/usr/lib -L/lilyspark/opt/lib/sys/compiler/lib -L/lilyspark/opt/lib/sys/glibc/lib"; \
+    \
+    # SYSROOT sanity & fix-ups
+    echo "=== SYSROOT RUNTIME CHECK ==="; \
+    ls -la /lilyspark/opt/lib/sys/usr/lib/crt* /lilyspark/opt/lib/sys/usr/lib/Scrt1.o /lilyspark/opt/lib/sys/usr/lib/gcc 2>/dev/null || true; \
+    ls -la /lilyspark/opt/lib/sys/usr/lib/libgcc* /lilyspark/opt/lib/sys/usr/lib/libssp* 2>/dev/null || true; \
+    \
+    [ ! -e /lilyspark/opt/lib/sys/usr/lib/Scrt1.o ] && [ -e /lilyspark/opt/lib/sys/usr/lib/crt1.o ] && ln -sf crt1.o /lilyspark/opt/lib/sys/usr/lib/Scrt1.o; \
+    [ ! -e /lilyspark/opt/lib/sys/lib/Scrt1.o ] && [ -e /lilyspark/opt/lib/sys/usr/lib/Scrt1.o ] && ln -sf /lilyspark/opt/lib/sys/usr/lib/Scrt1.o /lilyspark/opt/lib/sys/lib/Scrt1.o; \
+    CRTBEGIN=$(find /lilyspark/opt/lib/sys/usr/lib/gcc -name 'crtbegin*.o' 2>/dev/null | head -n1 || true); \
+    [ -n "$CRTBEGIN" ] && [ ! -e /lilyspark/opt/lib/sys/usr/lib/crtbeginS.o ] && ln -sf "$CRTBEGIN" /lilyspark/opt/lib/sys/usr/lib/crtbeginS.o; \
+    [ ! -e /lilyspark/opt/lib/sys/usr/lib/libssp_nonshared.a ] && ls /lilyspark/opt/lib/sys/usr/lib/libssp* 1>/dev/null 2>&1 && \
+      ln -sf "$(basename "$(ls /lilyspark/opt/lib/sys/usr/lib/libssp* | head -n1)")" /lilyspark/opt/lib/sys/usr/lib/libssp_nonshared.a; \
+    \
+    # === musl dynamic loader fix ===
+    if [ ! -e /lilyspark/opt/lib/sys/lib/ld-musl-aarch64.so.1 ] && [ -e /lib/ld-musl-aarch64.so.1 ]; then \
+        echo "[musl] Linking musl loader into sysroot: /lilyspark/opt/lib/sys/lib/ld-musl-aarch64.so.1"; \
+        mkdir -p /lilyspark/opt/lib/sys/lib; \
+        ln -sf /lib/ld-musl-aarch64.so.1 /lilyspark/opt/lib/sys/lib/ld-musl-aarch64.so.1; \
+    else \
+        echo "[musl] Loader already present or missing in /lib — skipping link"; \
+    fi; \
+    \
+    # === sysroot library inventory (first 60 entries) ===
+    if [ -d /lilyspark/opt/lib/sys/usr/lib ]; then \
+        echo "[sysroot] Listing /lilyspark/opt/lib/sys/usr/lib (first 60 entries):"; \
+        ls -la /lilyspark/opt/lib/sys/usr/lib | sed -n '1,60p'; \
+    else \
+        echo "[sysroot] WARNING: /lilyspark/opt/lib/sys/usr/lib does not exist"; \
+    fi; \
+    \
+    # === filesystem diagnosis ===
+    if [ -x /usr/local/bin/check-filesystem.sh ]; then \
+        echo "[diag] Running filesystem check"; \
+        /usr/local/bin/check-filesystem.sh || echo "[diag] WARNING: check-filesystem.sh returned nonzero"; \
+    else \
+        echo "[diag] Skipping filesystem check — script not found"; \
+    fi; \
+    # Compiler test
+    printf 'int main(void){return 0;}\n' > /tmp/meson_toolchain_test.c; \
+    echo "=== COMPILER CHECK (non-fatal) ==="; \
+    $CC --version 2>/dev/null || true; \
+    $CC $CFLAGS -Wl,--sysroot=/lilyspark/opt/lib/sys -v -Wl,--verbose -o /tmp/meson_toolchain_test /tmp/meson_toolchain_test.c 2>/tmp/meson_toolchain_test.err || \
+      (echo "✗ compiler test failed;" && sed -n '1,200p' /tmp/meson_toolchain_test.err); \
+    [ -x /tmp/meson_toolchain_test ] && echo "✓ compiler test OK" || echo "⚠ compiler test failed"; \
+    \
+    # Diagnostics
+    /usr/local/bin/dependency_checker.sh $CC || true; \
+    /usr/local/bin/binlib_validator.sh $CC || true; \
+    /usr/local/bin/version_matrix.sh || true; \
+    /usr/local/bin/cflag_audit.sh || true; \
+    \
+    # Build with Meson
+    meson setup builddir \
+        --prefix=/usr \
+        --libdir=lib \
+        --includedir=include \
+        --sysconfdir=/etc \
+        --buildtype=release \
+        -Dtests=false \
+        -Dudev=true \
+        -Dvalgrind=disabled || (echo "✗ meson setup failed"; /usr/local/bin/dep_chain_visualizer.sh "meson setup failed"); \
+    meson compile -C builddir -j$(nproc) || echo "✗ meson compile failed"; \
+    DESTDIR="/lilyspark/opt/lib/sys" meson install -C builddir --no-rebuild || echo "✗ meson install failed"; \
+    \
+    # Post-build summary
+    echo "=== POST BUILD SUMMARY ==="; \
+    ls -la /lilyspark/opt/lib/sys/usr/lib | sed -n '1,80p' || true; \
+    ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig 2>/dev/null || echo "(no pkgconfig files)"; \
+    \
+    cd /; rm -rf /tmp/libdrm-src; \
+    /usr/local/bin/check_llvm15.sh "post-libdrm-source-build" || true; \
+    echo "=== libdrm BUILD finished ==="; \
+    true
 
 
 # ======================
