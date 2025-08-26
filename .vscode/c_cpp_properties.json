@@ -3,7 +3,8 @@
         {
             "name": "Mac",
             "includePath": [
-                "${default}"
+                "${default}",
+                "/opt/homebrew/Cellar/sdl3/3.2.20/include"
             ],
             "defines": [],
             "cStandard": "c17",
