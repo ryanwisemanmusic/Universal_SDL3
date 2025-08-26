@@ -63,6 +63,7 @@ RUN mkdir -p \
     # Third-party libraries
     /lilyspark/opt \
     /lilyspark/opt/lib/audio \
+    /lilyspark/opt/lib/driver \
     /lilyspark/opt/lib/graphics \
     /lilyspark/opt/lib/java \
     /lilyspark/opt/lib/media \
@@ -1617,6 +1618,202 @@ RUN \
         printf '%s\n' "⚠ xorg-server source directory not present; skipped build"; \
     fi; \
     true
+
+# ======================
+# SECTION: Mesa Build (sysroot-focused, non-fatal) — FINAL
+# ======================
+
+ENV MESON_LOG_LEVEL=debug \
+    NINJA_STATUS="[%f/%t] %es "
+
+RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-mesa-clone" || true; \
+    \
+    git clone --progress https://gitlab.freedesktop.org/mesa/mesa.git || (echo "⚠ mesa not cloned; skipping build commands" && exit 0); \
+    if [ -d mesa ]; then cd mesa; else echo "⚠ mesa directory missing; skipping build"; exit 0; fi; \
+    \
+    git checkout mesa-24.0.3 || true; \
+    /usr/local/bin/check_llvm15.sh "post-mesa-clone" || true; \
+    \
+    # Set up environment for proper sysroot build
+    export PATH="/lilyspark/compiler/bin:$PATH"; \
+    export CC=/lilyspark/compiler/bin/clang-16; \
+    export CXX=/lilyspark/compiler/bin/clang++-16; \
+    if [ -x /lilyspark/compiler/bin/llvm-config-16 ]; then export LLVM_CONFIG=/lilyspark/compiler/bin/llvm-config-16; else export LLVM_CONFIG=/lilyspark/compiler/bin/llvm-config; fi; \
+    export PKG_CONFIG_SYSROOT_DIR="/lilyspark"; \
+    export PKG_CONFIG_PATH="/lilyspark/usr/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+    export CFLAGS="--sysroot=/lilyspark -I/lilyspark/usr/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a"; \
+    export CXXFLAGS="$CFLAGS"; \
+    export LDFLAGS="--sysroot=/lilyspark -L/lilyspark/usr/lib -L/lilyspark/compiler/lib -L/lilyspark/glibc/lib"; \
+    \
+    # Run filesystem check
+    echo "=== FILESYSTEM DIAGNOSIS ==="; \
+    /usr/local/bin/check-filesystem.sh || true; \
+    \
+    echo "=== MESA BUILD CONFIGURATION (ARM64 + LLVM16) ===" && \
+    meson setup builddir/ \
+        --prefix=/usr \
+        -Dglx=disabled \
+        -Ddri3=disabled \
+        -Degl=enabled \
+        -Dgbm=enabled \
+        -Dplatforms=wayland \
+        -Dglvnd=false \
+        -Dosmesa=true \
+        -Dgallium-drivers=swrast,kmsro,zink \
+        -Dvulkan-drivers=swrast \
+        -Dbuildtype=debugoptimized \
+        --fatal-meson-warnings \
+        --wrap-mode=nodownload \
+        -Dllvm=enabled || (echo "✗ meson setup failed (continuing)" && /usr/local/bin/dep_chain_visualizer.sh "mesa meson setup failed"); \
+    \
+    /usr/local/bin/check_llvm15.sh "post-mesa-configure" || true; \
+    \
+    echo "=== MESA BUILD LOGS (tail) ===" && \
+    test -f builddir/meson-logs/meson-log.txt && tail -n 200 builddir/meson-logs/meson-log.txt || true; \
+    echo "=== MESA CONFIGURATION ==="; \
+    meson configure builddir/ || true; \
+    \
+    echo "=== STARTING NINJA BUILD (ARM64 + LLVM16) ===" && \
+    ninja -C builddir -v 2>&1 | tee /tmp/mesa-build.log || echo "✗ ninja build failed (continuing)"; \
+    \
+    # Install with DESTDIR for proper sysroot deployment
+    echo "=== INSTALLING MESA TO SYSROOT ===" && \
+    DESTDIR="/lilyspark" ninja -C builddir install 2>&1 | tee /tmp/mesa-install.log || echo "✗ ninja install failed (continuing)"; \
+    \
+    /usr/local/bin/check_llvm15.sh "post-mesa-build" || true; \
+    \
+    echo "=== VULKAN ICD CONFIGURATION (ARM64) ===" && \
+    mkdir -p /lilyspark/usr/share/vulkan/icd.d && \
+    printf '{"file_format_version":"1.0.0","ICD":{"library_path":"libvulkan_swrast.so","api_version":"1.3.0"}}' > /lilyspark/usr/share/vulkan/icd.d/swrast_icd.arm64.json; \
+    \
+    # Organize Mesa components into lilyspark driver path
+    echo "=== ORGANIZING MESA COMPONENTS ===" && \
+    mkdir -p /lilyspark/opt/lib/driver && \
+    find /lilyspark/usr/bin -name "*mesa*" -o -name "*gl*" -o -name "*egl*" | xargs -I {} mv {} /lilyspark/opt/lib/driver/ 2>/dev/null || true; \
+    mv /lilyspark/usr/lib/libGL* /lilyspark/opt/lib/driver/ 2>/dev/null || true; \
+    mv /lilyspark/usr/lib/libEGL* /lilyspark/opt/lib/driver/ 2>/dev/null || true; \
+    mv /lilyspark/usr/lib/libgbm* /lilyspark/opt/lib/driver/ 2>/dev/null || true; \
+    mv /lilyspark/usr/lib/libvulkan* /lilyspark/opt/lib/driver/ 2>/dev/null || true; \
+    \
+    echo "=== MESA ISOLATION COMPLETE ===" && \
+    echo "Mesa components isolated in /lilyspark/opt/lib/driver directory" && \
+    ls -la /lilyspark/opt/lib/driver 2>/dev/null || echo "Mesa directory contents not available"; \
+    \
+    # Create DRI directory structure and symlinks (still inside /lilyspark sysroot)
+    echo "=== CREATING DRI DIRECTORY STRUCTURE ===" && \
+    mkdir -p /lilyspark/usr/lib/xorg/modules/dri /lilyspark/usr/lib/dri || true; \
+    ln -sf /lilyspark/usr/lib/dri /lilyspark/usr/lib/xorg/modules/dri || true; \
+    \
+    # Run diagnostic scripts
+    echo "=== COMPILER DEPENDENCY CHECK ==="; \
+    /usr/local/bin/dependency_checker.sh /lilyspark/compiler/bin/clang-16 || true; \
+    \
+    echo "=== COMPILER VALIDATION ==="; \
+    /usr/local/bin/binlib_validator.sh /lilyspark/compiler/bin/clang-16 || true; \
+    \
+    echo "=== VERSION COMPATIBILITY CHECK ==="; \
+    /usr/local/bin/version_matrix.sh || true; \
+    \
+    echo "=== COMPILER FLAGS AUDIT ==="; \
+    /usr/local/bin/cflag_audit.sh || true; \
+    \
+    # Cleanup
+    cd / && \
+    rm -rf mesa 2>/dev/null || true; \
+    \
+    /usr/local/bin/check_llvm15.sh "post-mesa-cleanup" || true; \
+    echo "=== MESA SECTION COMPLETE ==="; \
+    true
+
+# ======================
+# BUILD GBM (from Mesa)
+# ======================
+RUN echo "=== BUILDING GBM FROM MESA SOURCE ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-gbm-source-build" || true && \
+    \
+    git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa && \
+    cd /tmp/mesa && \
+    \
+    echo ">>> Configuring GBM <<<" && \
+    export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" && \
+    export PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig" && \
+    meson setup builddir \
+        --prefix=/usr \
+        -Dgbm=enabled \
+        -Ddri-drivers= \
+        -Dgallium-drivers= \
+        -Degl=disabled \
+        -Dgles1=disabled \
+        -Dgles2=disabled \
+        -Dopengl=disabled && \
+    \
+    ninja -C builddir -v && \
+    DESTDIR="/lilyspark/opt/lib/driver" ninja -C builddir install && \
+    \
+    echo "=== VERIFYING GBM INSTALLATION ===" && \
+    find /lilyspark/opt/lib/driver -name "*gbm*" -type f | tee /tmp/gbm_install.log && \
+    /usr/local/bin/check_llvm15.sh "post-gbm-install" || true && \
+    \
+    cd / && rm -rf /tmp/mesa
+
+# ======================
+# BUILD EGL (from Mesa)
+# ======================
+RUN echo "=== BUILDING EGL FROM MESA SOURCE ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-egl-source-build" || true && \
+    \
+    git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa && \
+    cd /tmp/mesa && \
+    \
+    echo ">>> Configuring EGL <<<" && \
+    export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" && \
+    export PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig" && \
+    meson setup builddir \
+        --prefix=/usr \
+        -Dgbm=disabled \
+        -Degl=enabled \
+        -Dgles1=disabled \
+        -Dgles2=disabled \
+        -Dopengl=disabled && \
+    \
+    ninja -C builddir -v && \
+    DESTDIR="/lilyspark/opt/lib/driver" ninja -C builddir install && \
+    \
+    echo "=== VERIFYING EGL INSTALLATION ===" && \
+    find /lilyspark/opt/lib/driver -name "*EGL*" -type f | tee /tmp/egl_install.log && \
+    /usr/local/bin/check_llvm15.sh "post-egl-install" || true && \
+    \
+    cd / && rm -rf /tmp/mesa
+
+# ======================
+# BUILD GLES (from Mesa)
+# ======================
+RUN echo "=== BUILDING GLES FROM MESA SOURCE ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-gles-source-build" || true && \
+    \
+    git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa && \
+    cd /tmp/mesa && \
+    \
+    echo ">>> Configuring GLES <<<" && \
+    export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" && \
+    export PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig" && \
+    meson setup builddir \
+        --prefix=/usr \
+        -Dgbm=disabled \
+        -Degl=disabled \
+        -Dgles1=enabled \
+        -Dgles2=enabled \
+        -Dopengl=disabled && \
+    \
+    ninja -C builddir -v && \
+    DESTDIR="/lilyspark/opt/lib/driver" ninja -C builddir install && \
+    \
+    echo "=== VERIFYING GLES INSTALLATION ===" && \
+    find /lilyspark/opt/lib/driver -name "*GLES*" -type f | tee /tmp/gles_install.log && \
+    /usr/local/bin/check_llvm15.sh "post-gles-install" || true && \
+    \
+    cd / && rm -rf /tmp/mesa
 
 # ======================
 # SECTION: Core C/C++ libs (tiny subset)
