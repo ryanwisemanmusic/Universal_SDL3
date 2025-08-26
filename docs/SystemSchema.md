@@ -61,6 +61,9 @@ Brainstorming a new system
     /lilyspark/dist
 
 
+    /lilyspark/app/
+        /lilyspark/app/build_files/
+
     /lilyspark/glibc/
         /lilyspark/glibc/include
             -glibc-dev headers

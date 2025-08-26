@@ -1,11 +1,17 @@
-/*
 #include "main.hpp"
+#include <iostream>
+using namespace std;
 
+int main(int argc, char* argv[]) 
+{
+    cout << "Hello there! :D";
+    return 0;
+}
 
-
-int main(int argc, char* argv[]) {
-
-    SDL_Window *window;                    // Declare a pointer
+//First checkpoint will be isolating the SDL_Window *window, and see if we can point to it
+//It's fucking pointless if you can't do anything beyond that.
+/*
+SDL_Window *window;                    // Declare a pointer
     bool done = false;
 
     SDL_Init(SDL_INIT_VIDEO);              // Initialize SDL3
@@ -42,14 +48,4 @@ int main(int argc, char* argv[]) {
 
     // Clean up
     SDL_Quit();
-    return 0;
-}
-
- */
-#include <stdio.h>
- using namespace std;
-int main()
-{
-    printf("Hello World \n");
-    return 0;
-}
+*/

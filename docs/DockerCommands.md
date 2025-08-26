@@ -3,14 +3,14 @@ List of Docker Shell commands you can run:
 # Version Matrix (Checking for versioning)
 COPY setup-scripts/version_matrix.sh /usr/local/bin/version_matrix
 RUN chmod +x /usr/local/bin/version_matrix && \
-    version_matrix > /custom-os/build_versions.txt && \
-    cat /custom-os/build_versions.txt
+    version_matrix > /lilyspark/build_versions.txt && \
+    cat /lilyspark/build_versions.txt
 
 # Dependency checker (to make sure nothing is missing)
 COPY setup-scripts/dependency_checker.sh /usr/local/bin/dependency_checker
 RUN chmod +x /usr/local/bin/dependency_checker && \
-    dependency_checker /custom-os/compiler/bin /custom-os/glibc/bin > /custom-os/dependency_report.txt && \
-    cat /custom-os/dependency_report.txt
+    dependency_checker /lilyspark/compiler/bin /lilyspark/glibc/bin > /lilyspark/dependency_report.txt && \
+    cat /lilyspark/dependency_report.txt
     
 # For filefinder.sh (run when debugging)
 COPY setup-scripts/filefinder.sh /usr/local/bin/filefinder
@@ -19,7 +19,7 @@ RUN chmod +x /usr/local/bin/filefinder
 # For context-inspector.sh (run during build)
 COPY setup-scripts/context-inspector.sh /usr/local/bin/context-inspector
 RUN chmod +x /usr/local/bin/context-inspector && \
-    context-inspector > /custom-os/context_report.txt
+    context-inspector > /lilyspark/context_report.txt
 
 # Filesystem diff setup
 COPY setup-scripts/file_diff_analyzer.sh /usr/local/bin/
@@ -46,9 +46,9 @@ RUN chmod +x /usr/local/bin/src_fetch.sh
 RUN echo "filesystem-builder" > /tmp/current_stage
 
 # Log Docker operations
-RUN echo "# $(date) - COPY/ADD operations" > /custom-os/docker_operations.log
+RUN echo "# $(date) - COPY/ADD operations" > /lilyspark/docker_operations.log
 ONBUILD COPY --chown=root:root . /context
-ONBUILD RUN find /context -type f | sed 's/^/COPY /' >> /custom-os/docker_operations.log
+ONBUILD RUN find /context -type f | sed 's/^/COPY /' >> /lilyspark/docker_operations.log
 
 # Install debug tools
 COPY setup-scripts/stage_went_wrong_tracer.sh /usr/local/bin/
