@@ -63,6 +63,7 @@ RUN mkdir -p \
     # Third-party libraries
     /lilyspark/opt \
     /lilyspark/opt/lib/audio \
+    /lilyspark/opt/lib/database \
     /lilyspark/opt/lib/driver \
     /lilyspark/opt/lib/graphics \
     /lilyspark/opt/lib/java \
@@ -1972,6 +1973,173 @@ RUN echo "=== BUILDING SDL3_ttf ===" && \
     cd ../../.. && rm -rf sdl_ttf && \
     /usr/local/bin/check_llvm15.sh "post-sdl3-ttf" || true && \
     echo "=== SDL3_ttf BUILD COMPLETED ==="
+
+# ======================
+# SECTION: Vulkan Components
+# ======================
+
+# Vulkan-Headers
+RUN echo "=== BUILDING VULKAN-HEADERS ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-vulkan-headers" || true && \
+    \
+    git clone --progress https://github.com/KhronosGroup/Vulkan-Headers.git && \
+    cd Vulkan-Headers && mkdir build && cd build && \
+    \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/vulkan \
+        -DCMAKE_C_COMPILER=/lilyspark/compiler/bin/clang-16 \
+        -DCMAKE_CXX_COMPILER=/lilyspark/compiler/bin/clang++-16 \
+        -DCMAKE_C_FLAGS="-v -Wno-error -march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
+        -DCMAKE_CXX_FLAGS="-v -Wno-error -march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" && \
+    \
+    make -j"$(nproc)" VERBOSE=1 install && \
+    cd ../.. && rm -rf Vulkan-Headers && \
+    \
+    # Verify installation
+    echo "=== VULKAN-HEADERS INSTALLATION VERIFICATION ===" && \
+    ls -la /lilyspark/opt/lib/vulkan/include/vulkan/ 2>/dev/null || echo "No Vulkan headers found" && \
+    \
+    /usr/local/bin/check_llvm15.sh "post-vulkan-headers" || true && \
+    echo "=== VULKAN-HEADERS BUILD COMPLETED ==="
+
+# Vulkan-Loader
+RUN echo "=== BUILDING VULKAN-LOADER ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-vulkan-loader" || true && \
+    \
+    git clone --progress https://github.com/KhronosGroup/Vulkan-Loader.git && \
+    cd Vulkan-Loader && mkdir build && cd build && \
+    \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/vulkan \
+        -DCMAKE_C_COMPILER=/lilyspark/compiler/bin/clang-16 \
+        -DCMAKE_CXX_COMPILER=/lilyspark/compiler/bin/clang++-16 \
+        -DCMAKE_C_FLAGS="-v -Wno-error -march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
+        -DCMAKE_CXX_FLAGS="-v -Wno-error -march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" \
+        -DBUILD_TESTS=OFF \
+        -DVULKAN_HEADERS_INSTALL_DIR=/lilyspark/opt/lib/vulkan && \
+    \
+    make -j"$(nproc)" VERBOSE=1 install && \
+    cd ../.. && rm -rf Vulkan-Loader && \
+    \
+    # Verify installation
+    echo "=== VULKAN-LOADER INSTALLATION VERIFICATION ===" && \
+    ls -la /lilyspark/opt/lib/vulkan/lib/libvulkan* 2>/dev/null || echo "No Vulkan loader libraries found" && \
+    \
+    # Create symlinks
+    echo "=== CREATING VULKAN LOADER SYMLINKS ===" && \
+    cd /lilyspark/opt/lib/vulkan/lib && \
+    for lib in $(ls libvulkan.so.* 2>/dev/null); do \
+        soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
+        basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
+        ln -sf "$lib" "$soname"; \
+        ln -sf "$soname" "$basename"; \
+        echo "Created symlinks for $lib"; \
+    done && \
+    \
+    /usr/local/bin/check_llvm15.sh "post-vulkan-loader" || true && \
+    echo "=== VULKAN-LOADER BUILD COMPLETED ==="
+
+# ======================
+# SECTION: glmark2 Build
+# ======================
+RUN echo "=== BUILDING GLMARK2 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-glmark2" || true && \
+    \
+    git clone --depth=1 https://github.com/glmark2/glmark2.git && \
+    cd glmark2 && \
+    \
+    echo "=== DIRECTORY STRUCTURE (PRE-BUILD) ===" && \
+    tree -L 2 && \
+    echo "=== WAF SCRIPT PERMISSIONS ===" && \
+    ls -l waf* || true && \
+    \
+    echo "=== CONFIGURING GLMARK2 WITH LLVM16 ===" && \
+    CC=/lilyspark/compiler/bin/clang-16 \
+    CXX=/lilyspark/compiler/bin/clang++-16 \
+    CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
+    CXXFLAGS="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
+    LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" \
+    python3 ./waf configure \
+        --prefix=/lilyspark/opt/lib/graphics \
+        --with-flavors=x11-gl,drm-gl \
+        --verbose 2>&1 | tee configure.log || { \
+            echo "=== CONFIGURATION FAILED - SHOWING LOG ==="; \
+            cat configure.log; \
+            exit 1; \
+        } && \
+    \
+    echo "=== BUILDING GLMARK2 ===" && \
+    python3 ./waf build -j"$(nproc)" --verbose 2>&1 | tee build.log || { \
+        echo "=== BUILD FAILED - SHOWING LOG ==="; \
+        cat build.log; \
+        exit 1; \
+    } && \
+    \
+    echo "=== INSTALLING GLMARK2 ===" && \
+    python3 ./waf install --verbose 2>&1 | tee install.log && \
+    \
+    # Verify installation
+    echo "=== GLMARK2 INSTALLATION VERIFICATION ===" && \
+    ls -la /lilyspark/opt/lib/graphics/bin/glmark2* 2>/dev/null || echo "No glmark2 binaries found" && \
+    \
+    cd .. && \
+    /usr/local/bin/check_llvm15.sh "post-glmark2" || true && \
+    echo "=== GLMARK2 BUILD COMPLETED ==="
+
+# ======================
+# SECTION: SQLite3 Build
+# ======================
+RUN echo "=== SQLITE3 BUILD WITH LLVM16 ENFORCEMENT ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-sqlite3-clone" || true && \
+    \
+    git clone --progress https://github.com/sqlite/sqlite.git sqlite && \
+    /usr/local/bin/check_llvm15.sh "post-sqlite3-clone" || true && \
+    cd sqlite && \
+    mkdir build && cd build && \
+    \
+    echo "=== SQLITE3 BUILD CONFIGURATION (ARM64 + LLVM16) ===" && \
+    CC=/lilyspark/compiler/bin/clang-16 \
+    CXX=/lilyspark/compiler/bin/clang++-16 \
+    LLVM_CONFIG=/lilyspark/compiler/bin/llvm-config \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/database \
+        -DSQLITE_ENABLE_COLUMN_METADATA=ON \
+        -DSQLITE_ENABLE_FTS3=ON \
+        -DSQLITE_ENABLE_FTS4=ON \
+        -DSQLITE_ENABLE_FTS5=ON \
+        -DSQLITE_ENABLE_JSON1=ON \
+        -DSQLITE_ENABLE_RTREE=ON \
+        -DSQLITE_ENABLE_DBSTAT_VTAB=ON \
+        -DSQLITE_SECURE_DELETE=ON \
+        -DSQLITE_USE_URI=ON \
+        -DSQLITE_ENABLE_UNLOCK_NOTIFY=ON \
+        -DSQLITE_ENABLE_ZLIB=ON \
+        -DCMAKE_C_FLAGS="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a -Wno-error" \
+        -DCMAKE_CXX_FLAGS="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a -Wno-error" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" \
+        -DCMAKE_SHARED_LINKER_FLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" \
+        -DPKG_CONFIG_PATH="/lilyspark/compiler/lib/pkgconfig:/lilyspark/opt/lib/database/lib/pkgconfig" \
+        -Wno-dev && \
+    \
+    /usr/local/bin/check_llvm15.sh "post-sqlite3-configure" || true && \
+    \
+    echo "=== STARTING SQLITE3 BUILD (ARM64 + LLVM16) ===" && \
+    make -j"$(nproc)" VERBOSE=1 install && \
+    /usr/local/bin/check_llvm15.sh "post-sqlite3-build" || true && \
+    \
+    echo "=== VERIFYING SQLITE3 INSTALL ===" && \
+    test -f /lilyspark/opt/lib/database/include/sqlite3.h && \
+    PKG_CONFIG_PATH=/lilyspark/opt/lib/database/lib/pkgconfig pkg-config --cflags --libs sqlite3 && \
+    \
+    cd ../.. && \
+    rm -rf sqlite && \
+    /usr/local/bin/check_llvm15.sh "post-sqlite3-cleanup" || true && \
+    echo "=== SQLITE3 BUILD COMPLETED ==="
 
 # ======================
 # SECTION: Core C/C++ libs (tiny subset)
