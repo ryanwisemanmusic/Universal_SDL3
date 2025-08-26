@@ -62,6 +62,7 @@ RUN mkdir -p \
     /lilyspark/opt/lib/audio \
     /lilyspark/opt/lib/graphics \
     /lilyspark/opt/lib/java \
+    /lilyspark/opt/lib/sdl3 \
     /lilyspark/opt/lib/sys \
     # Main Compiler
     /lilyspark/compiler/bin \
@@ -1200,6 +1201,100 @@ RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
     echo "=== libdrm BUILD finished ==="; \
     true
 
+# ======================
+# SECTION: libepoxy Build (sysroot-focused)
+# ======================
+RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-libepoxy-source-build" || true && \
+    \
+    echo "=== INSTALLING BUILD DEPENDENCIES ===" && \
+    /usr/local/bin/check_llvm15.sh "after-libepoxy-deps-install" || true && \
+    \
+    echo "=== CLONING LIBEPOXY SOURCE ===" && \
+    git clone --depth=1 --branch 1.5.10 https://github.com/anholt/libepoxy.git libepoxy && \
+    cd libepoxy && \
+    \
+    echo "=== SOURCE CONTAMINATION SCAN ===" && \
+    grep -RIn "LLVM15\|llvm-15" . 2>/dev/null | tee /tmp/libepoxy_source_scan.log || true && \
+    \
+    echo "=== CONFIGURING LIBEPOXY WITH LLVM16 EXPLICIT PATHS ===" && \
+    CC=/lilyspark/opt/lib/sys/compiler/bin/clang-16 \
+    CXX=/lilyspark/opt/lib/sys/compiler/bin/clang++-16 \
+    LLVM_CONFIG=/lilyspark/opt/lib/sys/compiler/bin/llvm-config \
+    CFLAGS="-I/lilyspark/opt/lib/sys/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
+    CXXFLAGS="-I/lilyspark/opt/lib/sys/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
+    LDFLAGS="-L/lilyspark/opt/lib/sys/compiler/lib -L/lilyspark/opt/lib/sys/glibc/lib -Wl,-rpath,/lilyspark/opt/lib/sys/compiler/lib:/lilyspark/opt/lib/sys/glibc/lib" \
+    PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/opt/lib/sys/compiler/lib/pkgconfig" \
+    meson setup builddir \
+        --prefix=/lilyspark/opt/lib/sys/usr \
+        --libdir=/lilyspark/opt/lib/sys/usr/lib \
+        --includedir=/lilyspark/opt/lib/sys/usr/include \
+        --buildtype=release \
+        -Dglx=yes \
+        -Degl=yes \
+        -Dx11=true \
+        -Dwayland=false \
+        -Dtests=false && \
+    \
+    echo "=== BUILDING LIBEPOXY ===" && \
+    ninja -C builddir -j"$(nproc)" 2>&1 | tee /tmp/libepoxy-build.log && \
+    \
+    echo "=== INSTALLING LIBEPOXY ===" && \
+    ninja -C builddir install 2>&1 | tee /tmp/libepoxy-install.log && \
+    \
+    echo "=== LIBEPOXY INSTALLATION VERIFICATION ===" && \
+    echo "Libraries installed:" && \
+    ls -la /lilyspark/opt/lib/sys/usr/lib/libepoxy* 2>/dev/null || echo "No libepoxy libraries found" && \
+    echo "Headers installed:" && \
+    ls -la /lilyspark/opt/lib/sys/usr/include/epoxy/ 2>/dev/null || echo "No epoxy headers found" && \
+    echo "PKG-config files:" && \
+    ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig/epoxy.pc 2>/dev/null || echo "No epoxy.pc found" && \
+    \
+    echo "=== CREATING REQUIRED SYMLINKS ===" && \
+    cd /lilyspark/opt/lib/sys/usr/lib && \
+    for lib in $(ls libepoxy*.so.*.* 2>/dev/null); do \
+        soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
+        basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
+        ln -sf "$lib" "$soname"; \
+        ln -sf "$soname" "$basename"; \
+        echo "Created symlinks for $lib"; \
+    done && \
+    \
+    echo "=== FINAL CONTAMINATION SCAN ===" && \
+    find /lilyspark/opt/lib/sys/usr/lib -name "libepoxy*" -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee /tmp/libepoxy_contamination.log || true && \
+    \
+    cd / && \
+    rm -rf libepoxy && \
+    \
+    /usr/local/bin/check_llvm15.sh "post-libepoxy-source-build" || true && \
+    echo "=== LIBEPOXY BUILD COMPLETE ===" && \
+    if [ -f /lilyspark/opt/lib/sys/usr/lib/libepoxy.so ] && [ -f /lilyspark/opt/lib/sys/usr/include/epoxy/gl.h ]; then \
+        echo "✓ SUCCESS: libepoxy components installed"; \
+    else \
+        echo "⚠ WARNING: Some libepoxy components missing"; \
+    fi
+
+# ======================
+# SECTION: SDL3 Image Dependencies
+# ======================
+RUN echo "=== INSTALLING SDL3_IMAGE DEPENDENCIES ===" && \
+    apk add --no-cache libwebp-dev && \
+    /usr/local/bin/check_llvm15.sh "after-libwebp-dev" || true && \
+    \
+    apk add --no-cache libavif-dev && \
+    /usr/local/bin/check_llvm15.sh "after-libavif-dev" || true && \
+    \
+    echo "=== COPYING IMAGE LIBRARIES TO SDL3 DIRECTORY ===" && \
+    mkdir -p /lilyspark/opt/lib/sdl3/{lib,include} && \
+    cp -r /usr/lib/libtiff* /lilyspark/opt/lib/sdl3/lib/ 2>/dev/null || true && \
+    cp -r /usr/lib/libwebp* /lilyspark/opt/lib/sdl3/lib/ 2>/dev/null || true && \
+    cp -r /usr/lib/libavif* /lilyspark/opt/lib/sdl3/lib/ 2>/dev/null || true && \
+    cp -r /usr/include/tiff* /lilyspark/opt/lib/sdl3/include/ 2>/dev/null || true && \
+    cp -r /usr/include/webp /lilyspark/opt/lib/sdl3/include/ 2>/dev/null || true && \
+    cp -r /usr/include/avif /lilyspark/opt/lib/sdl3/include/ 2>/dev/null || true && \
+    \
+    echo "=== VERIFYING SDL3 IMAGE LIBRARIES ===" && \
+    ls -la /lilyspark/opt/lib/sdl3/lib/libtiff* /lilyspark/opt/lib/sdl3/lib/libwebp* /lilyspark/opt/lib/sdl3/lib/libavif* || echo "Some SDL3 libraries not found"
 
 # ======================
 # SECTION: Core C/C++ libs (tiny subset)
