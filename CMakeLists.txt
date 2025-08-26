@@ -4,6 +4,9 @@ project(simplehttpserver)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Generate compile_commands.json for IntelliSense (ONLY ADDITION)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # -------------------------------
 # Simple Hello World executable
 # -------------------------------
