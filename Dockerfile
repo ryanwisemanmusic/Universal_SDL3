@@ -1,6 +1,9 @@
 # Stage: base deps (Alpine version)
 FROM alpine:3.21 AS base-deps
 
+# Fix Hangup Code (Test)
+CMD ["tail", "-f", "/dev/null"]
+
 # ULTIMATE cache-busting - forces rebuild every time
 ARG BUILDKIT_INLINE_CACHE=0
 ARG DOCKER_BUILDKIT=1
@@ -62,6 +65,7 @@ RUN mkdir -p \
     /lilyspark/opt/lib/audio \
     /lilyspark/opt/lib/graphics \
     /lilyspark/opt/lib/java \
+    /lilyspark/opt/lib/python \
     /lilyspark/opt/lib/sdl3 \
     /lilyspark/opt/lib/sys \
     # Main Compiler
@@ -208,6 +212,9 @@ RUN echo "=== Verifying /lilyspark/usr/bin ===" && \
 
 # Stage: filesystem setup - Install base-deps
 FROM base-deps AS filesystem-base-deps-builder
+
+# Fix Hangup Code (Test)
+CMD ["tail", "-f", "/dev/null"]
 
 # ULTIMATE cache-busting - forces rebuild every time
 ARG BUILDKIT_INLINE_CACHE=0
@@ -855,6 +862,9 @@ RUN echo "=== INTEGRATING X11 LIBRARIES INTO SYSROOT ===" && \
 # Stage: filesystem-libs (minimal version for C++ Hello World)
 FROM filesystem-base-deps-builder AS filesystem-libs-build-builder
 
+# Fix Hangup Code (Test)
+CMD ["tail", "-f", "/dev/null"]
+
 # ULTIMATE cache-busting - forces rebuild every time
 ARG BUILDKIT_INLINE_CACHE=0
 RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
@@ -1297,6 +1307,136 @@ RUN echo "=== INSTALLING SDL3_IMAGE DEPENDENCIES ===" && \
     ls -la /lilyspark/opt/lib/sdl3/lib/libtiff* /lilyspark/opt/lib/sdl3/lib/libwebp* /lilyspark/opt/lib/sdl3/lib/libavif* || echo "Some SDL3 libraries not found"
 
 # ======================
+# SECTION: Python Dependencies
+# ======================
+RUN echo "=== COPYING PYTHON PACKAGES TO CUSTOM FILESYSTEM ===" && \
+    mkdir -p /lilyspark/opt/lib/python/site-packages && \
+    for pkg in mesonbuild mako MarkupSafe; do \
+        # Find the package in the base sysroot or system Python site-packages
+        src_dir=$(find /usr/lib/python3.*/site-packages /usr/lib/python*/site-packages -type d -name "$pkg" | head -n1) && \
+        if [ -n "$src_dir" ] && [ -d "$src_dir" ]; then \
+            dst_dir="/lilyspark/opt/lib/python/site-packages/$pkg" && \
+            cp -R "$src_dir" "$dst_dir" && \
+            echo "Copied $pkg -> $dst_dir"; \
+        else \
+            echo "Python package $pkg not found in system or base sysroot"; \
+        fi; \
+    done && \
+    \
+    echo "=== VERIFYING PYTHON PACKAGES IN CUSTOM FILESYSTEM ===" && \
+    for pkg in mesonbuild mako MarkupSafe; do \
+        if [ -d "/lilyspark/opt/lib/python/site-packages/$pkg" ]; then \
+            echo "$pkg successfully copied:"; \
+            ls -la "/lilyspark/opt/lib/python/site-packages/$pkg" | head -5; \
+        else \
+            echo "$pkg missing from /lilyspark/opt/lib/python/site-packages"; \
+        fi; \
+    done
+
+# ======================
+# SECTION: SPIRV-Tools Build
+# ======================
+RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-spirv-tools-source-build" || true && \
+    \
+    echo "=== CLONING SPIRV-TOOLS AND DEPENDENCIES ===" && \
+    git clone --depth=1 https://github.com/KhronosGroup/SPIRV-Tools.git spirv-tools && \
+    cd spirv-tools && \
+    \
+    echo "=== CLONING SPIRV-HEADERS DEPENDENCY ===" && \
+    git clone --depth=1 https://github.com/KhronosGroup/SPIRV-Headers.git external/spirv-headers && \
+    \
+    echo "=== VERIFYING DEPENDENCIES ===" && \
+    ls -la external/spirv-headers/ && \
+    \
+    echo "=== CONFIGURING WITH CMAKE ===" && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/graphics \
+        -DCMAKE_C_COMPILER=/custom-os/compiler/bin/clang-16 \
+        -DCMAKE_CXX_COMPILER=/custom-os/compiler/bin/clang++-16 \
+        -DLLVM_CONFIG_EXECUTABLE=/custom-os/compiler/bin/llvm-config \
+        -DCMAKE_C_FLAGS="-I/custom-os/compiler/include -march=armv8-a" \
+        -DCMAKE_CXX_FLAGS="-I/custom-os/compiler/include -march=armv8-a" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/custom-os/compiler/lib -Wl,-rpath,/custom-os/compiler/lib" && \
+    \
+    make -j"$(nproc)" 2>&1 | tee /tmp/spirv-build.log && \
+    make install 2>&1 | tee /tmp/spirv-install.log && \
+    \
+    cd ../.. && rm -rf spirv-tools && \
+    \
+    echo "=== VERIFYING SPIRV-TOOLS INSTALLATION ===" && \
+    ls -la /lilyspark/opt/lib/graphics/bin/spirv-* 2>/dev/null || echo "No SPIRV-Tools binaries found" && \
+    ls -la /lilyspark/opt/lib/graphics/lib/libSPIRV-Tools* 2>/dev/null || echo "No SPIRV-Tools libraries found" && \
+    \
+    cd /lilyspark/opt/lib/graphics/lib && \
+    for lib in $(ls libSPIRV-Tools*.so.* 2>/dev/null); do \
+        soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
+        basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
+        ln -sf "$lib" "$soname"; \
+        ln -sf "$soname" "$basename"; \
+    done && \
+    /usr/local/bin/check_llvm15.sh "post-spirv-tools-source-build" || true && \
+    echo "=== SPIRV-TOOLS BUILD COMPLETE ==="
+
+# ======================
+# SECTION: Shaderc Build (sysroot-focused) — FINAL
+# ======================
+RUN echo "=== BUILDING SHADERC FROM SOURCE WITH LLVM16 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-shaderc-source-build" || true; \
+    \
+    git clone --recursive https://github.com/google/shaderc.git || (echo "⚠ shaderc not cloned; skipping build" && exit 0); \
+    cd shaderc || (echo "⚠ shaderc directory missing; skipping build" && exit 0); \
+    \
+    export PATH="/custom-os/compiler/bin:$PATH"; \
+    export CC=/custom-os/compiler/bin/clang-16; \
+    export CXX=/custom-os/compiler/bin/clang++-16; \
+    export PKG_CONFIG_SYSROOT_DIR="/custom-os"; \
+    export PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/lib/pkgconfig:/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+    export CFLAGS="--sysroot=/custom-os -I/lilyspark/opt/lib/graphics/include -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a"; \
+    export CXXFLAGS="$CFLAGS"; \
+    export LDFLAGS="--sysroot=/custom-os -L/lilyspark/opt/lib/graphics/lib -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib"; \
+    \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/graphics \
+        -DCMAKE_C_COMPILER=$CC \
+        -DCMAKE_CXX_COMPILER=$CXX \
+        -DCMAKE_PREFIX_PATH="/lilyspark/opt/lib/graphics:/custom-os/usr:/custom-os/compiler" \
+        -DCMAKE_INCLUDE_PATH="/lilyspark/opt/lib/graphics/include:/custom-os/usr/include:/custom-os/compiler/include" \
+        -DCMAKE_LIBRARY_PATH="/lilyspark/opt/lib/graphics/lib:/custom-os/usr/lib:/custom-os/compiler/lib" \
+        -DCMAKE_INSTALL_RPATH="/lilyspark/opt/lib/graphics/lib:/custom-os/usr/lib:/custom-os/compiler/lib" \
+        -DSPIRV-Tools_ROOT="/lilyspark/opt/lib/graphics" \
+        -DSPIRV-Headers_ROOT="/lilyspark/opt/lib/graphics" \
+        -DCMAKE_C_FLAGS="$CFLAGS" \
+        -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
+        -DCMAKE_EXE_LINKER_FLAGS="$LDFLAGS" \
+        -DCMAKE_SHARED_LINKER_FLAGS="$LDFLAGS" \
+        -DSHADERC_SKIP_TESTS=ON \
+        -DSHADERC_SKIP_EXAMPLES=ON || echo "✗ cmake configure failed (continuing)"; \
+    \
+    make -j"$(nproc)" 2>&1 | tee /tmp/shaderc-build.log || echo "✗ make failed (continuing)"; \
+    DESTDIR="/custom-os" make install 2>&1 | tee /tmp/shaderc-install.log || echo "✗ make install failed (continuing)"; \
+    \
+    cd ../.. && rm -rf shaderc 2>/dev/null || true; \
+    \
+    ls -la /lilyspark/opt/lib/graphics/bin/shaderc* 2>/dev/null || echo "No shaderc binaries found"; \
+    ls -la /lilyspark/opt/lib/graphics/lib/libshaderc* 2>/dev/null || echo "No shaderc libraries found"; \
+    \
+    cd /lilyspark/opt/lib/graphics/lib && \
+    for lib in $(ls libshaderc*.so.* 2>/dev/null); do \
+        soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
+        basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
+        ln -sf "$lib" "$soname" 2>/dev/null || true; \
+        ln -sf "$soname" "$basename" 2>/dev/null || true; \
+    done; \
+    /usr/local/bin/check_llvm15.sh "post-shaderc-source-build" || true; \
+    echo "=== SHADERC BUILD COMPLETE ==="; \
+    true
+
+# ======================
 # SECTION: Core C/C++ libs (tiny subset)
 # ======================
 RUN echo ">>> Installing minimal C/C++ dev libs for Hello World" && \
@@ -1356,6 +1496,9 @@ RUN echo "=== FINAL LLVM15 CONTAMINATION CHECK ===" && \
 
 # Stage: build application
 FROM filesystem-libs-build-builder AS app-build
+
+# Fix Hangup Code (Test)
+CMD ["tail", "-f", "/dev/null"]
 
 # ULTIMATE cache-busting - forces rebuild every time
 ARG BUILDKIT_INLINE_CACHE=0
