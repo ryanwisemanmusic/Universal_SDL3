@@ -880,7 +880,6 @@ RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
 
 COPY setup-scripts/dep_chain_visualizer.sh /usr/local/bin/dep_chain_visualizer.sh
 RUN chmod +x /usr/local/bin/dep_chain_visualizer.sh \
-
 # ===========================
 # Build From Source Libraries
 # ===========================
