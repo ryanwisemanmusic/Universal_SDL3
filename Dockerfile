@@ -65,6 +65,7 @@ RUN mkdir -p \
     /lilyspark/opt/lib/audio \
     /lilyspark/opt/lib/graphics \
     /lilyspark/opt/lib/java \
+    /lilyspark/opt/lib/media \
     /lilyspark/opt/lib/python \
     /lilyspark/opt/lib/sdl3 \
     /lilyspark/opt/lib/sys \
@@ -1354,12 +1355,12 @@ RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
     cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/graphics \
-        -DCMAKE_C_COMPILER=/custom-os/compiler/bin/clang-16 \
-        -DCMAKE_CXX_COMPILER=/custom-os/compiler/bin/clang++-16 \
-        -DLLVM_CONFIG_EXECUTABLE=/custom-os/compiler/bin/llvm-config \
-        -DCMAKE_C_FLAGS="-I/custom-os/compiler/include -march=armv8-a" \
-        -DCMAKE_CXX_FLAGS="-I/custom-os/compiler/include -march=armv8-a" \
-        -DCMAKE_EXE_LINKER_FLAGS="-L/custom-os/compiler/lib -Wl,-rpath,/custom-os/compiler/lib" && \
+        -DCMAKE_C_COMPILER=/lilyspark/compiler/bin/clang-16 \
+        -DCMAKE_CXX_COMPILER=/lilyspark/compiler/bin/clang++-16 \
+        -DLLVM_CONFIG_EXECUTABLE=/lilyspark/compiler/bin/llvm-config \
+        -DCMAKE_C_FLAGS="-I/lilyspark/compiler/include -march=armv8-a" \
+        -DCMAKE_CXX_FLAGS="-I/lilyspark/compiler/include -march=armv8-a" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -Wl,-rpath,/lilyspark/compiler/lib" && \
     \
     make -j"$(nproc)" 2>&1 | tee /tmp/spirv-build.log && \
     make install 2>&1 | tee /tmp/spirv-install.log && \
@@ -1389,14 +1390,14 @@ RUN echo "=== BUILDING SHADERC FROM SOURCE WITH LLVM16 ===" && \
     git clone --recursive https://github.com/google/shaderc.git || (echo "⚠ shaderc not cloned; skipping build" && exit 0); \
     cd shaderc || (echo "⚠ shaderc directory missing; skipping build" && exit 0); \
     \
-    export PATH="/custom-os/compiler/bin:$PATH"; \
-    export CC=/custom-os/compiler/bin/clang-16; \
-    export CXX=/custom-os/compiler/bin/clang++-16; \
-    export PKG_CONFIG_SYSROOT_DIR="/custom-os"; \
-    export PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/lib/pkgconfig:/custom-os/usr/lib/pkgconfig:/custom-os/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
-    export CFLAGS="--sysroot=/custom-os -I/lilyspark/opt/lib/graphics/include -I/custom-os/usr/include -I/custom-os/compiler/include -I/custom-os/glibc/include -march=armv8-a"; \
+    export PATH="/lilyspark/compiler/bin:$PATH"; \
+    export CC=/lilyspark/compiler/bin/clang-16; \
+    export CXX=/lilyspark/compiler/bin/clang++-16; \
+    export PKG_CONFIG_SYSROOT_DIR="/lilyspark"; \
+    export PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/lib/pkgconfig:/lilyspark/usr/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+    export CFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/graphics/include -I/lilyspark/usr/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a"; \
     export CXXFLAGS="$CFLAGS"; \
-    export LDFLAGS="--sysroot=/custom-os -L/lilyspark/opt/lib/graphics/lib -L/custom-os/usr/lib -L/custom-os/compiler/lib -L/custom-os/glibc/lib"; \
+    export LDFLAGS="--sysroot=/lilyspark -L/lilyspark/opt/lib/graphics/lib -L/lilyspark/usr/lib -L/lilyspark/compiler/lib -L/lilyspark/glibc/lib"; \
     \
     mkdir build && cd build && \
     cmake .. \
@@ -1404,10 +1405,10 @@ RUN echo "=== BUILDING SHADERC FROM SOURCE WITH LLVM16 ===" && \
         -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/graphics \
         -DCMAKE_C_COMPILER=$CC \
         -DCMAKE_CXX_COMPILER=$CXX \
-        -DCMAKE_PREFIX_PATH="/lilyspark/opt/lib/graphics:/custom-os/usr:/custom-os/compiler" \
-        -DCMAKE_INCLUDE_PATH="/lilyspark/opt/lib/graphics/include:/custom-os/usr/include:/custom-os/compiler/include" \
-        -DCMAKE_LIBRARY_PATH="/lilyspark/opt/lib/graphics/lib:/custom-os/usr/lib:/custom-os/compiler/lib" \
-        -DCMAKE_INSTALL_RPATH="/lilyspark/opt/lib/graphics/lib:/custom-os/usr/lib:/custom-os/compiler/lib" \
+        -DCMAKE_PREFIX_PATH="/lilyspark/opt/lib/graphics:/lilyspark/usr:/lilyspark/compiler" \
+        -DCMAKE_INCLUDE_PATH="/lilyspark/opt/lib/graphics/include:/lilyspark/usr/include:/lilyspark/compiler/include" \
+        -DCMAKE_LIBRARY_PATH="/lilyspark/opt/lib/graphics/lib:/lilyspark/usr/lib:/lilyspark/compiler/lib" \
+        -DCMAKE_INSTALL_RPATH="/lilyspark/opt/lib/graphics/lib:/lilyspark/usr/lib:/lilyspark/compiler/lib" \
         -DSPIRV-Tools_ROOT="/lilyspark/opt/lib/graphics" \
         -DSPIRV-Headers_ROOT="/lilyspark/opt/lib/graphics" \
         -DCMAKE_C_FLAGS="$CFLAGS" \
@@ -1418,7 +1419,7 @@ RUN echo "=== BUILDING SHADERC FROM SOURCE WITH LLVM16 ===" && \
         -DSHADERC_SKIP_EXAMPLES=ON || echo "✗ cmake configure failed (continuing)"; \
     \
     make -j"$(nproc)" 2>&1 | tee /tmp/shaderc-build.log || echo "✗ make failed (continuing)"; \
-    DESTDIR="/custom-os" make install 2>&1 | tee /tmp/shaderc-install.log || echo "✗ make install failed (continuing)"; \
+    DESTDIR="/lilyspark" make install 2>&1 | tee /tmp/shaderc-install.log || echo "✗ make install failed (continuing)"; \
     \
     cd ../.. && rm -rf shaderc 2>/dev/null || true; \
     \
@@ -1434,6 +1435,187 @@ RUN echo "=== BUILDING SHADERC FROM SOURCE WITH LLVM16 ===" && \
     done; \
     /usr/local/bin/check_llvm15.sh "post-shaderc-source-build" || true; \
     echo "=== SHADERC BUILD COMPLETE ==="; \
+    true
+
+# ======================
+# SECTION: libgbm Build
+# ======================
+RUN echo "=== BUILDING libgbm FROM SOURCE ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-libgbm-deps" || true && \
+    \
+    git clone --depth=1 https://github.com/robclark/libgbm.git && \
+    cd libgbm && \
+    \
+    echo "=== CONFIGURING LIBGBM ===" && \
+    # Set up pkg-config environment to find libdrm in our sysroot
+    export PKG_CONFIG_SYSROOT_DIR="/lilyspark" && \
+    export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/lib/pkgconfig:/lilyspark/opt/lib/sys/share/pkgconfig:${PKG_CONFIG_PATH:-}" && \
+    \
+    ./autogen.sh --prefix=/lilyspark/opt/lib/sys && \
+    ./configure \
+        --prefix=/lilyspark/opt/lib/sys \
+        CC=/lilyspark/compiler/bin/clang-16 \
+        CXX=/lilyspark/compiler/bin/clang++-16 \
+        CFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/sys/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
+        CXXFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/sys/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
+        LDFLAGS="--sysroot=/lilyspark -L/lilyspark/opt/lib/sys/lib -L/lilyspark/compiler/lib -L/lilyspark/glibc/lib" && \
+    \
+    echo "=== BUILDING LIBGBM ===" && \
+    make -j"$(nproc)" 2>&1 | tee /tmp/libgbm-build.log && \
+    \
+    echo "=== INSTALLING LIBGBM ===" && \
+    make install 2>&1 | tee /tmp/libgbm-install.log && \
+    \
+    cd .. && \
+    rm -rf libgbm && \
+    \
+    echo "=== LIBGBM INSTALLATION VERIFICATION ===" && \
+    echo "libgbm libraries:" && \
+    ls -la /lilyspark/opt/lib/sys/lib/libgbm* 2>/dev/null || echo "No libgbm libraries found" && \
+    \
+    echo "=== CREATING LIBRARY SYMLINKS ===" && \
+    cd /lilyspark/opt/lib/sys/lib && \
+    for lib in $(ls libgbm.so.* 2>/dev/null); do \
+        soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
+        basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
+        ln -sf "$lib" "$soname"; \
+        ln -sf "$soname" "$basename"; \
+        echo "Created symlinks for $lib"; \
+    done && \
+    \
+    /usr/local/bin/check_llvm15.sh "after-libgbm" || true && \
+    echo "=== LIBGBM BUILD COMPLETE ==="
+
+# ======================
+# SECTION: GStreamer Plugins Base Build
+# ======================
+RUN \
+    printf '%s\n' "=== BUILDING gst-plugins-base (defensive, POSIX) ==="; \
+    CC_BIN=/lilyspark/compiler/bin/clang-16; \
+    CXX_BIN=/lilyspark/compiler/bin/clang++-16; \
+    LLVM_CONFIG_BIN=/lilyspark/compiler/bin/llvm-config; \
+    PKGCONFIG=/usr/bin/pkg-config; \
+    NPROCS="$(nproc 2>/dev/null || echo 1)"; \
+    if [ ! -x "$CC_BIN" ] || [ ! -x "$CXX_BIN" ]; then \
+        printf '%s\n' "⚠ Compiler(s) not found at $CC_BIN or $CXX_BIN — skipping gst and xorg builds"; \
+    else \
+        printf '%s\n' ">>> gst-plugins-base: fetching and extracting"; \
+        wget -q https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-1.20.3.tar.xz && \
+            tar -xJf gst-plugins-base-1.20.3.tar.xz || { printf '%s\n' "✗ failed to fetch/extract gst-plugins-base"; true; } && \
+        if [ -d gst-plugins-base-1.20.3 ]; then \
+            cd gst-plugins-base-1.20.3 || true; \
+            printf '%s\n' ">>> gst-plugins-base: configuring"; \
+            ./configure \
+              --prefix=/lilyspark/opt/lib/media \
+              --disable-static \
+              --enable-shared \
+              --disable-introspection \
+              --disable-examples \
+              --disable-gtk-doc \
+              CC="$CC_BIN" CXX="$CXX_BIN" \
+              LLVM_CONFIG="$LLVM_CONFIG_BIN" \
+              CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
+              CXXFLAGS="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
+              LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" \
+              PKG_CONFIG_PATH="/lilyspark/opt/lib/media/pkgconfig:/lilyspark/usr/x11/pkgconfig:/lilyspark/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}" || printf '%s\n' "⚠ configure returned non-zero (gst): see /tmp/gst-plugins-config.log"; \
+            printf '%s\n' ">>> gst-plugins-base: building"; \
+            (make -j"$NPROCS" 2>&1 | tee /tmp/gst-plugins-build.log) || printf '%s\n' "⚠ make returned non-zero (gst) — continuing"; \
+            printf '%s\n' ">>> gst-plugins-base: installing to /lilyspark"; \
+            (make install 2>&1 | tee /tmp/gst-plugins-install.log) || printf '%s\n' "⚠ make install returned non-zero (gst) — continuing"; \
+            cd ..; rm -rf gst-plugins-base-* || true; \
+            printf '%s\n' ">>> gst-plugins-base: creating soname symlinks (best-effort)"; \
+            if [ -d /lilyspark/opt/lib/media/lib ]; then \
+                cd /lilyspark/opt/lib/media/lib || true; \
+                for lib in $(ls libgst*.so.* 2>/dev/null || true); do \
+                    soname=`printf '%s\n' "$lib" | sed 's/\(.*\.so\.[0-9][^.]*\).*/\1/'` || true; \
+                    basename=`printf '%s\n' "$lib" | sed 's/\(.*\.so\).*/\1/'` || true; \
+                    [ -n "$soname" ] && ln -sf "$lib" "$soname" || true; \
+                    [ -n "$basename" ] && ln -sf "${soname:-$lib}" "$basename" || true; \
+                done; \
+            fi; \
+        else \
+            printf '%s\n' "⚠ gst-plugins-base source missing — skipping gst build"; \
+        fi; \
+    fi; \
+    \
+    printf '%s\n' "=== BUILDING xorg-server (defensive, POSIX, sysroot-aware) ==="; \
+    if [ -x /lilyspark/compiler/bin/clang-16 ]; then \
+        export PATH="/lilyspark/compiler/bin:$PATH"; \
+        export CC=/lilyspark/compiler/bin/clang-16; \
+        export CXX=/lilyspark/compiler/bin/clang++-16; \
+        if [ -x /lilyspark/compiler/bin/llvm-config-16 ]; then export LLVM_CONFIG=/lilyspark/compiler/bin/llvm-config-16; else export LLVM_CONFIG=/lilyspark/compiler/bin/llvm-config; fi; \
+    else \
+        printf '%s\n' "✗ required compiler not present — skipping xorg-server build"; \
+        true; \
+    fi; \
+    \
+    if [ ! -d xorg-server ]; then \
+        git clone --depth=1 --branch xorg-server-21.1.8 https://gitlab.freedesktop.org/xorg/xserver.git xorg-server 2>/tmp/xorg_clone.err || { printf '%s\n' "⚠ git clone failed (see /tmp/xorg_clone.err). Skipping xorg build"; true; } ; \
+    fi; \
+    if [ -d xorg-server ]; then \
+        cd xorg-server || true; \
+        printf '%s\n' ">>> xorg: scanning for llvm-15 references (best-effort)"; \
+        grep -RIl "LLVM15\\|llvm-15" . 2>/tmp/xorg_source_scan.log || true; \
+        \
+        export PKG_CONFIG_SYSROOT_DIR="/lilyspark"; \
+        export PKG_CONFIG_PATH="/lilyspark/opt/lib/media/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+        export CFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/media/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a"; \
+        export CXXFLAGS="$CFLAGS"; \
+        export LDFLAGS="--sysroot=/lilyspark -L/lilyspark/opt/lib/media/lib -L/lilyspark/compiler/lib -L/lilyspark/glibc/lib"; \
+        \
+        /usr/local/bin/check-filesystem.sh "xorg-pre-config" 2>/tmp/xorg_filesystem.log || true; \
+        printf 'int main(void){return 0;}\n' > /tmp/xorg_toolchain_test.c; \
+        $CC $CFLAGS -Wl,--sysroot=/lilyspark -o /tmp/xorg_toolchain_test /tmp/xorg_toolchain_test.c 2>/tmp/xorg_toolchain_test.err || printf '%s\n' "⚠ compiler test failed"; \
+        \
+        printf '%s\n' ">>> xorg: running autoreconf"; autoreconf -fiv 2>/tmp/xorg_autoreconf.log || true; \
+        \
+        CFG_FLAGS="--prefix=/usr --sysconfdir=/etc --localstatedir=/var \
+          --disable-systemd-logind --disable-libunwind \
+          --enable-xvfb --enable-xnest --enable-xephyr \
+          --disable-xorg --disable-dmx --disable-xwin --disable-xquartz \
+          --without-dtrace \
+          --disable-glamor --disable-glx --disable-dri --disable-dri2 --disable-dri3 \
+          --disable-docs"; \
+        \
+        printf '%s\n' ">>> xorg: configuring with flags: $CFG_FLAGS"; \
+        ./configure $CFG_FLAGS \
+          CC="$CC" CXX="$CXX" \
+          PKG_CONFIG_SYSROOT_DIR="$PKG_CONFIG_SYSROOT_DIR" \
+          PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
+          CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS" \
+          2>&1 | tee /tmp/xorg-configure.log || true; \
+        \
+        printf '%s\n' ">>> xorg: make (best-effort, non-fatal)"; \
+        (make -j"$NPROCS" 2>&1 | tee /tmp/xorg-build.log) || printf '%s\n' "✗ make failed (see /tmp/xorg-build.log) — continuing"; \
+        printf '%s\n' ">>> xorg: make install into /lilyspark"; \
+        (DESTDIR=/lilyspark make install 2>&1 | tee /tmp/xorg-install.log) || printf '%s\n' "✗ make install failed (see /tmp/xorg-install.log) — continuing"; \
+        \
+        mkdir -p /lilyspark/usr/x11 || true; \
+        mv /lilyspark/usr/bin/X* /lilyspark/usr/x11/ 2>/tmp/xorg-mv.log || true; \
+        mv /lilyspark/usr/lib/libxserver* /lilyspark/usr/x11/ 2>/tmp/xorg-mv.log || true; \
+        mkdir -p /lilyspark/usr/x11/include/xorg || true; \
+        cp -r include/* /lilyspark/usr/x11/include/xorg/ 2>/tmp/xorg-mv.log || true; \
+        \
+        for xbin in /lilyspark/usr/x11/X*; do \
+            [ -f "$xbin" ] || continue; \
+            ln -sf "../x11/$(basename "$xbin")" "/lilyspark/usr/bin/$(basename "$xbin")" 2>/dev/null || true; \
+        done; \
+        for xlib in /lilyspark/usr/x11/libxserver*; do \
+            [ -f "$xlib" ] || continue; \
+            ln -sf "../x11/$(basename "$xlib")" "/lilyspark/usr/lib/$(basename "$xlib")" 2>/dev/null || true; \
+        done; \
+        \
+        /usr/local/bin/dependency_checker.sh /lilyspark/compiler/bin/clang-16 2>/tmp/xorg_depcheck.log || true; \
+        /usr/local/bin/binlib_validator.sh /lilyspark/compiler/bin/clang-16 2>/tmp/xorg_binlib.log || true; \
+        /usr/local/bin/version_matrix.sh 2>/tmp/xorg_versions.log || true; \
+        /usr/local/bin/cflag_audit.sh 2>/tmp/xorg_cflags.log || true; \
+        find /lilyspark/usr -name "*xserver*" -exec grep -l "LLVM15\\|llvm-15" {} \; 2>/tmp/xorg_contam.log || true; \
+        \
+        cd /; rm -rf xorg-server 2>/dev/null || true; \
+        printf '%s\n' ">>> xorg build step complete (see logs in /tmp)"; \
+    else \
+        printf '%s\n' "⚠ xorg-server source directory not present; skipped build"; \
+    fi; \
     true
 
 # ======================
