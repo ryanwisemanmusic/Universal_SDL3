@@ -100,6 +100,7 @@ RUN mkdir -p \
 COPY setup-scripts/check_llvm15.sh /usr/local/bin/check_llvm15.sh
 COPY setup-scripts/check-filesystem.sh /usr/local/bin/check-filesystem.sh
 COPY setup-scripts/binlib_validator.sh /usr/local/bin/binlib_validator.sh
+COPY setup-scripts/dep_chain_visualizer.sh /usr/local/bin/dep_chain_visualizer.sh
 RUN chmod +x /usr/local/bin/check_llvm15.sh \
     /usr/local/bin/check-filesystem.sh \
     /usr/local/bin/binlib_validator.sh
@@ -877,6 +878,8 @@ RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
     echo "CACHE_DISABLED_FOR_FILESYSTEM_LIBS_BUILD" && \
     rm -f /tmp/nocache/timestamp
 
+COPY setup-scripts/dep_chain_visualizer.sh /usr/local/bin/dep_chain_visualizer.sh
+RUN chmod +x /usr/local/bin/dep_chain_visualizer.sh \
 
 # ===========================
 # Build From Source Libraries
