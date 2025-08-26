@@ -70,6 +70,7 @@ RUN mkdir -p \
     /lilyspark/opt/lib/python \
     /lilyspark/opt/lib/sdl3 \
     /lilyspark/opt/lib/sys \
+    /lilyspark/opt/lib/vulkan \
     # Main Compiler
     /lilyspark/compiler/bin \
     /lilyspark/compiler/lib \
@@ -1814,6 +1815,163 @@ RUN echo "=== BUILDING GLES FROM MESA SOURCE ===" && \
     /usr/local/bin/check_llvm15.sh "post-gles-install" || true && \
     \
     cd / && rm -rf /tmp/mesa
+
+# ======================
+# SECTION: SDL3 Build
+# ======================
+RUN echo "=== BUILDING SDL3 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-sdl3" || true && \
+    \
+    git clone --depth=1 https://github.com/libsdl-org/SDL.git sdl && \
+    cd sdl && \
+    mkdir build && cd build && \
+    \
+    echo "=== CONFIGURING SDL3 ===" && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/sdl3/usr/media \
+        -DCMAKE_C_COMPILER=/lilyspark/compiler/bin/clang-16 \
+        -DCMAKE_CXX_COMPILER=/lilyspark/compiler/bin/clang++-16 \
+        -DSDL_STATIC=ON \
+        -DSDL_SHARED=OFF \
+        -DSDL_VIDEO=ON \
+        -DSDL_VULKAN=ON \
+        -DSDL_WAYLAND=ON \
+        -DSDL_X11=ON \
+        -DSDL_RPI=ON \
+        -DSDL_OPENGL=ON \
+        -DSDL_OPENGLES=ON \
+        -DSDL_RENDER=ON \
+        -DSDL_AUDIO=ON \
+        -DCMAKE_C_FLAGS="-march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
+        -DCMAKE_CXX_FLAGS="-march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" && \
+    \
+    echo "=== BUILDING SDL3 ===" && \
+    make -j"$(nproc)" install 2>&1 | tee /tmp/sdl3-build.log && \
+    \
+    echo "=== SDL3 INSTALLATION VERIFICATION ===" && \
+    ls -la /lilyspark/opt/lib/sdl3/usr/media/lib/libSDL3* 2>/dev/null || echo "No SDL3 libraries found" && \
+    \
+    cd ../../.. && rm -rf sdl && \
+    /usr/local/bin/check_llvm15.sh "post-sdl3" || true && \
+    echo "=== SDL3 BUILD COMPLETED ==="
+
+# ======================
+# SECTION: SDL3_image Build
+# ======================
+RUN echo "=== BUILDING SDL3_image ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-sdl3-image" || true && \
+    \
+    git clone --depth=1 https://github.com/libsdl-org/SDL_image.git sdl_image && \
+    cd sdl_image && \
+    mkdir build && cd build && \
+    \
+    echo "=== CONFIGURING SDL3_image ===" && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/sdl3/usr/media \
+        -DCMAKE_C_COMPILER=/lilyspark/compiler/bin/clang-16 \
+        -DCMAKE_CXX_COMPILER=/lilyspark/compiler/bin/clang++-16 \
+        -DSDL3IMAGE_PNG=ON \
+        -DSDL3IMAGE_JPG=ON \
+        -DSDL3IMAGE_TIF=ON \
+        -DSDL3IMAGE_WEBP=ON \
+        -DSDL3IMAGE_AVIF=ON \
+        -DSDL3IMAGE_BMP=ON \
+        -DSDL3IMAGE_GIF=ON \
+        -DSDL3IMAGE_LBM=ON \
+        -DSDL3IMAGE_PCX=ON \
+        -DSDL3IMAGE_PNM=ON \
+        -DSDL3IMAGE_QOI=ON \
+        -DSDL3IMAGE_SVG=ON \
+        -DSDL3IMAGE_TGA=ON \
+        -DSDL3IMAGE_XCF=ON \
+        -DSDL3IMAGE_XPM=ON \
+        -DSDL3IMAGE_XV=ON \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DCMAKE_C_FLAGS="-march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
+        -DCMAKE_CXX_FLAGS="-march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" && \
+    \
+    echo "=== BUILDING SDL3_image ===" && \
+    make -j"$(nproc)" install 2>&1 | tee /tmp/sdl3-image-build.log && \
+    \
+    echo "=== SDL3_image INSTALLATION VERIFICATION ===" && \
+    ls -la /lilyspark/opt/lib/sdl3/usr/media/lib/libSDL3_image* 2>/dev/null || echo "No SDL3_image libraries found" && \
+    \
+    cd ../../.. && rm -rf sdl_image && \
+    /usr/local/bin/check_llvm15.sh "post-sdl3-image" || true && \
+    echo "=== SDL3_image BUILD COMPLETED ==="
+
+# ======================
+# SECTION: SDL3_mixer Build
+# ======================
+RUN echo "=== BUILDING SDL3_mixer ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-sdl3-mixer" || true && \
+    \
+    git clone --depth=1 https://github.com/libsdl-org/SDL_mixer.git sdl_mixer && \
+    cd sdl_mixer && \
+    mkdir build && cd build && \
+    \
+    echo "=== CONFIGURING SDL3_mixer ===" && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/sdl3/usr/media \
+        -DCMAKE_C_COMPILER=/lilyspark/compiler/bin/clang-16 \
+        -DCMAKE_CXX_COMPILER=/lilyspark/compiler/bin/clang++-16 \
+        -DSDL3MIXER_OGG=ON \
+        -DSDL3MIXER_FLAC=ON \
+        -DSDL3MIXER_MOD=ON \
+        -DSDL3MIXER_MP3=ON \
+        -DSDL3MIXER_MID=ON \
+        -DSDL3MIXER_OPUS=ON \
+        -DSDL3MIXER_FLUIDSYNTH=OFF \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DCMAKE_C_FLAGS="-march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
+        -DCMAKE_CXX_FLAGS="-march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" && \
+    \
+    echo "=== BUILDING SDL3_mixer ===" && \
+    make -j"$(nproc)" install 2>&1 | tee /tmp/sdl3-mixer-build.log && \
+    \
+    echo "=== SDL3_mixer INSTALLATION VERIFICATION ===" && \
+    ls -la /lilyspark/opt/lib/sdl3/usr/media/lib/libSDL3_mixer* 2>/dev/null || echo "No SDL3_mixer libraries found" && \
+    \
+    cd ../../.. && rm -rf sdl_mixer && \
+    /usr/local/bin/check_llvm15.sh "post-sdl3-mixer" || true && \
+    echo "=== SDL3_mixer BUILD COMPLETED ==="
+
+# ======================
+# SECTION: SDL3_ttf Build
+# ======================
+RUN echo "=== BUILDING SDL3_ttf ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-sdl3-ttf" || true && \
+    \
+    git clone --depth=1 https://github.com/libsdl-org/SDL_ttf.git sdl_ttf && \
+    cd sdl_ttf && \
+    mkdir build && cd build && \
+    \
+    echo "=== CONFIGURING SDL3_ttf ===" && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/sdl3/usr/media \
+        -DCMAKE_C_COMPILER=/lilyspark/compiler/bin/clang-16 \
+        -DCMAKE_CXX_COMPILER=/lilyspark/compiler/bin/clang++-16 \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DCMAKE_C_FLAGS="-march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
+        -DCMAKE_CXX_FLAGS="-march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" && \
+    \
+    echo "=== BUILDING SDL3_ttf ===" && \
+    make -j"$(nproc)" install 2>&1 | tee /tmp/sdl3-ttf-build.log && \
+    \
+    echo "=== SDL3_ttf INSTALLATION VERIFICATION ===" && \
+    ls -la /lilyspark/opt/lib/sdl3/usr/media/lib/libSDL3_ttf* 2>/dev/null || echo "No SDL3_ttf libraries found" && \
+    \
+    cd ../../.. && rm -rf sdl_ttf && \
+    /usr/local/bin/check_llvm15.sh "post-sdl3-ttf" || true && \
+    echo "=== SDL3_ttf BUILD COMPLETED ==="
 
 # ======================
 # SECTION: Core C/C++ libs (tiny subset)
