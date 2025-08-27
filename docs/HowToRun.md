@@ -5,6 +5,10 @@ test the execution of code within certain desirable parameters. From
 running the whole program to only a snippet, here are some valuable
 commands for reference:
 
+- Extreme Cache Busting:
+docker builder prune -a --force
+docker system prune -a --volumes --force
+
 - Overall Build w/ no Log:
 make clean-docker && make build-docker && make run-docker
 
