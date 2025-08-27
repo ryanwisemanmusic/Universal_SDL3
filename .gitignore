@@ -188,3 +188,4 @@ logs/clean/clean_filesystem_base_deps_builder_docker.txt
 logs/clean/clean_filesystem_libs_build_builder_docker.txt
 logs/clean/clean_runtime_docker.txt
 DCkr.txt
+logs/build/cmake_output.txt
