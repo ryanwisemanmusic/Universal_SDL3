@@ -34,12 +34,6 @@ find_file(FOP_LAUNCHER
 )
 message(STATUS "Success in locating FOP file")
 
-#
-#
-#
-#
-#
-
 # ==========================
 # JACK2 (Build Requirements)
 # ==========================
@@ -95,8 +89,47 @@ find_program(JACK2_JACK_CONNECT
 
 file(GLOB FOP_JARS "/lilyspark/opt/lib/java/fop/lib/*.jar")
 
+# ======================
+# PlutoSVG (Build Requirements)
+# ======================
+# --- 1. Build/Find Requirements ---
+find_path(PLUTOSVG_INCLUDE_DIR
+    NAMES plutosvg.h
+    PATHS /lilyspark/opt/lib/graphics/usr/include
+    NO_DEFAULT_PATH
+)
+
+find_library(PLUTOSVG_LIBRARY
+    NAMES plutosvg
+    PATHS /lilyspark/opt/lib/graphics/usr/lib
+    NO_DEFAULT_PATH
+)
+
+file(GLOB PLUTOSVG_FILES "/lilyspark/opt/lib/graphics/usr/lib/*plutosvg*")
+
+# ======================
+# pciaccess (Build Requirements)
+# ======================
+find_path(PCIACCESS_INCLUDE_DIR
+    NAMES pciaccess.h
+    PATHS /lilyspark/opt/lib/sys/usr/include
+    NO_DEFAULT_PATH
+)
+
+find_library(PCIACCESS_LIBRARY
+    NAMES pciaccess
+    PATHS /lilyspark/opt/lib/sys/usr/lib
+    NO_DEFAULT_PATH
+)
+
+file(GLOB PCIACCESS_PKGCONFIG "/lilyspark/opt/lib/sys/usr/lib/pkgconfig/pciaccess.pc")
+
 #
 #
+#
+# ============
+# Falback code
+# ============
 #
 #
 #
@@ -182,12 +215,60 @@ else()
     message(STATUS "ℹ JACK2 not found - building without audio server support")
     add_compile_definitions(HAVE_JACK2=0)
 endif()
+# ======================
+# PlutoSVG (Fallback Logic)
+# ======================
+if(PLUTOSVG_INCLUDE_DIR AND PLUTOSVG_LIBRARY)
+    set(PLUTOSVG_FOUND TRUE)
+    message(STATUS "✓ PlutoSVG found and usable")
+    message(STATUS "  Headers: ${PLUTOSVG_INCLUDE_DIR}")
+    message(STATUS "  Library: ${PLUTOSVG_LIBRARY}")
+    add_compile_definitions(HAVE_PLUTOSVG=1)
+elseif(PLUTOSVG_INCLUDE_DIR)
+    set(PLUTOSVG_FOUND HEADERS_ONLY)
+    message(WARNING "⚠ PlutoSVG headers found but library missing")
+    message(STATUS "  Headers: ${PLUTOSVG_INCLUDE_DIR}")
+    add_compile_definitions(HAVE_PLUTOSVG_HEADERS=1)
+else()
+    set(PLUTOSVG_FOUND FALSE)
+    message(STATUS "ℹ PlutoSVG not found - building without graphics support")
+    add_compile_definitions(HAVE_PLUTOSVG=0)
+endif()
+
+# ======================
+# pciaccess (Fallback Logic)
+# ======================
+
+if(PCIACCESS_INCLUDE_DIR AND PCIACCESS_LIBRARY)
+    set(PCIACCESS_FOUND TRUE)
+    message(STATUS "✓ pciaccess found and usable")
+    message(STATUS "  Headers: ${PCIACCESS_INCLUDE_DIR}")
+    message(STATUS "  Library: ${PCIACCESS_LIBRARY}")
+    add_compile_definitions(HAVE_PCIACCESS=1)
+elseif(PCIACCESS_INCLUDE_DIR)
+    set(PCIACCESS_FOUND HEADERS_ONLY)
+    message(WARNING "⚠ pciaccess headers found but library missing")
+    message(STATUS "  Headers: ${PCIACCESS_INCLUDE_DIR}")
+    add_compile_definitions(HAVE_PCIACCESS_HEADERS=1)
+else()
+    set(PCIACCESS_FOUND FALSE)
+    message(STATUS "ℹ pciaccess not found - building without PCI support")
+    add_compile_definitions(HAVE_PCIACCESS=0)
+endif()
+
 # ==============================================
 # Executable created here (DO NOT FUCKING TOUCH)
 # ==============================================
 add_executable(simplehttpserver
     main.cpp
 )
+
+#
+#
+#
+# ===============
+# ENV For Runtime
+# ===============
 #
 #
 #
@@ -221,7 +302,6 @@ message(STATUS "===================================")
 # =======================
 # JACK2 (ENV For Runtime)
 # =======================
-
 # Conditional linking based on what was found
 if(JACK2_FOUND STREQUAL "TRUE")
     # Full JACK2 support
@@ -260,6 +340,38 @@ if(JACK2_CONNECT)
     message(STATUS "  Jack Connect: ${JACK2_JACK_CONNECT}")
 endif()
 message(STATUS "===================================")
+
+# ======================
+# PlutoSVG (ENV For Runtime)
+# ======================
+if(PLUTOSVG_FOUND STREQUAL "TRUE")
+    target_include_directories(simplehttpserver PRIVATE ${PLUTOSVG_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${PLUTOSVG_LIBRARY})
+    message(STATUS "✓ Linking PlutoSVG library")
+elseif(PLUTOSVG_FOUND STREQUAL "HEADERS_ONLY")
+    target_include_directories(simplehttpserver PRIVATE ${PLUTOSVG_INCLUDE_DIR})
+    message(STATUS "ℹ Using PlutoSVG headers only (no linking)")
+endif()
+
+# ======================
+# pciaccess (ENV For Runtime)
+# ======================
+if(PCIACCESS_FOUND STREQUAL "TRUE")
+    target_include_directories(simplehttpserver PRIVATE ${PCIACCESS_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${PCIACCESS_LIBRARY})
+    message(STATUS "✓ Linking pciaccess library")
+elseif(PCIACCESS_FOUND STREQUAL "HEADERS_ONLY")
+    target_include_directories(simplehttpserver PRIVATE ${PCIACCESS_INCLUDE_DIR})
+    message(STATUS "ℹ Using pciaccess headers only (no linking)")
+endif()
+
+
+#
+#
+#
+#
+#
+#
 
 # No external dependencies needed for Hello World
 target_compile_definitions(simplehttpserver PRIVATE
