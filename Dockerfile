@@ -108,6 +108,42 @@ RUN chmod +x /usr/local/bin/check_llvm15.sh \
 # Remove any preinstalled LLVM/Clang
 RUN apk del --no-cache llvm clang || true
 
+# Refresh CMake files so it doesn't end up in the cache
+RUN echo "=== COMPLETE CMAKE REFRESH CLEANUP ===" && \
+   echo "Cleaning old files from WRONG location (build_files):" && \
+   rm -f /lilyspark/app/build_files/CMakeLists.txt && \
+   rm -f /lilyspark/app/build_files/cmake_output.log && \
+   rm -f /lilyspark/app/build_files/make_output.log && \
+   rm -rf /lilyspark/app/build_files/CMakeFiles/ && \
+   rm -f /lilyspark/app/build_files/CMakeCache.txt && \
+   rm -f /lilyspark/app/build_files/Makefile && \
+   rm -f /lilyspark/app/build_files/*.cmake && \
+   echo "Cleaning old files from CORRECT location (project root):" && \
+   rm -f /lilyspark/app/CMakeLists.txt && \
+   rm -f /lilyspark/app/cmake_output.log && \
+   rm -f /lilyspark/app/make_output.log && \
+   rm -rf /lilyspark/app/CMakeFiles/ && \
+   rm -f /lilyspark/app/CMakeCache.txt && \
+   rm -f /lilyspark/app/Makefile && \
+   rm -f /lilyspark/app/*.cmake && \
+   rm -f /lilyspark/app/compile_commands.json && \
+   echo "Cleaning any stray CMake files from other locations:" && \
+   find /lilyspark -name "CMakeCache.txt" -delete 2>/dev/null || true && \
+   find /lilyspark -name "CMakeFiles" -type d -exec rm -rf {} + 2>/dev/null || true && \
+   find /lilyspark -name "*.cmake" -not -path "*/usr/*" -delete 2>/dev/null || true && \
+   echo "Creating fresh build directory:" && \
+   rm -rf /lilyspark/app/build_files && \
+   mkdir -p /lilyspark/app/build_files && \
+   echo "=== COMPLETE CMAKE REFRESH DONE ===" && \
+   echo "Project root contents:" && ls -la /lilyspark/app/ 2>/dev/null || echo "Clean slate" && \
+   echo "Build directory contents:" && ls -la /lilyspark/app/build_files/ 2>/dev/null || echo "Empty (good)"
+
+# Then we reinstall. So everytime we build, we retart this process so that
+# it never gets cahced. Please never fucking change this, because
+# then you are a dumbass that doesn't realize the CMakeLists.txt never
+# belongs in the cache. Let me save your sanity, DO NOT TOUCH (unless you have a new path for the CMake file that's valid)
+COPY CMakeLists.txt /lilyspark/app/CMakeLists.txt
+
 # Install glibc compatibility layer with ARM64 warning suppression
 RUN wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub && \
     wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-2.35-r1.apk && \
@@ -2207,13 +2243,8 @@ FROM filesystem-libs-build-builder AS app-build
 # Fix Hangup Code (Test)
 CMD ["tail", "-f", "/dev/null"]
 
-# ULTIMATE cache-busting - forces rebuild every time
-ARG BUILDKIT_INLINE_CACHE=0
-RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
-    echo "FORCE_REBUILD_$(date +%s%N)_$$_$RANDOM" > /tmp/nocache/timestamp && \
-    cat /tmp/nocache/timestamp && \
-    echo "CACHE_DISABLED_FOR_APP_BUILD" && \
-    rm -f /tmp/nocache/timestamp
+
+
 
 # ======================
 # SECTION: Application Build Setup
@@ -2394,7 +2425,6 @@ CMD ["/lilyspark/usr/bin/simplehttpserver"]
 
 # Stage: runtime environment
 FROM debug AS runtime
-
 # Create necessary directories
 USER root
 RUN mkdir -p /lilyspark/usr/lib/runtime
