@@ -370,3 +370,11 @@ clean-runtime-docker-log:
 	@echo "Cleaning Docker stage: runtime (log)..."
 	@mkdir -p log
 	@$(MAKE) clean-runtime-docker > logs/clean/clean_runtime_docker.txt 2>&1
+
+LOGFILE := logs/build/cmake_output.txt
+
+dump-cmake-output:
+	@mkdir -p build/cmake
+	@echo "===== CMake Output Dump =====" >> $(LOGFILE)
+	@cmake -S . -B build/cmake >> $(LOGFILE) 2>&1
+	@echo "===== End CMake Output =====" >> $(LOGFILE)
