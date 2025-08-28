@@ -92,7 +92,6 @@ file(GLOB FOP_JARS "/lilyspark/opt/lib/java/fop/lib/*.jar")
 # ======================
 # PlutoSVG (Build Requirements)
 # ======================
-# --- 1. Build/Find Requirements ---
 find_path(PLUTOSVG_INCLUDE_DIR
     NAMES plutosvg.h
     PATHS /lilyspark/opt/lib/graphics/usr/include
@@ -124,6 +123,74 @@ find_library(PCIACCESS_LIBRARY
 
 file(GLOB PCIACCESS_PKGCONFIG "/lilyspark/opt/lib/sys/usr/lib/pkgconfig/pciaccess.pc")
 
+# ===========================
+# libdrm (Build Requirements)
+# ===========================
+find_path(LIBDRM_INCLUDE_DIR
+    NAMES drm.h
+    PATHS /lilyspark/opt/lib/sys/usr/include
+    NO_DEFAULT_PATH
+)
+
+find_library(LIBDRM_LIBRARY
+    NAMES drm
+    PATHS /lilyspark/opt/lib/sys/usr/lib
+    NO_DEFAULT_PATH
+)
+
+file(GLOB LIBDRM_PKGCONFIG "/lilyspark/opt/lib/sys/usr/lib/pkgconfig/libdrm.pc")
+
+# =============================
+# libepoxy (Build Requirements)
+# =============================
+find_path(LIBEPOXY_INCLUDE_DIR
+    NAMES epoxy/gl.h
+    PATHS /lilyspark/opt/lib/sys/usr/include
+    NO_DEFAULT_PATH
+)
+
+find_library(LIBEPOXY_LIBRARY
+    NAMES epoxy
+    PATHS /lilyspark/opt/lib/sys/usr/lib
+    NO_DEFAULT_PATH
+)
+
+file(GLOB LIBEPOXY_PKGCONFIG "/lilyspark/opt/lib/sys/usr/lib/pkgconfig/epoxy.pc")
+
+# ==========================================
+# SDL3 Image Dependency (Build Requirements)
+# ==========================================
+find_library(LIBTIFF_LIBRARY
+    NAMES tiff
+    PATHS /lilyspark/opt/lib/sdl3/lib
+    NO_DEFAULT_PATH
+)
+find_library(LIBWEBP_LIBRARY
+    NAMES webp
+    PATHS /lilyspark/opt/lib/sdl3/lib
+    NO_DEFAULT_PATH
+)
+find_library(LIBAVIF_LIBRARY
+    NAMES avif
+    PATHS /lilyspark/opt/lib/sdl3/lib
+    NO_DEFAULT_PATH
+)
+
+find_path(LIBTIFF_INCLUDE_DIR
+    NAMES tiffio.h
+    PATHS /lilyspark/opt/lib/sdl3/include
+    NO_DEFAULT_PATH
+)
+find_path(LIBWEBP_INCLUDE_DIR
+    NAMES webp/encode.h
+    PATHS /lilyspark/opt/lib/sdl3/include
+    NO_DEFAULT_PATH
+)
+find_path(LIBAVIF_INCLUDE_DIR
+    NAMES avif/avif.h
+    PATHS /lilyspark/opt/lib/sdl3/include
+    NO_DEFAULT_PATH
+)
 #
 #
 #
@@ -215,6 +282,7 @@ else()
     message(STATUS "ℹ JACK2 not found - building without audio server support")
     add_compile_definitions(HAVE_JACK2=0)
 endif()
+
 # ======================
 # PlutoSVG (Fallback Logic)
 # ======================
@@ -238,7 +306,6 @@ endif()
 # ======================
 # pciaccess (Fallback Logic)
 # ======================
-
 if(PCIACCESS_INCLUDE_DIR AND PCIACCESS_LIBRARY)
     set(PCIACCESS_FOUND TRUE)
     message(STATUS "✓ pciaccess found and usable")
@@ -255,6 +322,62 @@ else()
     message(STATUS "ℹ pciaccess not found - building without PCI support")
     add_compile_definitions(HAVE_PCIACCESS=0)
 endif()
+
+# ===========================
+# libdrm (Fallback Logic)
+# ===========================
+if(LIBDRM_INCLUDE_DIR AND LIBDRM_LIBRARY)
+    set(LIBDRM_FOUND TRUE)
+    message(STATUS "✓ libdrm found and usable")
+    message(STATUS "  Headers: ${LIBDRM_INCLUDE_DIR}")
+    message(STATUS "  Library: ${LIBDRM_LIBRARY}")
+    add_compile_definitions(HAVE_LIBDRM=1)
+elseif(LIBDRM_INCLUDE_DIR)
+    set(LIBDRM_FOUND HEADERS_ONLY)
+    message(WARNING "⚠ libdrm headers found but library missing")
+    message(STATUS "  Headers: ${LIBDRM_INCLUDE_DIR}")
+    add_compile_definitions(HAVE_LIBDRM_HEADERS=1)
+else()
+    set(LIBDRM_FOUND FALSE)
+    message(STATUS "ℹ libdrm not found - building without DRM support")
+    add_compile_definitions(HAVE_LIBDRM=0)
+endif()
+
+# =============================
+# libepoxy (Fallback Logic)
+# =============================
+if(LIBEPOXY_INCLUDE_DIR AND LIBEPOXY_LIBRARY)
+    set(LIBEPOXY_FOUND TRUE)
+    message(STATUS "✓ libepoxy found and usable")
+    message(STATUS "  Headers: ${LIBEPOXY_INCLUDE_DIR}")
+    message(STATUS "  Library: ${LIBEPOXY_LIBRARY}")
+    add_compile_definitions(HAVE_LIBEPOXY=1)
+elseif(LIBEPOXY_INCLUDE_DIR)
+    set(LIBEPOXY_FOUND HEADERS_ONLY)
+    message(WARNING "⚠ libepoxy headers found but library missing")
+    message(STATUS "  Headers: ${LIBEPOXY_INCLUDE_DIR}")
+    add_compile_definitions(HAVE_LIBEPOXY_HEADERS=1)
+else()
+    set(LIBEPOXY_FOUND FALSE)
+    message(STATUS "ℹ libepoxy not found - building without OpenGL support")
+    add_compile_definitions(HAVE_LIBEPOXY=0)
+endif()
+
+# ==========================================
+# SDL3 Image Dependency (Fallback Logic)
+# ==========================================
+if(LIBTIFF_LIBRARY AND LIBTIFF_INCLUDE_DIR AND
+   LIBWEBP_LIBRARY AND LIBWEBP_INCLUDE_DIR AND
+   LIBAVIF_LIBRARY AND LIBAVIF_INCLUDE_DIR)
+    set(SDL3_IMAGE_FOUND TRUE)
+    message(STATUS "✓ SDL3 Image libraries found and usable")
+    add_compile_definitions(HAVE_SDL3_IMAGE=1)
+else()
+    set(SDL3_IMAGE_FOUND FALSE)
+    message(WARNING "⚠ Some SDL3 image dependencies missing")
+    add_compile_definitions(HAVE_SDL3_IMAGE=0)
+endif()
+
 
 # ==============================================
 # Executable created here (DO NOT FUCKING TOUCH)
@@ -297,7 +420,6 @@ if(FOP_JARS)
     message(STATUS "  FOP JARs Found: ${JAR_COUNT}")
 endif()
 message(STATUS "===================================")
-
 
 # =======================
 # JACK2 (ENV For Runtime)
@@ -365,6 +487,46 @@ elseif(PCIACCESS_FOUND STREQUAL "HEADERS_ONLY")
     message(STATUS "ℹ Using pciaccess headers only (no linking)")
 endif()
 
+# ========================
+# libdrm (ENV For Runtime)
+# ========================
+if(LIBDRM_FOUND STREQUAL "TRUE")
+    target_include_directories(simplehttpserver PRIVATE ${LIBDRM_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${LIBDRM_LIBRARY})
+    message(STATUS "✓ Linking libdrm library")
+elseif(LIBDRM_FOUND STREQUAL "HEADERS_ONLY")
+    target_include_directories(simplehttpserver PRIVATE ${LIBDRM_INCLUDE_DIR})
+    message(STATUS "ℹ Using libdrm headers only (no linking)")
+endif()
+
+# =============================
+# libepoxy (ENV For Runtime)
+# =============================
+if(LIBEPOXY_FOUND STREQUAL "TRUE")
+    target_include_directories(simplehttpserver PRIVATE ${LIBEPOXY_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${LIBEPOXY_LIBRARY})
+    message(STATUS "✓ Linking libepoxy library")
+elseif(LIBEPOXY_FOUND STREQUAL "HEADERS_ONLY")
+    target_include_directories(simplehttpserver PRIVATE ${LIBEPOXY_INCLUDE_DIR})
+    message(STATUS "ℹ Using libepoxy headers only (no linking)")
+endif()
+
+# ==========================================
+# SDL3 Image Dependency (Fallback Logic)
+# ==========================================
+if(SDL3_IMAGE_FOUND)
+    target_include_directories(simplehttpserver PRIVATE
+        ${LIBTIFF_INCLUDE_DIR}
+        ${LIBWEBP_INCLUDE_DIR}
+        ${LIBAVIF_INCLUDE_DIR}
+    )
+    target_link_libraries(simplehttpserver PRIVATE
+        ${LIBTIFF_LIBRARY}
+        ${LIBWEBP_LIBRARY}
+        ${LIBAVIF_LIBRARY}
+    )
+    message(STATUS "✓ Linking SDL3 image libraries")
+endif()
 
 #
 #
