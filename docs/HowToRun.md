@@ -9,6 +9,12 @@ commands for reference:
 docker builder prune -a --force
 docker system prune -a --volumes --force
 
+    If you are dealing with persistent issues of the old CMake file causing
+    problems during the build stage, please use this as a mean of clearing
+    out all old cached Docker containers. Sure, it may take more time to build
+    on the next time around, but you'll remove all the problems to any and all
+    annoying files.
+
 - Overall Build w/ no Log:
 make clean-docker && make build-docker && make run-docker
 
@@ -25,6 +31,12 @@ make clean-docker-log && make build-docker-log && make run-docker-log
 
 - Build Everything In Stages + CMake Out:
 make clean-docker && make build-base-deps-docker-log && make build-filesystem-base-deps-builder-docker-log && make build-filesystem-libs-build-builder-docker-log && make build-app-build-docker-log && make build-debug-docker-log && make build-runtime-docker-log && make run-docker && make dump-cmake-output
+
+    There is an issue involving dumping the cmake output via cache for now
+    which needs to be cat'd out to my /logs/build folder, but it is just
+    trying to go into the standard log approach when we cat it out to
+    a specific location instead. Will pull an old edit involving CMake checking done right
+    tonight
 
 
 - Stage 1 Build w/ no Log:
