@@ -186,6 +186,110 @@ else()
     message(STATUS "ℹ Building without JACK2 audio support")
 endif()
 
+
+# -------------------------------
+# PlutoSVG Graphics Support
+# -------------------------------
+message(STATUS "Checking for PlutoSVG graphics support...")
+
+# Search for pre-built PlutoSVG
+find_path(PLUTOSVG_INSTALL_DIR
+    NAMES include/plutosvg.h lib/libplutosvg.so lib/libplutosvg.a
+    PATHS
+        /lilyspark/opt/lib/graphics
+        /usr
+        /usr/local
+    NO_DEFAULT_PATH
+)
+
+find_library(PLUTOSVG_LIBRARY
+    NAMES plutosvg
+    PATHS
+        /lilyspark/opt/lib/graphics/usr/lib
+        /lilyspark/opt/lib/graphics/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+# Check if we need to build from source
+set(PLUTOSVG_BUILD_FROM_SOURCE FALSE)
+set(PLUTOSVG_FOUND FALSE)
+
+if(PLUTOSVG_LIBRARY AND PLUTOSVG_INSTALL_DIR)
+    set(PLUTOSVG_FOUND TRUE)
+    message(STATUS "✓ PlutoSVG found (pre-built)")
+    message(STATUS "  library: ${PLUTOSVG_LIBRARY}")
+    message(STATUS "  install dir: ${PLUTOSVG_INSTALL_DIR}")
+    
+else()
+    message(STATUS "ℹ PlutoSVG not found as pre-built - checking if we can build from source")
+    
+    # Check for build dependencies
+    find_program(MESON_EXECUTABLE meson)
+    find_program(NINJA_EXECUTABLE ninja)
+    
+    if(MESON_EXECUTABLE AND NINJA_EXECUTABLE)
+        set(PLUTOSVG_BUILD_FROM_SOURCE TRUE)
+        set(PLUTOSVG_FOUND SOURCE_AVAILABLE)
+        message(STATUS "✓ PlutoSVG build dependencies found - will build from source")
+        message(STATUS "  meson: ${MESON_EXECUTABLE}")
+        message(STATUS "  ninja: ${NINJA_EXECUTABLE}")
+        
+    else()
+        set(PLUTOSVG_FOUND FALSE)
+        message(STATUS "ℹ PlutoSVG not available and cannot build from source")
+        if(NOT MESON_EXECUTABLE)
+            message(STATUS "  Missing: meson")
+        endif()
+        if(NOT NINJA_EXECUTABLE)
+            message(STATUS "  Missing: ninja")
+        endif()
+    endif()
+endif()
+
+# Set compile definitions based on PlutoSVG availability
+if(PLUTOSVG_FOUND STREQUAL "TRUE")
+    add_compile_definitions(HAVE_PLUTOSVG=1)
+    
+elseif(PLUTOSVG_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_compile_definitions(HAVE_PLUTOSVG_SOURCE=1)
+    add_compile_definitions(BUILD_PLUTOSVG_FROM_SOURCE=1)
+    
+    # Use ExternalProject for more reliable source building
+    include(ExternalProject)
+    
+    set(PLUTOSVG_PREFIX ${CMAKE_BINARY_DIR}/plutosvg-install)
+    
+    ExternalProject_Add(plutosvg_build
+        PREFIX ${PLUTOSVG_PREFIX}
+        GIT_REPOSITORY https://github.com/sammycage/plutosvg.git
+        GIT_SHALLOW 1
+        GIT_PROGRESS 1
+        UPDATE_COMMAND ""
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_IN_SOURCE 1
+        BUILD_BYPRODUCTS ${PLUTOSVG_PREFIX}/lib/libplutosvg.so
+    )
+    
+    # Add custom steps for the actual build process
+    ExternalProject_Add_Step(plutosvg_build build_plutosvg
+        COMMAND find . -type f -path "*/subprojects/*/meson.build" -exec sed -i "s/gnu11,c11/gnu11/g; s/gnu17,c17/gnu17/g" {} \\; || true
+        COMMAND ${MESON_EXECUTABLE} setup builddir --prefix=${PLUTOSVG_PREFIX} -Dc_std=gnu11
+        COMMAND ${NINJA_EXECUTABLE} -C builddir
+        COMMAND ${NINJA_EXECUTABLE} -C builddir install
+        DEPENDEES download update
+        WORKING_DIRECTORY <SOURCE_DIR>
+        COMMENT "Building and installing PlutoSVG"
+    )
+    
+else()
+    add_compile_definitions(HAVE_PLUTOSVG=0)
+    message(STATUS "ℹ Building without PlutoSVG graphics support")
+endif()
+
 # -------------------------------
 # Simple Hello World executable
 # -------------------------------
@@ -237,6 +341,38 @@ if(JACK2_FOUND STREQUAL "TRUE")
     message(STATUS "  jackd: ${JACKD_EXECUTABLE}")
     message(STATUS "  library: ${JACK_LIBRARY}")
 elseif(JACK2_FOUND STREQUAL "SOURCE_AVAILABLE")
+    message(STATUS "  Build: From source during compilation")
+endif()
+
+# Link against PlutoSVG if available
+if(PLUTOSVG_FOUND STREQUAL "TRUE")
+    target_link_libraries(simplehttpserver PRIVATE ${PLUTOSVG_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE
+        ${PLUTOSVG_INSTALL_DIR}/include
+        /usr/include
+        /usr/local/include
+    )
+    
+elseif(PLUTOSVG_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_dependencies(simplehttpserver plutosvg_build)
+    
+    # Add the include and library directories from the built PlutoSVG
+    target_include_directories(simplehttpserver PRIVATE
+        ${PLUTOSVG_PREFIX}/include
+    )
+    
+    target_link_directories(simplehttpserver PRIVATE
+        ${PLUTOSVG_PREFIX}/lib
+    )
+    
+    target_link_libraries(simplehttpserver PRIVATE plutosvg)
+endif()
+
+# Update configuration summary with PlutoSVG status
+message(STATUS "PlutoSVG Graphics Support: ${PLUTOSVG_FOUND}")
+if(PLUTOSVG_FOUND STREQUAL "TRUE")
+    message(STATUS "  library: ${PLUTOSVG_LIBRARY}")
+elseif(PLUTOSVG_FOUND STREQUAL "SOURCE_AVAILABLE")
     message(STATUS "  Build: From source during compilation")
 endif()
 
