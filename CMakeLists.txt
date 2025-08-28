@@ -525,12 +525,149 @@ else()
 endif()
 
 # -------------------------------
+# libepoxy Graphics Support
+# -------------------------------
+message(STATUS "Checking for libepoxy graphics support...")
+
+# Search for pre-built libepoxy
+find_path(EPOXY_INSTALL_DIR
+    NAMES include/epoxy/gl.h lib/libepoxy.so lib/libepoxy.a
+    PATHS
+        /lilyspark/opt/lib/sys/usr
+        /usr
+        /usr/local
+    NO_DEFAULT_PATH
+)
+
+find_library(EPOXY_LIBRARY
+    NAMES epoxy
+    PATHS
+        /lilyspark/opt/lib/sys/usr/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+# Check if we need to build from source
+set(EPOXY_BUILD_FROM_SOURCE FALSE)
+set(EPOXY_FOUND FALSE)
+
+if(EPOXY_LIBRARY AND EPOXY_INSTALL_DIR)
+    set(EPOXY_FOUND TRUE)
+    message(STATUS "✓ libepoxy found (pre-built)")
+    message(STATUS "  library: ${EPOXY_LIBRARY}")
+    message(STATUS "  install dir: ${EPOXY_INSTALL_DIR}")
+    
+else()
+    message(STATUS "ℹ libepoxy not found as pre-built - checking if we can build from source")
+    
+    # Check for build dependencies
+    find_program(MESON_EXECUTABLE meson)
+    find_program(NINJA_EXECUTABLE ninja)
+    find_program(GIT_EXECUTABLE git)
+    find_program(CLANG_16_EXECUTABLE NAMES clang-16 PATHS /lilyspark/opt/lib/sys/compiler/bin NO_DEFAULT_PATH)
+    find_program(CLANGXX_16_EXECUTABLE NAMES clang++-16 PATHS /lilyspark/opt/lib/sys/compiler/bin NO_DEFAULT_PATH)
+    find_program(LLVM_CONFIG_EXECUTABLE NAMES llvm-config PATHS /lilyspark/opt/lib/sys/compiler/bin NO_DEFAULT_PATH)
+    
+    if(MESON_EXECUTABLE AND NINJA_EXECUTABLE AND GIT_EXECUTABLE AND CLANG_16_EXECUTABLE AND CLANGXX_16_EXECUTABLE)
+        set(EPOXY_BUILD_FROM_SOURCE TRUE)
+        set(EPOXY_FOUND SOURCE_AVAILABLE)
+        message(STATUS "✓ libepoxy build dependencies found - will build from source with LLVM16")
+        message(STATUS "  meson: ${MESON_EXECUTABLE}")
+        message(STATUS "  ninja: ${NINJA_EXECUTABLE}")
+        message(STATUS "  clang-16: ${CLANG_16_EXECUTABLE}")
+        message(STATUS "  clang++-16: ${CLANGXX_16_EXECUTABLE}")
+        
+    else()
+        set(EPOXY_FOUND FALSE)
+        message(STATUS "ℹ libepoxy not available and cannot build from source")
+        if(NOT MESON_EXECUTABLE)
+            message(STATUS "  Missing: meson")
+        endif()
+        if(NOT NINJA_EXECUTABLE)
+            message(STATUS "  Missing: ninja")
+        endif()
+        if(NOT CLANG_16_EXECUTABLE)
+            message(STATUS "  Missing: clang-16")
+        endif()
+    endif()
+endif()
+
+# Set compile definitions based on libepoxy availability
+if(EPOXY_FOUND STREQUAL "TRUE")
+    add_compile_definitions(HAVE_EPOXY=1)
+    
+elseif(EPOXY_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_compile_definitions(HAVE_EPOXY_SOURCE=1)
+    add_compile_definitions(BUILD_EPOXY_FROM_SOURCE=1)
+    
+    # Use ExternalProject for libepoxy source building
+    include(ExternalProject)
+    
+    set(EPOXY_PREFIX ${CMAKE_BINARY_DIR}/epoxy-install)
+    
+    ExternalProject_Add(epoxy_build
+        PREFIX ${EPOXY_PREFIX}
+        GIT_REPOSITORY https://github.com/anholt/libepoxy.git
+        GIT_TAG 1.5.10
+        GIT_SHALLOW 1
+        GIT_PROGRESS 1
+        UPDATE_COMMAND ""
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS ${EPOXY_PREFIX}/lib/libepoxy.so
+    )
+    
+    # Add custom steps for the actual build process
+    ExternalProject_Add_Step(epoxy_build build_epoxy
+        COMMAND export CC=/lilyspark/opt/lib/sys/compiler/bin/clang-16 &&
+            export CXX=/lilyspark/opt/lib/sys/compiler/bin/clang++-16 &&
+            export LLVM_CONFIG=/lilyspark/opt/lib/sys/compiler/bin/llvm-config &&
+            export CFLAGS="-I/lilyspark/opt/lib/sys/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" &&
+            export CXXFLAGS="-I/lilyspark/opt/lib/sys/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" &&
+            export LDFLAGS="-L/lilyspark/opt/lib/sys/compiler/lib -L/lilyspark/opt/lib/sys/glibc/lib -Wl,-rpath,/lilyspark/opt/lib/sys/compiler/lib:/lilyspark/opt/lib/sys/glibc/lib" &&
+            export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/opt/lib/sys/compiler/lib/pkgconfig" &&
+            ${MESON_EXECUTABLE} setup builddir
+                --prefix=${EPOXY_PREFIX}
+                --libdir=lib
+                --buildtype=release
+                -Dglx=yes
+                -Degl=yes
+                -Dx11=true
+                -Dwayland=false
+                -Dtests=false
+        COMMAND ${NINJA_EXECUTABLE} -C builddir -j${CMAKE_BUILD_PARALLEL_LEVEL}
+        COMMAND ${NINJA_EXECUTABLE} -C builddir install
+        DEPENDEES download update
+        WORKING_DIRECTORY <SOURCE_DIR>
+        COMMENT "Building and installing libepoxy with LLVM16 toolchain"
+    )
+    
+    # Add step to create symlinks
+    ExternalProject_Add_Step(epoxy_build create_symlinks
+        COMMAND cd ${EPOXY_PREFIX}/lib &&
+            for lib in $(ls libepoxy*.so.*.* 2>/dev/null); do
+                soname=$(echo "$$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/');
+                basename=$(echo "$$lib" | sed 's/\(.*\.so\).*/\1/');
+                ln -sf "$$lib" "$$soname";
+                ln -sf "$$soname" "$$basename";
+            done
+        DEPENDEES install
+        COMMENT "Creating libepoxy symlinks"
+    )
+    
+else()
+    add_compile_definitions(HAVE_EPOXY=0)
+    message(STATUS "ℹ Building without libepoxy graphics support")
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
     /lilyspark/app/src/main.cpp
 )
-
 
 # Add environment variables as compile definitions for runtime use
 if(FOP_FOUND STREQUAL "TRUE" OR FOP_FOUND STREQUAL "PARTIAL")
@@ -673,6 +810,40 @@ message(STATUS "libdrm Graphics Support: ${LIBDRM_FOUND}")
 if(LIBDRM_FOUND STREQUAL "TRUE")
     message(STATUS "  library: ${LIBDRM_LIBRARY}")
 elseif(LIBDRM_FOUND STREQUAL "SOURCE_AVAILABLE")
+    message(STATUS "  Build: From source during compilation with LLVM16")
+endif()
+
+# Link against libepoxy if available
+if(EPOXY_FOUND STREQUAL "TRUE")
+    target_link_libraries(simplehttpserver PRIVATE ${EPOXY_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE
+        ${EPOXY_INSTALL_DIR}/include
+        ${EPOXY_INSTALL_DIR}/include/epoxy
+        /usr/include
+        /usr/local/include
+    )
+    
+elseif(EPOXY_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_dependencies(simplehttpserver epoxy_build)
+    
+    # Add the include and library directories from the built libepoxy
+    target_include_directories(simplehttpserver PRIVATE
+        ${EPOXY_PREFIX}/include
+        ${EPOXY_PREFIX}/include/epoxy
+    )
+    
+    target_link_directories(simplehttpserver PRIVATE
+        ${EPOXY_PREFIX}/lib
+    )
+    
+    target_link_libraries(simplehttpserver PRIVATE epoxy)
+endif()
+
+# Update configuration summary with libepoxy status
+message(STATUS "libepoxy Graphics Support: ${EPOXY_FOUND}")
+if(EPOXY_FOUND STREQUAL "TRUE")
+    message(STATUS "  library: ${EPOXY_LIBRARY}")
+elseif(EPOXY_FOUND STREQUAL "SOURCE_AVAILABLE")
     message(STATUS "  Build: From source during compilation with LLVM16")
 endif()
 
