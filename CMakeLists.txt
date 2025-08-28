@@ -285,7 +285,7 @@ find_program(GST_BIN
 # ================================
 # xorg-server (Build Requirements)
 # ================================
-ind_path(XORG_INCLUDE_DIR
+find_path(XORG_INCLUDE_DIR
     NAMES X.h
     PATHS /lilyspark/usr/x11/include
     NO_DEFAULT_PATH
@@ -298,6 +298,62 @@ find_library(XORG_LIB
 find_program(XORG_BIN
     NAMES Xorg Xvfb Xnest Xephyr
     PATHS /lilyspark/usr/x11
+    NO_DEFAULT_PATH
+)
+
+# ========================================
+# MESA Core Libraries (Build Requirements)
+# ========================================
+find_path(MESA_INCLUDE_DIR
+    NAMES mesa_glu.h
+    PATHS /lilyspark/opt/lib/driver/include /lilyspark/usr/include
+    NO_DEFAULT_PATH
+)
+find_library(MESA_LIB
+    NAMES GL swrast osmesa
+    PATHS /lilyspark/opt/lib/driver /lilyspark/usr/lib
+    NO_DEFAULT_PATH
+)
+
+# ========================
+# GBM (Build Requirements)
+# ========================
+find_path(GBM_INCLUDE_DIR
+    NAMES gbm.h
+    PATHS /lilyspark/opt/lib/driver/include
+    NO_DEFAULT_PATH
+)
+find_library(GBM_LIB
+    NAMES gbm
+    PATHS /lilyspark/opt/lib/driver/lib
+    NO_DEFAULT_PATH
+)
+
+# ========================
+# EGL (Build Requirements)
+# ========================
+find_path(EGL_INCLUDE_DIR
+    NAMES EGL/egl.h
+    PATHS /lilyspark/opt/lib/driver/include
+    NO_DEFAULT_PATH
+)
+find_library(EGL_LIB
+    NAMES EGL
+    PATHS /lilyspark/opt/lib/driver/lib
+    NO_DEFAULT_PATH
+)
+
+# =========================
+# GLES (Build Requirements)
+# =========================
+find_path(GLES_INCLUDE_DIR
+    NAMES GLES2/gl2.h
+    PATHS /lilyspark/opt/lib/driver/include
+    NO_DEFAULT_PATH
+)
+find_library(GLES_LIB
+    NAMES GLESv1_CM GLESv2
+    PATHS /lilyspark/opt/lib/driver/lib
     NO_DEFAULT_PATH
 )
 
@@ -566,6 +622,59 @@ else()
     add_compile_definitions(HAVE_XORG=0)
 endif()
 
+# ====================================
+# MESA Core Libraries (Fallback Logic)
+# ====================================
+if(MESA_INCLUDE_DIR AND MESA_LIB)
+    set(MESA_FOUND TRUE)
+    message(STATUS "✓ Mesa headers and libraries found")
+    add_compile_definitions(HAVE_MESA=1)
+else()
+    set(MESA_FOUND FALSE)
+    message(WARNING "⚠ Mesa components missing")
+    add_compile_definitions(HAVE_MESA=0)
+endif()
+
+# ========================
+# GBM (Fallback Logic)
+# ========================
+if(GBM_INCLUDE_DIR AND GBM_LIB)
+    set(GBM_FOUND TRUE)
+    message(STATUS "✓ GBM headers and library found")
+    add_compile_definitions(HAVE_GBM=1)
+else()
+    set(GBM_FOUND FALSE)
+    message(WARNING "⚠ GBM components missing")
+    add_compile_definitions(HAVE_GBM=0)
+endif()
+
+# ========================
+# EGL (Fallback Logic)
+# ========================
+if(EGL_INCLUDE_DIR AND EGL_LIB)
+    set(EGL_FOUND TRUE)
+    message(STATUS "✓ EGL headers and library found")
+    add_compile_definitions(HAVE_EGL=1)
+else()
+    set(EGL_FOUND FALSE)
+    message(WARNING "⚠ EGL components missing")
+    add_compile_definitions(HAVE_EGL=0)
+endif()
+
+# =========================
+# GLES (Fallback Logic)
+# =========================
+if(GLES_INCLUDE_DIR AND GLES_LIB)
+    set(GLES_FOUND TRUE)
+    message(STATUS "✓ GLES headers and libraries found")
+    add_compile_definitions(HAVE_GLES=1)
+else()
+    set(GLES_FOUND FALSE)
+    message(WARNING "⚠ GLES components missing")
+    add_compile_definitions(HAVE_GLES=0)
+endif()
+
+
 # ==============================================
 # Executable created here (DO NOT FUCKING TOUCH)
 # ==============================================
@@ -770,6 +879,38 @@ if(XORG_FOUND)
     target_include_directories(simplehttpserver PRIVATE ${XORG_INCLUDE_DIR})
     target_link_libraries(simplehttpserver PRIVATE ${XORG_LIB})
     message(STATUS "✓ Linking xorg-server")
+endif()
+
+# ====================================
+# MESA Core Libraries (ENV For Runtime)
+# ====================================
+if(MESA_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${MESA_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${MESA_LIB})
+endif()
+
+# ========================
+# GBM (ENV For Runtime)
+# ========================
+if(GBM_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${GBM_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${GBM_LIB})
+endif()
+
+# ========================
+# EGL (ENV For Runtime)
+# ========================
+if(EGL_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${EGL_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${EGL_LIB})
+endif()
+
+# =========================
+# GLES (ENV For Runtime)
+# =========================
+if(GLES_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${GLES_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${GLES_LIB})
 endif()
 
 
