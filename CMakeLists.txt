@@ -291,6 +291,240 @@ else()
 endif()
 
 # -------------------------------
+# libpciaccess Hardware Support
+# -------------------------------
+message(STATUS "Checking for libpciaccess hardware support...")
+
+# Search for pre-built libpciaccess
+find_path(PCACCESS_INSTALL_DIR
+    NAMES include/pciaccess.h lib/libpciaccess.so lib/libpciaccess.a
+    PATHS
+        /lilyspark/opt/lib/sys/usr
+        /usr
+        /usr/local
+    NO_DEFAULT_PATH
+)
+
+find_library(PCACCESS_LIBRARY
+    NAMES pciaccess
+    PATHS
+        /lilyspark/opt/lib/sys/usr/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+# Check if we need to build from source
+set(PCACCESS_BUILD_FROM_SOURCE FALSE)
+set(PCACCESS_FOUND FALSE)
+
+if(PCACCESS_LIBRARY AND PCACCESS_INSTALL_DIR)
+    set(PCACCESS_FOUND TRUE)
+    message(STATUS "✓ libpciaccess found (pre-built)")
+    message(STATUS "  library: ${PCACCESS_LIBRARY}")
+    message(STATUS "  install dir: ${PCACCESS_INSTALL_DIR}")
+    
+else()
+    message(STATUS "ℹ libpciaccess not found as pre-built - checking if we can build from source")
+    
+    # Check for build dependencies
+    find_program(MESON_EXECUTABLE meson)
+    find_program(NINJA_EXECUTABLE ninja)
+    find_program(GIT_EXECUTABLE git)
+    
+    if(MESON_EXECUTABLE AND NINJA_EXECUTABLE AND GIT_EXECUTABLE)
+        set(PCACCESS_BUILD_FROM_SOURCE TRUE)
+        set(PCACCESS_FOUND SOURCE_AVAILABLE)
+        message(STATUS "✓ libpciaccess build dependencies found - will build from source")
+        message(STATUS "  meson: ${MESON_EXECUTABLE}")
+        message(STATUS "  ninja: ${NINJA_EXECUTABLE}")
+        message(STATUS "  git: ${GIT_EXECUTABLE}")
+        
+    else()
+        set(PCACCESS_FOUND FALSE)
+        message(STATUS "ℹ libpciaccess not available and cannot build from source")
+        if(NOT MESON_EXECUTABLE)
+            message(STATUS "  Missing: meson")
+        endif()
+        if(NOT NINJA_EXECUTABLE)
+            message(STATUS "  Missing: ninja")
+        endif()
+        if(NOT GIT_EXECUTABLE)
+            message(STATUS "  Missing: git")
+        endif()
+    endif()
+endif()
+
+# Set compile definitions based on libpciaccess availability
+if(PCACCESS_FOUND STREQUAL "TRUE")
+    add_compile_definitions(HAVE_PCIACCESS=1)
+    
+elseif(PCACCESS_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_compile_definitions(HAVE_PCIACCESS_SOURCE=1)
+    add_compile_definitions(BUILD_PCIACCESS_FROM_SOURCE=1)
+    
+    # Use ExternalProject for libpciaccess source building
+    include(ExternalProject)
+    
+    set(PCACCESS_PREFIX ${CMAKE_BINARY_DIR}/pciaccess-install)
+    
+    ExternalProject_Add(pciaccess_build
+        PREFIX ${PCACCESS_PREFIX}
+        GIT_REPOSITORY https://gitlab.freedesktop.org/xorg/lib/libpciaccess.git
+        GIT_SHALLOW 1
+        GIT_PROGRESS 1
+        UPDATE_COMMAND ""
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS ${PCACCESS_PREFIX}/lib/libpciaccess.so
+    )
+    
+    # Add custom steps for the actual build process
+    ExternalProject_Add_Step(pciaccess_build build_pciaccess
+        COMMAND export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/sys" &&
+            export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig" &&
+            ${MESON_EXECUTABLE} setup builddir --prefix=${PCACCESS_PREFIX}
+        COMMAND ${NINJA_EXECUTABLE} -C builddir
+        COMMAND ${NINJA_EXECUTABLE} -C builddir install
+        DEPENDEES download update
+        WORKING_DIRECTORY <SOURCE_DIR>
+        COMMENT "Building and installing libpciaccess"
+    )
+    
+else()
+    add_compile_definitions(HAVE_PCIACCESS=0)
+    message(STATUS "ℹ Building without libpciaccess hardware support")
+endif()
+
+# -------------------------------
+# libdrm Graphics Support
+# -------------------------------
+message(STATUS "Checking for libdrm graphics support...")
+
+# Search for pre-built libdrm
+find_path(LIBDRM_INSTALL_DIR
+    NAMES include/libdrm/drm.h lib/libdrm.so lib/libdrm.a
+    PATHS
+        /lilyspark/opt/lib/sys/usr
+        #Check for discrepancies here if this fails, but we'll fallback if not correct anyways
+        /usr
+        /usr/local
+    NO_DEFAULT_PATH
+)
+
+find_library(LIBDRM_LIBRARY
+    NAMES drm
+    PATHS
+        /lilyspark/opt/lib/sys/usr/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+# Check if we need to build from source
+set(LIBDRM_BUILD_FROM_SOURCE FALSE)
+set(LIBDRM_FOUND FALSE)
+
+if(LIBDRM_LIBRARY AND LIBDRM_INSTALL_DIR)
+    set(LIBDRM_FOUND TRUE)
+    message(STATUS "✓ libdrm found (pre-built)")
+    message(STATUS "  library: ${LIBDRM_LIBRARY}")
+    message(STATUS "  install dir: ${LIBDRM_INSTALL_DIR}")
+    
+else()
+    message(STATUS "ℹ libdrm not found as pre-built - checking if we can build from source")
+    
+    # Check for build dependencies
+    find_program(MESON_EXECUTABLE meson)
+    find_program(NINJA_EXECUTABLE ninja)
+    find_program(CURL_EXECUTABLE curl)
+    find_program(TAR_EXECUTABLE tar)
+    find_program(CLANG_16_EXECUTABLE NAMES clang-16 PATHS /lilyspark/opt/lib/sys/compiler/bin NO_DEFAULT_PATH)
+    find_program(CLANGXX_16_EXECUTABLE NAMES clang++-16 PATHS /lilyspark/opt/lib/sys/compiler/bin NO_DEFAULT_PATH)
+    
+    if(MESON_EXECUTABLE AND NINJA_EXECUTABLE AND CURL_EXECUTABLE AND TAR_EXECUTABLE AND CLANG_16_EXECUTABLE AND CLANGXX_16_EXECUTABLE)
+        set(LIBDRM_BUILD_FROM_SOURCE TRUE)
+        set(LIBDRM_FOUND SOURCE_AVAILABLE)
+        message(STATUS "✓ libdrm build dependencies found - will build from source")
+        message(STATUS "  meson: ${MESON_EXECUTABLE}")
+        message(STATUS "  ninja: ${NINJA_EXECUTABLE}")
+        message(STATUS "  clang-16: ${CLANG_16_EXECUTABLE}")
+        message(STATUS "  clang++-16: ${CLANGXX_16_EXECUTABLE}")
+        
+    else()
+        set(LIBDRM_FOUND FALSE)
+        message(STATUS "ℹ libdrm not available and cannot build from source")
+        if(NOT MESON_EXECUTABLE)
+            message(STATUS "  Missing: meson")
+        endif()
+        if(NOT NINJA_EXECUTABLE)
+            message(STATUS "  Missing: ninja")
+        endif()
+        if(NOT CLANG_16_EXECUTABLE)
+            message(STATUS "  Missing: clang-16")
+        endif()
+    endif()
+endif()
+
+# Set compile definitions based on libdrm availability
+if(LIBDRM_FOUND STREQUAL "TRUE")
+    add_compile_definitions(HAVE_LIBDRM=1)
+    
+elseif(LIBDRM_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_compile_definitions(HAVE_LIBDRM_SOURCE=1)
+    add_compile_definitions(BUILD_LIBDRM_FROM_SOURCE=1)
+    
+    # Use ExternalProject for libdrm source building
+    include(ExternalProject)
+    
+    set(LIBDRM_PREFIX ${CMAKE_BINARY_DIR}/libdrm-install)
+    set(LIBDRM_VER 2.4.125)
+    set(LIBDRM_URL "https://dri.freedesktop.org/libdrm/libdrm-${LIBDRM_VER}.tar.xz")
+    
+    ExternalProject_Add(libdrm_build
+        PREFIX ${LIBDRM_PREFIX}
+        URL ${LIBDRM_URL}
+        DOWNLOAD_DIR ${CMAKE_BINARY_DIR}/downloads
+        DOWNLOAD_NAME libdrm-${LIBDRM_VER}.tar.xz
+        UPDATE_COMMAND ""
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS ${LIBDRM_PREFIX}/lib/libdrm.so
+    )
+    
+    # Add custom steps for the actual build process
+    ExternalProject_Add_Step(libdrm_build build_libdrm
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${LIBDRM_PREFIX}
+        COMMAND tar -xf libdrm-${LIBDRM_VER}.tar.xz --strip-components=1
+        COMMAND export PATH="/lilyspark/opt/lib/sys/compiler/bin:$PATH" &&
+            export CC=/lilyspark/opt/lib/sys/compiler/bin/clang-16 &&
+            export CXX=/lilyspark/opt/lib/sys/compiler/bin/clang++-16 &&
+            export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/sys" &&
+            export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/opt/lib/sys/compiler/lib/pkgconfig" &&
+            export CFLAGS="--sysroot=/lilyspark/opt/lib/sys -I/lilyspark/opt/lib/sys/usr/include -I/lilyspark/opt/lib/sys/compiler/include -march=armv8-a" &&
+            export CXXFLAGS="$CFLAGS" &&
+            export LDFLAGS="--sysroot=/lilyspark/opt/lib/sys -L/lilyspark/opt/lib/sys/usr/lib -L/lilyspark/opt/lib/sys/compiler/lib" &&
+            ${MESON_EXECUTABLE} setup builddir
+                --prefix=${LIBDRM_PREFIX}
+                --libdir=lib
+                -Dtests=false
+                -Dudev=true
+                -Dvalgrind=disabled
+        COMMAND ${NINJA_EXECUTABLE} -C builddir
+        COMMAND ${NINJA_EXECUTABLE} -C builddir install
+        DEPENDEES download
+        WORKING_DIRECTORY <SOURCE_DIR>
+        COMMENT "Building and installing libdrm with LLVM16 toolchain"
+    )
+    
+else()
+    add_compile_definitions(HAVE_LIBDRM=0)
+    message(STATUS "ℹ Building without libdrm graphics support")
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -374,6 +608,72 @@ if(PLUTOSVG_FOUND STREQUAL "TRUE")
     message(STATUS "  library: ${PLUTOSVG_LIBRARY}")
 elseif(PLUTOSVG_FOUND STREQUAL "SOURCE_AVAILABLE")
     message(STATUS "  Build: From source during compilation")
+endif()
+
+# Link against libpciaccess if available
+if(PCACCESS_FOUND STREQUAL "TRUE")
+    target_link_libraries(simplehttpserver PRIVATE ${PCACCESS_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE
+        ${PCACCESS_INSTALL_DIR}/include
+        /usr/include
+        /usr/local/include
+    )
+    
+elseif(PCACCESS_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_dependencies(simplehttpserver pciaccess_build)
+    
+    # Add the include and library directories from the built libpciaccess
+    target_include_directories(simplehttpserver PRIVATE
+        ${PCACCESS_PREFIX}/include
+    )
+    
+    target_link_directories(simplehttpserver PRIVATE
+        ${PCACCESS_PREFIX}/lib
+    )
+    
+    target_link_libraries(simplehttpserver PRIVATE pciaccess)
+endif()
+
+# Update configuration summary with libpciaccess status
+message(STATUS "libpciaccess Hardware Support: ${PCACCESS_FOUND}")
+if(PCACCESS_FOUND STREQUAL "TRUE")
+    message(STATUS "  library: ${PCACCESS_LIBRARY}")
+elseif(PCACCESS_FOUND STREQUAL "SOURCE_AVAILABLE")
+    message(STATUS "  Build: From source during compilation")
+endif()
+
+# Link against libdrm if available
+if(LIBDRM_FOUND STREQUAL "TRUE")
+    target_link_libraries(simplehttpserver PRIVATE ${LIBDRM_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE
+        ${LIBDRM_INSTALL_DIR}/include
+        ${LIBDRM_INSTALL_DIR}/include/libdrm
+        /usr/include
+        /usr/local/include
+    )
+    
+elseif(LIBDRM_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_dependencies(simplehttpserver libdrm_build)
+    
+    # Add the include and library directories from the built libdrm
+    target_include_directories(simplehttpserver PRIVATE
+        ${LIBDRM_PREFIX}/include
+        ${LIBDRM_PREFIX}/include/libdrm
+    )
+    
+    target_link_directories(simplehttpserver PRIVATE
+        ${LIBDRM_PREFIX}/lib
+    )
+    
+    target_link_libraries(simplehttpserver PRIVATE drm)
+endif()
+
+# Update configuration summary with libdrm status
+message(STATUS "libdrm Graphics Support: ${LIBDRM_FOUND}")
+if(LIBDRM_FOUND STREQUAL "TRUE")
+    message(STATUS "  library: ${LIBDRM_LIBRARY}")
+elseif(LIBDRM_FOUND STREQUAL "SOURCE_AVAILABLE")
+    message(STATUS "  Build: From source during compilation with LLVM16")
 endif()
 
 # No external dependencies needed for Hello World
