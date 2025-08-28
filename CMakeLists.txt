@@ -357,6 +357,103 @@ find_library(GLES_LIB
     NO_DEFAULT_PATH
 )
 
+# ==============================
+# SDL3 Core (Build Requirements)
+# ==============================
+find_path(SDL3_INCLUDE_DIR
+    NAMES SDL3.h
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/include
+    NO_DEFAULT_PATH
+)
+find_library(SDL3_LIB
+    NAMES SDL3
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/lib
+    NO_DEFAULT_PATH
+)
+
+# ===============================
+# SDL3_image (Build Requirements)
+# ===============================
+find_path(SDL3_IMAGE_INCLUDE_DIR
+    NAMES SDL_image.h
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/include
+    NO_DEFAULT_PATH
+)
+find_library(SDL3_IMAGE_LIB
+    NAMES SDL3_image
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/lib
+    NO_DEFAULT_PATH
+)
+
+# ===============================
+# SDL3_mixer (Build Requirements)
+# ===============================
+find_path(SDL3_MIXER_INCLUDE_DIR
+    NAMES SDL_mixer.h
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/include
+    NO_DEFAULT_PATH
+)
+find_library(SDL3_MIXER_LIB
+    NAMES SDL3_mixer
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/lib
+    NO_DEFAULT_PATH
+)
+
+# =============================
+# SDL3_ttf (Build Requirements)
+# =============================
+find_path(SDL3_TTF_INCLUDE_DIR
+    NAMES SDL_ttf.h
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/include
+    NO_DEFAULT_PATH
+)
+find_library(SDL3_TTF_LIB
+    NAMES SDL3_ttf
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/lib
+    NO_DEFAULT_PATH
+)
+
+# ===================================
+# Vulkan-Headers (Build Requirements)
+# ===================================
+find_path(VULKAN_HEADERS_INCLUDE_DIR
+    NAMES vulkan/vulkan.h
+    PATHS /lilyspark/opt/lib/vulkan/include
+    NO_DEFAULT_PATH
+)
+
+# ==================================
+# Vulkan-Loader (Build Requirements)
+# ==================================
+find_library(VULKAN_LOADER_LIB
+    NAMES vulkan
+    PATHS /lilyspark/opt/lib/vulkan/lib
+    NO_DEFAULT_PATH
+)
+
+# ============================
+# glmark2 (Build Requirements)
+# ============================
+find_program(GLMARK2_BIN
+    NAMES glmark2
+    PATHS /lilyspark/opt/lib/graphics/bin
+    NO_DEFAULT_PATH
+)
+
+# ============================
+# SQLite3 (Build Requirements)
+# ============================
+find_path(SQLITE3_INCLUDE_DIR
+    NAMES sqlite3.h
+    PATHS /lilyspark/opt/lib/database/include
+    NO_DEFAULT_PATH
+)
+find_library(SQLITE3_LIB
+    NAMES sqlite3
+    PATHS /lilyspark/opt/lib/database/lib
+    NO_DEFAULT_PATH
+)
+
 #
 #
 #
@@ -674,6 +771,110 @@ else()
     add_compile_definitions(HAVE_GLES=0)
 endif()
 
+# ==============================
+# SDL3 Core (Fallback Logic)
+# ==============================
+if(SDL3_INCLUDE_DIR AND SDL3_LIB)
+    set(SDL3_FOUND TRUE)
+    message(STATUS "✓ SDL3 headers and library found")
+    add_compile_definitions(HAVE_SDL3=1)
+else()
+    set(SDL3_FOUND FALSE)
+    message(WARNING "⚠ SDL3 not found")
+    add_compile_definitions(HAVE_SDL3=0)
+endif()
+
+# ===============================
+# SDL3_image (Fallback Logic)
+# ===============================
+if(SDL3_IMAGE_INCLUDE_DIR AND SDL3_IMAGE_LIB)
+    set(SDL3_IMAGE_FOUND TRUE)
+    message(STATUS "✓ SDL3_image headers and library found")
+    add_compile_definitions(HAVE_SDL3_IMAGE=1)
+else()
+    set(SDL3_IMAGE_FOUND FALSE)
+    message(WARNING "⚠ SDL3_image not found")
+    add_compile_definitions(HAVE_SDL3_IMAGE=0)
+endif()
+
+# ===============================
+# SDL3_mixer (Fallback Logic)
+# ===============================
+if(SDL3_MIXER_INCLUDE_DIR AND SDL3_MIXER_LIB)
+    set(SDL3_MIXER_FOUND TRUE)
+    message(STATUS "✓ SDL3_mixer headers and library found")
+    add_compile_definitions(HAVE_SDL3_MIXER=1)
+else()
+    set(SDL3_MIXER_FOUND FALSE)
+    message(WARNING "⚠ SDL3_mixer not found")
+    add_compile_definitions(HAVE_SDL3_MIXER=0)
+endif()
+
+# =============================
+# SDL3_ttf (Fallback Logic)
+# =============================
+if(SDL3_TTF_INCLUDE_DIR AND SDL3_TTF_LIB)
+    set(SDL3_TTF_FOUND TRUE)
+    message(STATUS "✓ SDL3_ttf headers and library found")
+    add_compile_definitions(HAVE_SDL3_TTF=1)
+else()
+    set(SDL3_TTF_FOUND FALSE)
+    message(WARNING "⚠ SDL3_ttf not found")
+    add_compile_definitions(HAVE_SDL3_TTF=0)
+endif()
+
+# ===================================
+# Vulkan-Headers (Fallback Logic)
+# ===================================
+if(VULKAN_HEADERS_INCLUDE_DIR)
+    set(VULKAN_HEADERS_FOUND TRUE)
+    message(STATUS "✓ Vulkan-Headers found")
+    add_compile_definitions(HAVE_VULKAN_HEADERS=1)
+else()
+    set(VULKAN_HEADERS_FOUND FALSE)
+    message(WARNING "⚠ Vulkan-Headers not found")
+    add_compile_definitions(HAVE_VULKAN_HEADERS=0)
+endif()
+
+# ==================================
+# Vulkan-Loader (Fallback Logic)
+# ==================================
+if(VULKAN_LOADER_LIB)
+    set(VULKAN_LOADER_FOUND TRUE)
+    message(STATUS "✓ Vulkan-Loader found")
+    add_compile_definitions(HAVE_VULKAN_LOADER=1)
+else()
+    set(VULKAN_LOADER_FOUND FALSE)
+    message(WARNING "⚠ Vulkan-Loader not found")
+    add_compile_definitions(HAVE_VULKAN_LOADER=0)
+endif()
+
+# ============================
+# glmark2 (Fallback Logic)
+# ============================
+if(GLMARK2_BIN)
+    set(GLMARK2_FOUND TRUE)
+    message(STATUS "✓ glmark2 binary found")
+    add_compile_definitions(HAVE_GLMARK2=1)
+else()
+    set(GLMARK2_FOUND FALSE)
+    message(WARNING "⚠ glmark2 not found")
+    add_compile_definitions(HAVE_GLMARK2=0)
+endif()
+
+# ============================
+# SQLite3 (Fallback Logic)
+# ============================
+if(SQLITE3_INCLUDE_DIR AND SQLITE3_LIB)
+    set(SQLITE3_FOUND TRUE)
+    message(STATUS "✓ SQLite3 found")
+    add_compile_definitions(HAVE_SQLITE3=1)
+else()
+    set(SQLITE3_FOUND FALSE)
+    message(WARNING "⚠ SQLite3 not found")
+    add_compile_definitions(HAVE_SQLITE3=0)
+endif()
+
 
 # ==============================================
 # Executable created here (DO NOT FUCKING TOUCH)
@@ -913,6 +1114,59 @@ if(GLES_FOUND)
     target_link_libraries(simplehttpserver PRIVATE ${GLES_LIB})
 endif()
 
+# ==============================
+# SDL3 Core (ENV For Runtime)
+# ==============================
+if(SDL3_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${SDL3_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${SDL3_LIB})
+endif()
+
+# ===============================
+# SDL3_image (ENV For Runtime)
+# ===============================
+if(SDL3_IMAGE_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${SDL3_IMAGE_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${SDL3_IMAGE_LIB})
+endif()
+
+# ===============================
+# SDL3_mixer (ENV For Runtime)
+# ===============================
+if(SDL3_MIXER_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${SDL3_MIXER_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${SDL3_MIXER_LIB})
+endif()
+
+# =============================
+# SDL3_ttf (ENV For Runtime)
+# =============================
+if(SDL3_TTF_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${SDL3_TTF_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${SDL3_TTF_LIB})
+endif()
+
+# ===================================
+# Vulkan-Headers (ENV For Runtime)
+# ===================================
+if(VULKAN_HEADERS_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${VULKAN_HEADERS_INCLUDE_DIR})
+endif()
+
+# ==================================
+# Vulkan-Loader (ENV For Runtime)
+# ==================================
+if(VULKAN_LOADER_FOUND)
+    target_link_libraries(simplehttpserver PRIVATE ${VULKAN_LOADER_LIB})
+endif()
+
+# ============================
+# SQLite3 (ENV For Runtime)
+# ============================
+if(SQLITE3_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${SQLITE3_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${SQLITE3_LIB})
+endif()
 
 #
 #
