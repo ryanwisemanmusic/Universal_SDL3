@@ -191,6 +191,116 @@ find_path(LIBAVIF_INCLUDE_DIR
     PATHS /lilyspark/opt/lib/sdl3/include
     NO_DEFAULT_PATH
 )
+
+# ================================================
+# Python Package Dependencies (Build Requirements)
+# ================================================
+find_path(PYTHON_MESONBUILD_DIR
+    NAMES mesonbuild
+    PATHS /lilyspark/opt/lib/python/site-packages
+    NO_DEFAULT_PATH
+)
+find_path(PYTHON_MAKO_DIR
+    NAMES mako
+    PATHS /lilyspark/opt/lib/python/site-packages
+    NO_DEFAULT_PATH
+)
+find_path(PYTHON_MARKUPSAFE_DIR
+    NAMES MarkupSafe
+    PATHS /lilyspark/opt/lib/python/site-packages
+    NO_DEFAULT_PATH
+)
+
+# ================================
+# SPIRV-Tools (Build Requirements)
+# ================================
+find_path(SPIRV_HEADERS_DIR
+    NAMES spirv.h
+    PATHS /lilyspark/opt/lib/graphics/include/spirv-tools
+    NO_DEFAULT_PATH
+)
+find_library(SPIRV_TOOLS_LIB
+    NAMES SPIRV-Tools
+    PATHS /lilyspark/opt/lib/graphics/lib
+    NO_DEFAULT_PATH
+)
+find_program(SPIRV_TOOLS_BIN
+    NAMES spirv-as spirv-opt
+    PATHS /lilyspark/opt/lib/graphics/bin
+    NO_DEFAULT_PATH
+)
+
+# ============================
+# Shaderc (Build Requirements)
+# ============================
+find_path(SHADERC_INCLUDE_DIR
+    NAMES shaderc/shaderc.h
+    PATHS /lilyspark/opt/lib/graphics/include
+    NO_DEFAULT_PATH
+)
+find_library(SHADERC_LIB
+    NAMES shaderc
+    PATHS /lilyspark/opt/lib/graphics/lib
+    NO_DEFAULT_PATH
+)
+find_program(SHADERC_BIN
+    NAMES shaderc
+    PATHS /lilyspark/opt/lib/graphics/bin
+    NO_DEFAULT_PATH
+)
+
+# ===========================
+# libgbm (Build Requirements)
+# ===========================
+find_path(LIBGBM_INCLUDE_DIR
+    NAMES gbm.h
+    PATHS /lilyspark/opt/lib/sys/include
+    NO_DEFAULT_PATH
+)
+find_library(LIBGBM_LIB
+    NAMES gbm
+    PATHS /lilyspark/opt/lib/sys/lib
+    NO_DEFAULT_PATH
+)
+
+# ===========================================
+# GStreamer Plugins Base (Build Requirements)
+# ===========================================
+find_path(GST_BASE_INCLUDE_DIR
+    NAMES gst/gst.h
+    PATHS /lilyspark/opt/lib/media/include
+    NO_DEFAULT_PATH
+)
+find_library(GST_BASE_LIB
+    NAMES gstreamer-1.0
+    PATHS /lilyspark/opt/lib/media/lib
+    NO_DEFAULT_PATH
+)
+find_program(GST_BIN
+    NAMES gst-launch-1.0 gst-inspect-1.0
+    PATHS /lilyspark/opt/lib/media/bin
+    NO_DEFAULT_PATH
+)
+
+# ================================
+# xorg-server (Build Requirements)
+# ================================
+ind_path(XORG_INCLUDE_DIR
+    NAMES X.h
+    PATHS /lilyspark/usr/x11/include
+    NO_DEFAULT_PATH
+)
+find_library(XORG_LIB
+    NAMES xserver
+    PATHS /lilyspark/usr/x11
+    NO_DEFAULT_PATH
+)
+find_program(XORG_BIN
+    NAMES Xorg Xvfb Xnest Xephyr
+    PATHS /lilyspark/usr/x11
+    NO_DEFAULT_PATH
+)
+
 #
 #
 #
@@ -378,6 +488,83 @@ else()
     add_compile_definitions(HAVE_SDL3_IMAGE=0)
 endif()
 
+# ================================================
+# Python Package Dependencies (Fallback Logic)
+# ================================================
+if(PYTHON_MESONBUILD_DIR AND PYTHON_MAKO_DIR AND PYTHON_MARKUPSAFE_DIR)
+    set(PYTHON_PACKAGES_FOUND TRUE)
+    message(STATUS "✓ Python packages (mesonbuild, mako, MarkupSafe) found")
+    add_compile_definitions(HAVE_PYTHON_PACKAGES=1)
+else()
+    set(PYTHON_PACKAGES_FOUND FALSE)
+    message(WARNING "⚠ Some Python packages missing in custom filesystem")
+    add_compile_definitions(HAVE_PYTHON_PACKAGES=0)
+endif()
+
+# ================================
+# SPIRV-Tools (Fallback Logic)
+# ================================
+if(SPIRV_HEADERS_DIR AND SPIRV_TOOLS_LIB AND SPIRV_TOOLS_BIN)
+    set(SPIRV_TOOLS_FOUND TRUE)
+    message(STATUS "✓ SPIRV-Tools headers, libraries, and binaries found")
+    add_compile_definitions(HAVE_SPIRV_TOOLS=1)
+else()
+    set(SPIRV_TOOLS_FOUND FALSE)
+    message(WARNING "⚠ SPIRV-Tools components missing")
+    add_compile_definitions(HAVE_SPIRV_TOOLS=0)
+endif()
+
+# ============================
+# Shaderc (Fallback Logic)
+# ============================
+if(SHADERC_INCLUDE_DIR AND SHADERC_LIB AND SHADERC_BIN)
+    set(SHADERC_FOUND TRUE)
+    message(STATUS "✓ Shaderc headers, library, and binary found")
+    add_compile_definitions(HAVE_SHADERC=1)
+else()
+    set(SHADERC_FOUND FALSE)
+    message(WARNING "⚠ Shaderc components missing")
+    add_compile_definitions(HAVE_SHADERC=0)
+endif()
+
+# ===========================
+# libgbm (Fallback Logic)
+# ===========================
+if(LIBGBM_INCLUDE_DIR AND LIBGBM_LIB)
+    set(LIBGBM_FOUND TRUE)
+    message(STATUS "✓ libgbm headers and library found")
+    add_compile_definitions(HAVE_LIBGBM=1)
+else()
+    set(LIBGBM_FOUND FALSE)
+    message(WARNING "⚠ libgbm components missing")
+    add_compile_definitions(HAVE_LIBGBM=0)
+endif()
+
+# ===========================================
+# GStreamer Plugins Base (Fallback Logic)
+# ===========================================
+if(GST_BASE_INCLUDE_DIR AND GST_BASE_LIB AND GST_BIN)
+    set(GST_BASE_FOUND TRUE)
+    message(STATUS "✓ GStreamer Base headers, library, and binaries found")
+    add_compile_definitions(HAVE_GST_BASE=1)
+else()
+    set(GST_BASE_FOUND FALSE)
+    message(WARNING "⚠ GStreamer Base components missing")
+    add_compile_definitions(HAVE_GST_BASE=0)
+endif()
+
+# ================================
+# xorg-server (Fallback Logic)
+# ================================
+if(XORG_INCLUDE_DIR AND XORG_LIB AND XORG_BIN)
+    set(XORG_FOUND TRUE)
+    message(STATUS "✓ xorg-server headers, libraries, and binaries found")
+    add_compile_definitions(HAVE_XORG=1)
+else()
+    set(XORG_FOUND FALSE)
+    message(WARNING "⚠ xorg-server components missing")
+    add_compile_definitions(HAVE_XORG=0)
+endif()
 
 # ==============================================
 # Executable created here (DO NOT FUCKING TOUCH)
@@ -512,7 +699,7 @@ elseif(LIBEPOXY_FOUND STREQUAL "HEADERS_ONLY")
 endif()
 
 # ==========================================
-# SDL3 Image Dependency (Fallback Logic)
+# SDL3 Image Dependency (ENV For Runtime)
 # ==========================================
 if(SDL3_IMAGE_FOUND)
     target_include_directories(simplehttpserver PRIVATE
@@ -527,6 +714,64 @@ if(SDL3_IMAGE_FOUND)
     )
     message(STATUS "✓ Linking SDL3 image libraries")
 endif()
+
+# ================================================
+# Python Package Dependencies (ENV For Runtime)
+# ================================================
+if(PYTHON_PACKAGES_FOUND)
+    target_include_directories(simplehttpserver PRIVATE
+        ${PYTHON_MESONBUILD_DIR}
+        ${PYTHON_MAKO_DIR}
+        ${PYTHON_MARKUPSAFE_DIR}
+    )
+    message(STATUS "✓ Python packages included in build")
+endif()
+
+# ================================
+# SPIRV-Tools (ENV For Runtime)
+# ================================
+if(SPIRV_TOOLS_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${SPIRV_HEADERS_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${SPIRV_TOOLS_LIB})
+    message(STATUS "✓ Linking SPIRV-Tools")
+endif()
+
+# ============================
+# Shaderc (ENV For Runtime)
+# ============================
+if(SHADERC_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${SHADERC_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${SHADERC_LIB})
+    message(STATUS "✓ Linking Shaderc")
+endif()
+
+# ===========================
+# libgbm (ENV For Runtime)
+# ===========================
+if(LIBGBM_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${LIBGBM_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${LIBGBM_LIB})
+    message(STATUS "✓ Linking libgbm")
+endif()
+
+# ===========================================
+# GStreamer Plugins Base (ENV For Runtime)
+# ===========================================
+if(GST_BASE_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${GST_BASE_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${GST_BASE_LIB})
+    message(STATUS "✓ Linking GStreamer Base")
+endif()
+
+# ================================
+# xorg-server (ENV For Runtime)
+# ================================
+if(XORG_FOUND)
+    target_include_directories(simplehttpserver PRIVATE ${XORG_INCLUDE_DIR})
+    target_link_libraries(simplehttpserver PRIVATE ${XORG_LIB})
+    message(STATUS "✓ Linking xorg-server")
+endif()
+
 
 #
 #
