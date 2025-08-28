@@ -23,11 +23,8 @@ make clean-docker-log && make build-docker-log && make run-docker-log
     is likely to reject failures, while the log file can easily just move
     on to the next thing unless its a fatal borking problem.
 
-
-
-
-    Now if we tackle this stage at a time, we avoid the process of building
-    the entire program from start. Which is a problem given
+- Build Everything In Stages + CMake Out:
+make clean-docker && make build-base-deps-docker-log && make build-filesystem-base-deps-builder-docker-log && make build-filesystem-libs-build-builder-docker-log && make build-app-build-docker-log && make build-debug-docker-log && make build-runtime-docker-log && make run-docker && make dump-cmake-output
 
 
 - Stage 1 Build w/ no Log:
