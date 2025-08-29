@@ -922,6 +922,173 @@ else()
 endif()
 
 # -------------------------------
+# Shaderc Support
+# -------------------------------
+message(STATUS "Checking for Shaderc support...")
+
+# Search for pre-built Shaderc
+find_path(SHADERC_INSTALL_DIR
+    NAMES include/shaderc/shaderc.h lib/libshaderc.so lib/libshaderc.a
+    PATHS
+        /lilyspark/opt/lib/graphics
+        /usr
+        /usr/local
+    NO_DEFAULT_PATH
+)
+
+find_library(SHADERC_LIBRARY
+    NAMES shaderc
+    PATHS
+        /lilyspark/opt/lib/graphics/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+find_program(SHADERC_BINARY
+    NAMES shaderc
+    PATHS
+        /lilyspark/opt/lib/graphics/bin
+        /usr/bin
+        /usr/local/bin
+    NO_DEFAULT_PATH
+)
+
+# Check if we need to build from source
+set(SHADERC_BUILD_FROM_SOURCE FALSE)
+set(SHADERC_FOUND FALSE)
+
+if(SHADERC_LIBRARY AND SHADERC_BINARY AND SHADERC_INSTALL_DIR)
+    set(SHADERC_FOUND TRUE)
+    message(STATUS "✓ Shaderc found (pre-built)")
+    message(STATUS "  library: ${SHADERC_LIBRARY}")
+    message(STATUS "  binary: ${SHADERC_BINARY}")
+    message(STATUS "  install dir: ${SHADERC_INSTALL_DIR}")
+    
+else()
+    message(STATUS "ℹ Shaderc not found as pre-built - checking if we can build from source")
+    
+    # Check for build dependencies
+    find_program(GIT_EXECUTABLE git)
+    find_program(CMAKE_EXECUTABLE cmake)
+    find_program(MAKE_EXECUTABLE make)
+    find_program(CLANG_16_EXECUTABLE NAMES clang-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    find_program(CLANGXX_16_EXECUTABLE NAMES clang++-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    
+    # Check for SPIRV-Tools dependency (required for Shaderc)
+    find_library(SPIRV_TOOLS_LIB NAMES SPIRV-Tools PATHS /lilyspark/opt/lib/graphics/lib NO_DEFAULT_PATH)
+    find_path(SPIRV_HEADERS_DIR NAMES spirv.h PATHS /lilyspark/opt/lib/graphics/include NO_DEFAULT_PATH)
+    
+    if(GIT_EXECUTABLE AND CMAKE_EXECUTABLE AND MAKE_EXECUTABLE AND 
+       CLANG_16_EXECUTABLE AND CLANGXX_16_EXECUTABLE AND
+       SPIRV_TOOLS_LIB AND SPIRV_HEADERS_DIR)
+        set(SHADERC_BUILD_FROM_SOURCE TRUE)
+        set(SHADERC_FOUND SOURCE_AVAILABLE)
+        message(STATUS "✓ Shaderc build dependencies found - will build from source with LLVM16")
+        message(STATUS "  git: ${GIT_EXECUTABLE}")
+        message(STATUS "  cmake: ${CMAKE_EXECUTABLE}")
+        message(STATUS "  clang-16: ${CLANG_16_EXECUTABLE}")
+        message(STATUS "  SPIRV-Tools: ${SPIRV_TOOLS_LIB}")
+        
+    else()
+        set(SHADERC_FOUND FALSE)
+        message(STATUS "ℹ Shaderc not available and cannot build from source")
+        if(NOT GIT_EXECUTABLE)
+            message(STATUS "  Missing: git")
+        endif()
+        if(NOT CMAKE_EXECUTABLE)
+            message(STATUS "  Missing: cmake")
+        endif()
+        if(NOT CLANG_16_EXECUTABLE)
+            message(STATUS "  Missing: clang-16")
+        endif()
+        if(NOT SPIRV_TOOLS_LIB)
+            message(STATUS "  Missing: SPIRV-Tools (required dependency)")
+        endif()
+    endif()
+endif()
+
+# Set compile definitions based on Shaderc availability
+if(SHADERC_FOUND STREQUAL "TRUE")
+    add_compile_definitions(HAVE_SHADERC=1)
+    
+elseif(SHADERC_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_compile_definitions(HAVE_SHADERC_SOURCE=1)
+    add_compile_definitions(BUILD_SHADERC_FROM_SOURCE=1)
+    
+    # Use ExternalProject for Shaderc source building
+    include(ExternalProject)
+    
+    set(SHADERC_PREFIX ${CMAKE_BINARY_DIR}/shaderc-install)
+    
+    ExternalProject_Add(shaderc_build
+        PREFIX ${SHADERC_PREFIX}
+        GIT_REPOSITORY https://github.com/google/shaderc.git
+        GIT_SHALLOW 1
+        GIT_PROGRESS 1
+        UPDATE_COMMAND ""
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS ${SHADERC_PREFIX}/lib/libshaderc.so
+    )
+    
+    # Add custom steps for the actual build process
+    ExternalProject_Add_Step(shaderc_build build_shaderc
+        COMMAND ${CMAKE_COMMAND} -E make_directory build
+        COMMAND cd build &&
+            export PATH="/lilyspark/compiler/bin:$$PATH" &&
+            export CC=${CLANG_16_EXECUTABLE} &&
+            export CXX=${CLANGXX_16_EXECUTABLE} &&
+            export PKG_CONFIG_SYSROOT_DIR="/lilyspark" &&
+            export PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/lib/pkgconfig:/lilyspark/usr/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig" &&
+            export CFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/graphics/include -I/lilyspark/usr/include -I/lilyspark/compiler/include -march=armv8-a" &&
+            export CXXFLAGS="$$CFLAGS" &&
+            export LDFLAGS="--sysroot=/lilyspark -L/lilyspark/opt/lib/graphics/lib -L/lilyspark/usr/lib -L/lilyspark/compiler/lib" &&
+            ${CMAKE_EXECUTABLE} ..
+                -DCMAKE_BUILD_TYPE=Release
+                -DCMAKE_INSTALL_PREFIX=${SHADERC_PREFIX}
+                -DCMAKE_C_COMPILER=$${CC}
+                -DCMAKE_CXX_COMPILER=$${CXX}
+                -DCMAKE_PREFIX_PATH="/lilyspark/opt/lib/graphics:/lilyspark/usr:/lilyspark/compiler"
+                -DCMAKE_INCLUDE_PATH="/lilyspark/opt/lib/graphics/include:/lilyspark/usr/include:/lilyspark/compiler/include"
+                -DCMAKE_LIBRARY_PATH="/lilyspark/opt/lib/graphics/lib:/lilyspark/usr/lib:/lilyspark/compiler/lib"
+                -DCMAKE_INSTALL_RPATH="/lilyspark/opt/lib/graphics/lib:/lilyspark/usr/lib:/lilyspark/compiler/lib"
+                -DSPIRV-Tools_ROOT="/lilyspark/opt/lib/graphics"
+                -DSPIRV-Headers_ROOT="/lilyspark/opt/lib/graphics"
+                -DCMAKE_C_FLAGS="$${CFLAGS}"
+                -DCMAKE_CXX_FLAGS="$${CXXFLAGS}"
+                -DCMAKE_EXE_LINKER_FLAGS="$${LDFLAGS}"
+                -DCMAKE_SHARED_LINKER_FLAGS="$${LDFLAGS}"
+                -DSHADERC_SKIP_TESTS=ON
+                -DSHADERC_SKIP_EXAMPLES=ON
+        COMMAND cd build && ${MAKE_EXECUTABLE} -j${CMAKE_BUILD_PARALLEL_LEVEL}
+        COMMAND cd build && ${MAKE_EXECUTABLE} install
+        DEPENDEES download
+        WORKING_DIRECTORY <SOURCE_DIR>
+        COMMENT "Building and installing Shaderc with LLVM16"
+    )
+    
+    # Add step to create symlinks
+    ExternalProject_Add_Step(shaderc_build create_symlinks
+        COMMAND cd ${SHADERC_PREFIX}/lib &&
+            for lib in $(ls libshaderc*.so.* 2>/dev/null); do
+                soname=$(echo "$$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/');
+                basename=$(echo "$$lib" | sed 's/\(.*\.so\).*/\1/');
+                ln -sf "$$lib" "$$soname";
+                ln -sf "$$soname" "$$basename";
+            done
+        DEPENDEES build_shaderc
+        COMMENT "Creating Shaderc symlinks"
+    )
+    
+else()
+    add_compile_definitions(HAVE_SHADERC=0)
+    message(STATUS "ℹ Building without Shaderc support")
+endif()
+
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -1235,6 +1402,49 @@ endif()
 target_compile_definitions(simplehttpserver PRIVATE
     HELLO_WORLD_BUILD=1
 )
+
+# Link against Shaderc if available
+if(SHADERC_FOUND STREQUAL "TRUE")
+    target_link_libraries(simplehttpserver PRIVATE ${SHADERC_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE
+        ${SHADERC_INSTALL_DIR}/include
+        /usr/include
+        /usr/local/include
+    )
+    
+elseif(SHADERC_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_dependencies(simplehttpserver shaderc_build)
+    
+    # Add the include and library directories from the built Shaderc
+    target_include_directories(simplehttpserver PRIVATE
+        ${SHADERC_PREFIX}/include
+    )
+    
+    target_link_directories(simplehttpserver PRIVATE
+        ${SHADERC_PREFIX}/lib
+    )
+    
+    target_link_libraries(simplehttpserver PRIVATE shaderc)
+endif()
+
+# Add verification step
+if(SHADERC_FOUND STREQUAL "TRUE" OR SHADERC_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== SHADERC VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "Library: $<IF:$<BOOL:${SHADERC_FOUND}>,Available,Missing>"
+        COMMENT "Shaderc availability verification"
+    )
+endif()
+
+# Update configuration summary with Shaderc status
+message(STATUS "Shaderc Support: ${SHADERC_FOUND}")
+if(SHADERC_FOUND STREQUAL "TRUE")
+    message(STATUS "  library: ${SHADERC_LIBRARY}")
+    message(STATUS "  binary: ${SHADERC_BINARY}")
+elseif(SHADERC_FOUND STREQUAL "SOURCE_AVAILABLE")
+    message(STATUS "  Build: From source during compilation with LLVM16")
+    message(STATUS "  Depends on: SPIRV-Tools")
+endif()
 
 # Installation
 install(TARGETS simplehttpserver
