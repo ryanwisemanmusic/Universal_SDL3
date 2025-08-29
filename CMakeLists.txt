@@ -663,6 +663,67 @@ else()
 endif()
 
 # -------------------------------
+# SDL3 Image Dependencies Support
+# -------------------------------
+message(STATUS "Checking for SDL3 Image dependencies support...")
+
+# Search for image libraries in all possible locations
+set(SEARCH_PATHS
+    /lilyspark/opt/lib/sdl3/lib
+    /usr/lib
+    /usr/local/lib
+)
+
+find_library(TIFF_LIBRARY NAMES tiff PATHS ${SEARCH_PATHS})
+find_library(WEBP_LIBRARY NAMES webp PATHS ${SEARCH_PATHS})
+find_library(AVIF_LIBRARY NAMES avif PATHS ${SEARCH_PATHS})
+
+# Check what we found
+set(HAVE_TIFF FALSE)
+set(HAVE_WEBP FALSE)
+set(HAVE_AVIF FALSE)
+
+if(TIFF_LIBRARY)
+    set(HAVE_TIFF TRUE)
+    message(STATUS "✓ libtiff found: ${TIFF_LIBRARY}")
+else()
+    message(STATUS "ℹ libtiff not found")
+endif()
+
+if(WEBP_LIBRARY)
+    set(HAVE_WEBP TRUE)
+    message(STATUS "✓ libwebp found: ${WEBP_LIBRARY}")
+else()
+    message(STATUS "ℹ libwebp not found")
+endif()
+
+if(AVIF_LIBRARY)
+    set(HAVE_AVIF TRUE)
+    message(STATUS "✓ libavif found: ${AVIF_LIBRARY}")
+else()
+    message(STATUS "ℹ libavif not found")
+endif()
+
+# Set compile definitions based on what we found
+if(HAVE_TIFF)
+    add_compile_definitions(HAVE_TIFF=1)
+else()
+    add_compile_definitions(HAVE_TIFF=0)
+endif()
+
+if(HAVE_WEBP)
+    add_compile_definitions(HAVE_WEBP=1)
+else()
+    add_compile_definitions(HAVE_WEBP=0)
+endif()
+
+if(HAVE_AVIF)
+    add_compile_definitions(HAVE_AVIF=1)
+else()
+    add_compile_definitions(HAVE_AVIF=0)
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -845,6 +906,61 @@ if(EPOXY_FOUND STREQUAL "TRUE")
     message(STATUS "  library: ${EPOXY_LIBRARY}")
 elseif(EPOXY_FOUND STREQUAL "SOURCE_AVAILABLE")
     message(STATUS "  Build: From source during compilation with LLVM16")
+endif()
+
+# Link against available image libraries
+if(HAVE_TIFF)
+    target_link_libraries(simplehttpserver PRIVATE ${TIFF_LIBRARY})
+    # Add include directories for tiff
+    if(EXISTS /lilyspark/opt/lib/sdl3/include)
+        target_include_directories(simplehttpserver PRIVATE /lilyspark/opt/lib/sdl3/include)
+    elseif(EXISTS /usr/include)
+        target_include_directories(simplehttpserver PRIVATE /usr/include)
+    endif()
+endif()
+
+if(HAVE_WEBP)
+    target_link_libraries(simplehttpserver PRIVATE ${WEBP_LIBRARY})
+    # Add include directories for webp
+    if(EXISTS /lilyspark/opt/lib/sdl3/include)
+        target_include_directories(simplehttpserver PRIVATE /lilyspark/opt/lib/sdl3/include)
+    elseif(EXISTS /usr/include)
+        target_include_directories(simplehttpserver PRIVATE /usr/include)
+    endif()
+endif()
+
+if(HAVE_AVIF)
+    target_link_libraries(simplehttpserver PRIVATE ${AVIF_LIBRARY})
+    # Add include directories for avif
+    if(EXISTS /lilyspark/opt/lib/sdl3/include)
+        target_include_directories(simplehttpserver PRIVATE /lilyspark/opt/lib/sdl3/include)
+    elseif(EXISTS /usr/include)
+        target_include_directories(simplehttpserver PRIVATE /usr/include)
+    endif()
+endif()
+
+# Add a simple verification message (no file operations)
+add_custom_command(TARGET simplehttpserver POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "=== IMAGE LIBRARY SUMMARY ==="
+    COMMAND ${CMAKE_COMMAND} -E echo "libtiff: ${HAVE_TIFF}"
+    COMMAND ${CMAKE_COMMAND} -E echo "libwebp: ${HAVE_WEBP}"
+    COMMAND ${CMAKE_COMMAND} -E echo "libavif: ${HAVE_AVIF}"
+    COMMENT "Image library availability summary"
+)
+
+# Update configuration summary
+message(STATUS "=== IMAGE LIBRARY SUMMARY ===")
+message(STATUS "libtiff: ${HAVE_TIFF}")
+if(HAVE_TIFF)
+    message(STATUS "  path: ${TIFF_LIBRARY}")
+endif()
+message(STATUS "libwebp: ${HAVE_WEBP}")
+if(HAVE_WEBP)
+    message(STATUS "  path: ${WEBP_LIBRARY}")
+endif()
+message(STATUS "libavif: ${HAVE_AVIF}")
+if(HAVE_AVIF)
+    message(STATUS "  path: ${AVIF_LIBRARY}")
 endif()
 
 # No external dependencies needed for Hello World
