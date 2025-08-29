@@ -773,6 +773,155 @@ else()
 endif()
 
 # -------------------------------
+# SPIRV-Tools Support
+# -------------------------------
+message(STATUS "Checking for SPIRV-Tools support...")
+
+# Search for pre-built SPIRV-Tools
+find_path(SPIRV_TOOLS_INSTALL_DIR
+    NAMES include/spirv-tools/libspirv.h lib/libSPIRV-Tools.so lib/libSPIRV-Tools.a
+    PATHS
+        /lilyspark/opt/lib/graphics
+        /usr
+        /usr/local
+    NO_DEFAULT_PATH
+)
+
+find_library(SPIRV_TOOLS_LIBRARY
+    NAMES SPIRV-Tools
+    PATHS
+        /lilyspark/opt/lib/graphics/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+find_program(SPIRV_TOOLS_BINARY
+    NAMES spirv-val spirv-opt
+    PATHS
+        /lilyspark/opt/lib/graphics/bin
+        /usr/bin
+        /usr/local/bin
+    NO_DEFAULT_PATH
+)
+
+# Check if we need to build from source
+set(SPIRV_TOOLS_BUILD_FROM_SOURCE FALSE)
+set(SPIRV_TOOLS_FOUND FALSE)
+
+if(SPIRV_TOOLS_LIBRARY AND SPIRV_TOOLS_BINARY AND SPIRV_TOOLS_INSTALL_DIR)
+    set(SPIRV_TOOLS_FOUND TRUE)
+    message(STATUS "✓ SPIRV-Tools found (pre-built)")
+    message(STATUS "  library: ${SPIRV_TOOLS_LIBRARY}")
+    message(STATUS "  binary: ${SPIRV_TOOLS_BINARY}")
+    message(STATUS "  install dir: ${SPIRV_TOOLS_INSTALL_DIR}")
+    
+else()
+    message(STATUS "ℹ SPIRV-Tools not found as pre-built - checking if we can build from source")
+    
+    # Check for build dependencies
+    find_program(GIT_EXECUTABLE git)
+    find_program(CMAKE_EXECUTABLE cmake)
+    find_program(MAKE_EXECUTABLE make)
+    find_program(CLANG_16_EXECUTABLE NAMES clang-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    find_program(CLANGXX_16_EXECUTABLE NAMES clang++-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    find_program(LLVM_CONFIG_EXECUTABLE NAMES llvm-config PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    
+    if(GIT_EXECUTABLE AND CMAKE_EXECUTABLE AND MAKE_EXECUTABLE AND CLANG_16_EXECUTABLE AND CLANGXX_16_EXECUTABLE)
+        set(SPIRV_TOOLS_BUILD_FROM_SOURCE TRUE)
+        set(SPIRV_TOOLS_FOUND SOURCE_AVAILABLE)
+        message(STATUS "✓ SPIRV-Tools build dependencies found - will build from source with LLVM16")
+        message(STATUS "  git: ${GIT_EXECUTABLE}")
+        message(STATUS "  cmake: ${CMAKE_EXECUTABLE}")
+        message(STATUS "  clang-16: ${CLANG_16_EXECUTABLE}")
+        message(STATUS "  clang++-16: ${CLANGXX_16_EXECUTABLE}")
+        
+    else()
+        set(SPIRV_TOOLS_FOUND FALSE)
+        message(STATUS "ℹ SPIRV-Tools not available and cannot build from source")
+        if(NOT GIT_EXECUTABLE)
+            message(STATUS "  Missing: git")
+        endif()
+        if(NOT CMAKE_EXECUTABLE)
+            message(STATUS "  Missing: cmake")
+        endif()
+        if(NOT CLANG_16_EXECUTABLE)
+            message(STATUS "  Missing: clang-16")
+        endif()
+    endif()
+endif()
+
+# Set compile definitions based on SPIRV-Tools availability
+if(SPIRV_TOOLS_FOUND STREQUAL "TRUE")
+    add_compile_definitions(HAVE_SPIRV_TOOLS=1)
+    
+elseif(SPIRV_TOOLS_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_compile_definitions(HAVE_SPIRV_TOOLS_SOURCE=1)
+    add_compile_definitions(BUILD_SPIRV_TOOLS_FROM_SOURCE=1)
+    
+    # Use ExternalProject for SPIRV-Tools source building
+    include(ExternalProject)
+    
+    set(SPIRV_TOOLS_PREFIX ${CMAKE_BINARY_DIR}/spirv-tools-install)
+    
+    ExternalProject_Add(spirv_tools_build
+        PREFIX ${SPIRV_TOOLS_PREFIX}
+        GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Tools.git
+        GIT_SHALLOW 1
+        GIT_PROGRESS 1
+        UPDATE_COMMAND ""
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS ${SPIRV_TOOLS_PREFIX}/lib/libSPIRV-Tools.so
+    )
+    
+    # Add custom steps for the actual build process
+    ExternalProject_Add_Step(spirv_tools_build clone_headers
+        COMMAND ${GIT_EXECUTABLE} clone --depth=1 https://github.com/KhronosGroup/SPIRV-Headers.git external/spirv-headers
+        COMMENT "Cloning SPIRV-Headers dependency"
+        WORKING_DIRECTORY <SOURCE_DIR>
+        DEPENDEES download
+    )
+    
+    ExternalProject_Add_Step(spirv_tools_build build_spirv_tools
+        COMMAND ${CMAKE_COMMAND} -E make_directory build
+        COMMAND cd build &&
+            ${CMAKE_EXECUTABLE} ..
+                -DCMAKE_BUILD_TYPE=Release
+                -DCMAKE_INSTALL_PREFIX=${SPIRV_TOOLS_PREFIX}
+                -DCMAKE_C_COMPILER=${CLANG_16_EXECUTABLE}
+                -DCMAKE_CXX_COMPILER=${CLANGXX_16_EXECUTABLE}
+                -DLLVM_CONFIG_EXECUTABLE=${LLVM_CONFIG_EXECUTABLE}
+                -DCMAKE_C_FLAGS="-I/lilyspark/compiler/include -march=armv8-a"
+                -DCMAKE_CXX_FLAGS="-I/lilyspark/compiler/include -march=armv8-a"
+                -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -Wl,-rpath,/lilyspark/compiler/lib"
+        COMMAND cd build && ${MAKE_EXECUTABLE} -j${CMAKE_BUILD_PARALLEL_LEVEL}
+        COMMAND cd build && ${MAKE_EXECUTABLE} install
+        DEPENDEES clone_headers
+        WORKING_DIRECTORY <SOURCE_DIR>
+        COMMENT "Building and installing SPIRV-Tools with LLVM16"
+    )
+    
+    # Add step to create symlinks
+    ExternalProject_Add_Step(spirv_tools_build create_symlinks
+        COMMAND cd ${SPIRV_TOOLS_PREFIX}/lib &&
+            for lib in $(ls libSPIRV-Tools*.so.* 2>/dev/null); do
+                soname=$(echo "$$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/');
+                basename=$(echo "$$lib" | sed 's/\(.*\.so\).*/\1/');
+                ln -sf "$$lib" "$$soname";
+                ln -sf "$$soname" "$$basename";
+            done
+        DEPENDEES build_spirv_tools
+        COMMENT "Creating SPIRV-Tools symlinks"
+    )
+    
+else()
+    add_compile_definitions(HAVE_SPIRV_TOOLS=0)
+    message(STATUS "ℹ Building without SPIRV-Tools support")
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -1039,6 +1188,48 @@ if(HAVE_MarkupSafe AND MarkupSafe_FIND_RESULT)
 endif()
 
 message(STATUS "All dependencies available: ${HAVE_PYTHON_DEPS}")
+
+# Link against SPIRV-Tools if available
+if(SPIRV_TOOLS_FOUND STREQUAL "TRUE")
+    target_link_libraries(simplehttpserver PRIVATE ${SPIRV_TOOLS_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE
+        ${SPIRV_TOOLS_INSTALL_DIR}/include
+        /usr/include
+        /usr/local/include
+    )
+    
+elseif(SPIRV_TOOLS_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_dependencies(simplehttpserver spirv_tools_build)
+    
+    # Add the include and library directories from the built SPIRV-Tools
+    target_include_directories(simplehttpserver PRIVATE
+        ${SPIRV_TOOLS_PREFIX}/include
+    )
+    
+    target_link_directories(simplehttpserver PRIVATE
+        ${SPIRV_TOOLS_PREFIX}/lib
+    )
+    
+    target_link_libraries(simplehttpserver PRIVATE SPIRV-Tools)
+endif()
+
+# Add verification step
+if(SPIRV_TOOLS_FOUND STREQUAL "TRUE" OR SPIRV_TOOLS_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== SPIRV-TOOLS VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "Library: $<IF:$<BOOL:${SPIRV_TOOLS_FOUND}>,Available,Missing>"
+        COMMENT "SPIRV-Tools availability verification"
+    )
+endif()
+
+# Update configuration summary with SPIRV-Tools status
+message(STATUS "SPIRV-Tools Support: ${SPIRV_TOOLS_FOUND}")
+if(SPIRV_TOOLS_FOUND STREQUAL "TRUE")
+    message(STATUS "  library: ${SPIRV_TOOLS_LIBRARY}")
+    message(STATUS "  binary: ${SPIRV_TOOLS_BINARY}")
+elseif(SPIRV_TOOLS_FOUND STREQUAL "SOURCE_AVAILABLE")
+    message(STATUS "  Build: From source during compilation with LLVM16")
+endif()
 
 # No external dependencies needed for Hello World
 target_compile_definitions(simplehttpserver PRIVATE
