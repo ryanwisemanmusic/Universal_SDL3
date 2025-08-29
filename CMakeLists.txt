@@ -724,6 +724,55 @@ else()
 endif()
 
 # -------------------------------
+# Python Dependencies Support
+# -------------------------------
+message(STATUS "Checking for Python dependencies...")
+
+# Check for each Python package
+set(PYTHON_PACKAGES mesonbuild mako MarkupSafe)
+set(HAVE_PYTHON_DEPS FALSE)
+
+foreach(pkg IN LISTS PYTHON_PACKAGES)
+    # Check if package exists in custom filesystem
+    if(EXISTS /lilyspark/opt/lib/python/site-packages/${pkg})
+        set(HAVE_${pkg} TRUE)
+        message(STATUS "✓ ${pkg} found in custom filesystem")
+        
+    else()
+        # Check if package exists in system Python
+        execute_process(
+            COMMAND find /usr/lib/python3.*/site-packages /usr/lib/python*/site-packages -type d -name "${pkg}"
+            OUTPUT_VARIABLE ${pkg}_FIND_RESULT
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        
+        if(${pkg}_FIND_RESULT)
+            set(HAVE_${pkg} TRUE)
+            message(STATUS "✓ ${pkg} found in system: ${${pkg}_FIND_RESULT}")
+        else()
+            set(HAVE_${pkg} FALSE)
+            message(STATUS "ℹ ${pkg} not found")
+        endif()
+    endif()
+    
+    # Set compile definitions for each package
+    if(HAVE_${pkg})
+        add_compile_definitions(HAVE_${pkg}=1)
+    else()
+        add_compile_definitions(HAVE_${pkg}=0)
+    endif()
+endforeach()
+
+# Check if we have all required packages
+if(HAVE_mesonbuild AND HAVE_mako AND HAVE_MarkupSafe)
+    set(HAVE_PYTHON_DEPS TRUE)
+    message(STATUS "✓ All Python dependencies available")
+else()
+    set(HAVE_PYTHON_DEPS FALSE)
+    message(STATUS "ℹ Some Python dependencies missing")
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -962,6 +1011,34 @@ message(STATUS "libavif: ${HAVE_AVIF}")
 if(HAVE_AVIF)
     message(STATUS "  path: ${AVIF_LIBRARY}")
 endif()
+
+# Add verification step for Python packages
+add_custom_command(TARGET simplehttpserver POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "=== PYTHON PACKAGE VERIFICATION ==="
+    COMMAND ${CMAKE_COMMAND} -E echo "mesonbuild: $<IF:$<BOOL:${HAVE_mesonbuild}>,Available,Missing>"
+    COMMAND ${CMAKE_COMMAND} -E echo "mako: $<IF:$<BOOL:${HAVE_mako}>,Available,Missing>"
+    COMMAND ${CMAKE_COMMAND} -E echo "MarkupSafe: $<IF:$<BOOL:${HAVE_MarkupSafe}>,Available,Missing>"
+    COMMENT "Python package availability summary"
+)
+
+# Update configuration summary
+message(STATUS "=== PYTHON DEPENDENCY SUMMARY ===")
+message(STATUS "mesonbuild: ${HAVE_mesonbuild}")
+if(HAVE_mesonbuild AND mesonbuild_FIND_RESULT)
+    message(STATUS "  location: ${mesonbuild_FIND_RESULT}")
+endif()
+
+message(STATUS "mako: ${HAVE_mako}")
+if(HAVE_mako AND mako_FIND_RESULT)
+    message(STATUS "  location: ${mako_FIND_RESULT}")
+endif()
+
+message(STATUS "MarkupSafe: ${HAVE_MarkupSafe}")
+if(HAVE_MarkupSafe AND MarkupSafe_FIND_RESULT)
+    message(STATUS "  location: ${MarkupSafe_FIND_RESULT}")
+endif()
+
+message(STATUS "All dependencies available: ${HAVE_PYTHON_DEPS}")
 
 # No external dependencies needed for Hello World
 target_compile_definitions(simplehttpserver PRIVATE
