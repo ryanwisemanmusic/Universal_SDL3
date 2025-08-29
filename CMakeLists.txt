@@ -1226,6 +1226,139 @@ else()
 endif()
 
 # -------------------------------
+# GStreamer and Xorg Support
+# -------------------------------
+message(STATUS "Checking for GStreamer and Xorg support...")
+
+# Search for pre-built GStreamer
+find_path(GSTREAMER_INSTALL_DIR
+    NAMES include/gstreamer-1.0/gst/gst.h lib/libgstreamer-1.0.so
+    PATHS
+        /lilyspark/opt/lib/media
+        /usr
+        /usr/local
+    NO_DEFAULT_PATH
+)
+
+find_library(GSTREAMER_LIBRARY
+    NAMES gstreamer-1.0
+    PATHS
+        /lilyspark/opt/lib/media/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+# Search for pre-built Xorg
+find_path(XORG_INSTALL_DIR
+    NAMES x11/Xlib.h lib/libX11.so
+    PATHS
+        /lilyspark/usr/x11
+        /usr
+        /usr/local
+    NO_DEFAULT_PATH
+)
+
+find_library(X11_LIBRARY
+    NAMES X11
+    PATHS
+        /lilyspark/usr/x11
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+# Check if we need to build from source
+set(GSTREAMER_BUILD_FROM_SOURCE FALSE)
+set(GSTREAMER_FOUND FALSE)
+set(XORG_BUILD_FROM_SOURCE FALSE)
+set(XORG_FOUND FALSE)
+
+# Check for GStreamer
+if(GSTREAMER_LIBRARY AND GSTREAMER_INSTALL_DIR)
+    set(GSTREAMER_FOUND TRUE)
+    message(STATUS "✓ GStreamer found (pre-built)")
+    message(STATUS "  library: ${GSTREAMER_LIBRARY}")
+    
+else()
+    message(STATUS "ℹ GStreamer not found as pre-built - checking build dependencies")
+    
+    # Check for build dependencies
+    find_program(WGET_EXECUTABLE wget)
+    find_program(TAR_EXECUTABLE tar)
+    find_program(CONFIGURE_EXECUTABLE configure)
+    find_program(MAKE_EXECUTABLE make)
+    find_program(CLANG_16_EXECUTABLE NAMES clang-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    find_program(CLANGXX_16_EXECUTABLE NAMES clang++-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    find_program(LLVM_CONFIG_EXECUTABLE NAMES llvm-config PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    find_program(PKG_CONFIG_EXECUTABLE pkg-config)
+    
+    if(WGET_EXECUTABLE AND TAR_EXECUTABLE AND CONFIGURE_EXECUTABLE AND 
+       MAKE_EXECUTABLE AND CLANG_16_EXECUTABLE AND CLANGXX_16_EXECUTABLE AND PKG_CONFIG_EXECUTABLE)
+        set(GSTREAMER_BUILD_FROM_SOURCE TRUE)
+        set(GSTREAMER_FOUND SOURCE_AVAILABLE)
+        message(STATUS "✓ GStreamer build dependencies found - will build from source")
+        message(STATUS "  clang-16: ${CLANG_16_EXECUTABLE}")
+        
+    else()
+        set(GSTREAMER_FOUND FALSE)
+        message(STATUS "ℹ GStreamer not available and cannot build from source")
+        if(NOT CLANG_16_EXECUTABLE)
+            message(STATUS "  Missing: clang-16")
+        endif()
+    endif()
+endif()
+
+# Check for Xorg
+if(X11_LIBRARY AND XORG_INSTALL_DIR)
+    set(XORG_FOUND TRUE)
+    message(STATUS "✓ Xorg found (pre-built)")
+    message(STATUS "  library: ${X11_LIBRARY}")
+    
+else()
+    message(STATUS "ℹ Xorg not found as pre-built - checking build dependencies")
+    
+    # Check for build dependencies
+    find_program(GIT_EXECUTABLE git)
+    find_program(AUTORECONF_EXECUTABLE autoreconf)
+    find_program(CLANG_16_EXECUTABLE NAMES clang-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    
+    if(GIT_EXECUTABLE AND AUTORECONF_EXECUTABLE AND CLANG_16_EXECUTABLE)
+        set(XORG_BUILD_FROM_SOURCE TRUE)
+        set(XORG_FOUND SOURCE_AVAILABLE)
+        message(STATUS "✓ Xorg build dependencies found - will build from source")
+        message(STATUS "  git: ${GIT_EXECUTABLE}")
+        message(STATUS "  clang-16: ${CLANG_16_EXECUTABLE}")
+        
+    else()
+        set(XORG_FOUND FALSE)
+        message(STATUS "ℹ Xorg not available and cannot build from source")
+        if(NOT CLANG_16_EXECUTABLE)
+            message(STATUS "  Missing: clang-16")
+        endif()
+    endif()
+endif()
+
+# Set compile definitions
+if(GSTREAMER_FOUND STREQUAL "TRUE")
+    add_compile_definitions(HAVE_GSTREAMER=1)
+elseif(GSTREAMER_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_compile_definitions(HAVE_GSTREAMER_SOURCE=1)
+    add_compile_definitions(BUILD_GSTREAMER_FROM_SOURCE=1)
+else()
+    add_compile_definitions(HAVE_GSTREAMER=0)
+endif()
+
+if(XORG_FOUND STREQUAL "TRUE")
+    add_compile_definitions(HAVE_XORG=1)
+elseif(XORG_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_compile_definitions(HAVE_XORG_SOURCE=1)
+    add_compile_definitions(BUILD_XORG_FROM_SOURCE=1)
+else()
+    add_compile_definitions(HAVE_XORG=0)
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -1618,6 +1751,51 @@ if(GBM_FOUND STREQUAL "TRUE")
 elseif(GBM_FOUND STREQUAL "SOURCE_AVAILABLE")
     message(STATUS "  Build: From source during compilation with autotools")
     message(STATUS "  Depends on: libdrm")
+endif()
+
+# Link against GStreamer if available
+if(GSTREAMER_FOUND STREQUAL "TRUE")
+    target_link_libraries(simplehttpserver PRIVATE ${GSTREAMER_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE
+        ${GSTREAMER_INSTALL_DIR}/include
+        /usr/include
+        /usr/local/include
+    )
+endif()
+
+# Link against Xorg if available
+if(XORG_FOUND STREQUAL "TRUE")
+    target_link_libraries(simplehttpserver PRIVATE ${X11_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE
+        ${XORG_INSTALL_DIR}/include
+        /usr/include
+        /usr/local/include
+    )
+endif()
+
+# Note: For source builds, we would typically add custom targets here,
+# but given the complexity of building GStreamer and Xorg from source,
+# it's better to rely on pre-built versions or handle the source builds
+# separately in your build environment.
+
+# Add verification steps
+add_custom_command(TARGET simplehttpserver POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "=== MEDIA LIBRARY SUMMARY ==="
+    COMMAND ${CMAKE_COMMAND} -E echo "GStreamer: $<IF:$<BOOL:${GSTREAMER_FOUND}>,Available,Missing>"
+    COMMAND ${CMAKE_COMMAND} -E echo "Xorg: $<IF:$<BOOL:${XORG_FOUND}>,Available,Missing>"
+    COMMENT "Media library availability summary"
+)
+
+# Update configuration summary
+message(STATUS "=== MEDIA LIBRARY SUMMARY ===")
+message(STATUS "GStreamer Support: ${GSTREAMER_FOUND}")
+if(GSTREAMER_FOUND STREQUAL "TRUE")
+    message(STATUS "  library: ${GSTREAMER_LIBRARY}")
+endif()
+
+message(STATUS "Xorg Support: ${XORG_FOUND}")
+if(XORG_FOUND STREQUAL "TRUE")
+    message(STATUS "  library: ${X11_LIBRARY}")
 endif()
 
 # No external dependencies needed for Hello World
