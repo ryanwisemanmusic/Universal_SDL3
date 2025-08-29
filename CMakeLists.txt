@@ -1359,6 +1359,203 @@ else()
 endif()
 
 # -------------------------------
+# MESA Support
+# -------------------------------
+message(STATUS "Checking for MESA support...")
+
+# Search for pre-built MESA components
+find_path(MESA_INSTALL_DIR
+    NAMES lib/libGL.so lib/libEGL.so lib/libgbm.so lib/libvulkan_swrast.so
+    PATHS
+        /lilyspark/opt/lib/driver
+        /lilyspark/usr
+        /usr
+        /usr/local
+    NO_DEFAULT_PATH
+)
+
+find_library(GL_LIBRARY
+    NAMES GL
+    PATHS
+        /lilyspark/opt/lib/driver
+        /lilyspark/usr/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+find_library(EGL_LIBRARY
+    NAMES EGL
+    PATHS
+        /lilyspark/opt/lib/driver
+        /lilyspark/usr/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+find_library(GBM_LIBRARY
+    NAMES gbm
+    PATHS
+        /lilyspark/opt/lib/driver
+        /lilyspark/usr/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+find_library(VULKAN_SWRAST_LIBRARY
+    NAMES vulkan_swrast
+    PATHS
+        /lilyspark/opt/lib/driver
+        /lilyspark/usr/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+# Check if we need to build from source
+set(MESA_BUILD_FROM_SOURCE FALSE)
+set(MESA_FOUND FALSE)
+
+if(GL_LIBRARY AND EGL_LIBRARY AND GBM_LIBRARY AND VULKAN_SWRAST_LIBRARY)
+    set(MESA_FOUND TRUE)
+    message(STATUS "✓ MESA found (pre-built)")
+    message(STATUS "  OpenGL: ${GL_LIBRARY}")
+    message(STATUS "  EGL: ${EGL_LIBRARY}")
+    message(STATUS "  GBM: ${GBM_LIBRARY}")
+    message(STATUS "  Vulkan: ${VULKAN_SWRAST_LIBRARY}")
+    
+else()
+    message(STATUS "ℹ MESA not found as pre-built - checking if we can build from source")
+    
+    # Check for build dependencies
+    find_program(GIT_EXECUTABLE git)
+    find_program(MESON_EXECUTABLE meson)
+    find_program(NINJA_EXECUTABLE ninja)
+    find_program(CLANG_16_EXECUTABLE NAMES clang-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    find_program(CLANGXX_16_EXECUTABLE NAMES clang++-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    find_program(LLVM_CONFIG_EXECUTABLE NAMES llvm-config PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    
+    # Check for required dependencies
+    find_library(DRM_LIB NAMES drm PATHS /lilyspark/opt/lib/sys/lib NO_DEFAULT_PATH)
+    find_library(WAYLAND_LIB NAMES wayland-client PATHS /usr/lib /usr/local/lib)
+    
+    if(GIT_EXECUTABLE AND MESON_EXECUTABLE AND NINJA_EXECUTABLE AND 
+       CLANG_16_EXECUTABLE AND CLANGXX_16_EXECUTABLE AND LLVM_CONFIG_EXECUTABLE AND
+       DRM_LIB AND WAYLAND_LIB)
+        set(MESA_BUILD_FROM_SOURCE TRUE)
+        set(MESA_FOUND SOURCE_AVAILABLE)
+        message(STATUS "✓ MESA build dependencies found - will build from source with LLVM16")
+        message(STATUS "  meson: ${MESON_EXECUTABLE}")
+        message(STATUS "  ninja: ${NINJA_EXECUTABLE}")
+        message(STATUS "  clang-16: ${CLANG_16_EXECUTABLE}")
+        message(STATUS "  libdrm: ${DRM_LIB}")
+        message(STATUS "  wayland: ${WAYLAND_LIB}")
+        
+    else()
+        set(MESA_FOUND FALSE)
+        message(STATUS "ℹ MESA not available and cannot build from source")
+        if(NOT MESON_EXECUTABLE)
+            message(STATUS "  Missing: meson")
+        endif()
+        if(NOT NINJA_EXECUTABLE)
+            message(STATUS "  Missing: ninja")
+        endif()
+        if(NOT CLANG_16_EXECUTABLE)
+            message(STATUS "  Missing: clang-16")
+        endif()
+        if(NOT DRM_LIB)
+            message(STATUS "  Missing: libdrm (required)")
+        endif()
+    endif()
+endif()
+
+# Set compile definitions based on MESA availability
+if(MESA_FOUND STREQUAL "TRUE")
+    add_compile_definitions(HAVE_MESA=1)
+    add_compile_definitions(HAVE_OPENGL=1)
+    add_compile_definitions(HAVE_EGL=1)
+    add_compile_definitions(HAVE_GBM=1)
+    add_compile_definitions(HAVE_VULKAN=1)
+    
+elseif(MESA_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_compile_definitions(HAVE_MESA_SOURCE=1)
+    add_compile_definitions(BUILD_MESA_FROM_SOURCE=1)
+    
+    # Use ExternalProject for MESA source building
+    include(ExternalProject)
+    
+    set(MESA_PREFIX ${CMAKE_BINARY_DIR}/mesa-install)
+    
+    ExternalProject_Add(mesa_build
+        PREFIX ${MESA_PREFIX}
+        GIT_REPOSITORY https://gitlab.freedesktop.org/mesa/mesa.git
+        GIT_TAG mesa-24.0.3
+        GIT_SHALLOW 1
+        GIT_PROGRESS 1
+        UPDATE_COMMAND ""
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS 
+            ${MESA_PREFIX}/lib/libGL.so
+            ${MESA_PREFIX}/lib/libEGL.so
+            ${MESA_PREFIX}/lib/libgbm.so
+            ${MESA_PREFIX}/lib/libvulkan_swrast.so
+    )
+    
+    # Add custom steps for the actual build process
+    ExternalProject_Add_Step(mesa_build build_mesa
+        COMMAND export PATH="/lilyspark/compiler/bin:$$PATH" &&
+            export CC=${CLANG_16_EXECUTABLE} &&
+            export CXX=${CLANGXX_16_EXECUTABLE} &&
+            export LLVM_CONFIG=${LLVM_CONFIG_EXECUTABLE} &&
+            export PKG_CONFIG_SYSROOT_DIR="/lilyspark" &&
+            export PKG_CONFIG_PATH="/lilyspark/usr/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig" &&
+            export CFLAGS="--sysroot=/lilyspark -I/lilyspark/usr/include -I/lilyspark/compiler/include -march=armv8-a" &&
+            export CXXFLAGS="$$CFLAGS" &&
+            export LDFLAGS="--sysroot=/lilyspark -L/lilyspark/usr/lib -L/lilyspark/compiler/lib" &&
+            ${MESON_EXECUTABLE} setup builddir
+                --prefix=${MESA_PREFIX}
+                -Dglx=disabled
+                -Ddri3=disabled
+                -Degl=enabled
+                -Dgbm=enabled
+                -Dplatforms=wayland
+                -Dglvnd=false
+                -Dosmesa=true
+                -Dgallium-drivers=swrast,kmsro,zink
+                -Dvulkan-drivers=swrast
+                -Dbuildtype=debugoptimized
+                --fatal-meson-warnings
+                --wrap-mode=nodownload
+                -Dllvm=enabled
+        COMMAND ${NINJA_EXECUTABLE} -C builddir -v
+        COMMAND ${NINJA_EXECUTABLE} -C builddir install
+        DEPENDEES download
+        WORKING_DIRECTORY <SOURCE_DIR>
+        COMMENT "Building and installing MESA with LLVM16"
+    )
+    
+    # Add step to create Vulkan ICD configuration
+    ExternalProject_Add_Step(mesa_build create_vulkan_icd
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${MESA_PREFIX}/share/vulkan/icd.d
+        COMMAND echo '{"file_format_version":"1.0.0","ICD":{"library_path":"libvulkan_swrast.so","api_version":"1.3.0"}}' > ${MESA_PREFIX}/share/vulkan/icd.d/swrast_icd.arm64.json
+        DEPENDEES build_mesa
+        COMMENT "Creating Vulkan ICD configuration"
+    )
+    
+else()
+    add_compile_definitions(HAVE_MESA=0)
+    add_compile_definitions(HAVE_OPENGL=0)
+    add_compile_definitions(HAVE_EGL=0)
+    add_compile_definitions(HAVE_GBM=0)
+    add_compile_definitions(HAVE_VULKAN=0)
+    message(STATUS "ℹ Building without MESA graphics support")
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -1796,6 +1993,67 @@ endif()
 message(STATUS "Xorg Support: ${XORG_FOUND}")
 if(XORG_FOUND STREQUAL "TRUE")
     message(STATUS "  library: ${X11_LIBRARY}")
+endif()
+
+# Link against MESA components if available
+if(MESA_FOUND STREQUAL "TRUE")
+    target_link_libraries(simplehttpserver PRIVATE
+        ${GL_LIBRARY}
+        ${EGL_LIBRARY}
+        ${GBM_LIBRARY}
+        ${VULKAN_SWRAST_LIBRARY}
+    )
+    target_include_directories(simplehttpserver PRIVATE
+        ${MESA_INSTALL_DIR}/include
+        /usr/include
+        /usr/local/include
+    )
+    
+elseif(MESA_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_dependencies(simplehttpserver mesa_build)
+    
+    # Add the include and library directories from the built MESA
+    target_include_directories(simplehttpserver PRIVATE
+        ${MESA_PREFIX}/include
+    )
+    
+    target_link_directories(simplehttpserver PRIVATE
+        ${MESA_PREFIX}/lib
+    )
+    
+    target_link_libraries(simplehttpserver PRIVATE
+        GL
+        EGL
+        gbm
+        vulkan_swrast
+    )
+endif()
+
+# Add verification step
+if(MESA_FOUND STREQUAL "TRUE" OR MESA_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== MESA VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "OpenGL: $<IF:$<BOOL:${GL_LIBRARY}>,Available,Missing>"
+        COMMAND ${CMAKE_COMMAND} -E echo "EGL: $<IF:$<BOOL:${EGL_LIBRARY}>,Available,Missing>"
+        COMMAND ${CMAKE_COMMAND} -E echo "GBM: $<IF:$<BOOL:${GBM_LIBRARY}>,Available,Missing>"
+        COMMAND ${CMAKE_COMMAND} -E echo "Vulkan: $<IF:$<BOOL:${VULKAN_SWRAST_LIBRARY}>,Available,Missing>"
+        COMMENT "MESA components availability verification"
+    )
+endif()
+
+# Update configuration summary with MESA status
+message(STATUS "=== MESA GRAPHICS SUMMARY ===")
+message(STATUS "MESA Support: ${MESA_FOUND}")
+if(MESA_FOUND STREQUAL "TRUE")
+    message(STATUS "  OpenGL: ${GL_LIBRARY}")
+    message(STATUS "  EGL: ${EGL_LIBRARY}")
+    message(STATUS "  GBM: ${GBM_LIBRARY}")
+    message(STATUS "  Vulkan: ${VULKAN_SWRAST_LIBRARY}")
+elseif(MESA_FOUND STREQUAL "SOURCE_AVAILABLE")
+    message(STATUS "  Build: From source during compilation with LLVM16")
+    message(STATUS "  Drivers: swrast, kmsro, zink")
+    message(STATUS "  Platforms: wayland")
+    message(STATUS "  Features: EGL, GBM, Vulkan SWRAST")
 endif()
 
 # No external dependencies needed for Hello World
