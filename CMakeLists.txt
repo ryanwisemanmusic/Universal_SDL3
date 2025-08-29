@@ -1682,6 +1682,72 @@ else()
 endif()
 
 # -------------------------------
+# EGL (MESA) Support
+# -------------------------------
+message(STATUS "Checking for EGL (MESA) support...")
+
+# Search for EGL in all possible locations
+set(EGL_SEARCH_PATHS
+    /lilyspark/opt/lib/driver
+    /lilyspark/opt/lib/driver/usr/lib
+    /lilyspark/opt/lib/driver/lib
+    /usr/lib
+    /usr/local/lib
+)
+
+find_library(EGL_LIBRARY
+    NAMES EGL
+    PATHS ${EGL_SEARCH_PATHS}
+    NO_DEFAULT_PATH
+)
+
+find_path(EGL_INCLUDE_DIR
+    NAMES EGL/egl.h
+    PATHS
+        /lilyspark/opt/lib/driver/include
+        /lilyspark/opt/lib/driver/usr/include
+        /usr/include
+        /usr/local/include
+    NO_DEFAULT_PATH
+)
+
+# Simple detection without complex source building
+set(EGL_FOUND FALSE)
+
+if(EGL_LIBRARY AND EGL_INCLUDE_DIR)
+    set(EGL_FOUND TRUE)
+    message(STATUS "✓ EGL found")
+    message(STATUS "  library: ${EGL_LIBRARY}")
+    message(STATUS "  include: ${EGL_INCLUDE_DIR}")
+    
+    # Set compile definitions
+    add_compile_definitions(HAVE_EGL=1)
+    
+else()
+    set(EGL_FOUND FALSE)
+    message(STATUS "ℹ EGL not found")
+    
+    # Set compile definitions for missing EGL
+    add_compile_definitions(HAVE_EGL=0)
+    
+    # Provide helpful information about what's missing
+    if(NOT EGL_LIBRARY)
+        message(STATUS "  Missing: libEGL.so library")
+        # Check common locations to help user
+        foreach(path IN LISTS EGL_SEARCH_PATHS)
+            if(EXISTS ${path})
+                message(STATUS "  Checked: ${path}")
+            endif()
+        endforeach()
+    endif()
+    
+    if(NOT EGL_INCLUDE_DIR)
+        message(STATUS "  Missing: EGL headers")
+    endif()
+endif()
+
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -2222,6 +2288,35 @@ if(GBM_MESA_FOUND STREQUAL "TRUE")
 elseif(GBM_MESA_FOUND STREQUAL "SOURCE_AVAILABLE")
     message(STATUS "  Build: From MESA source during compilation")
     message(STATUS "  Features: GBM only (other components disabled)")
+endif()
+
+# Link against EGL if available
+if(EGL_FOUND)
+    target_link_libraries(simplehttpserver PRIVATE ${EGL_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE ${EGL_INCLUDE_DIR})
+    
+    # Add verification step
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== EGL VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "EGL: Available (${EGL_LIBRARY})"
+        COMMENT "EGL availability verification"
+    )
+else()
+    # Add message for missing EGL
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== EGL VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "EGL: Not available - building without EGL support"
+        COMMENT "EGL not available"
+    )
+endif()
+
+# Update configuration summary
+message(STATUS "EGL Support: ${EGL_FOUND}")
+if(EGL_FOUND)
+    message(STATUS "  library: ${EGL_LIBRARY}")
+    message(STATUS "  headers: ${EGL_INCLUDE_DIR}")
+else()
+    message(STATUS "  status: Building without EGL support")
 endif()
 
 # No external dependencies needed for Hello World
