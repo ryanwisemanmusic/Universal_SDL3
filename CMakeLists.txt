@@ -1556,6 +1556,132 @@ else()
 endif()
 
 # -------------------------------
+# GBM (MESA) Support
+# -------------------------------
+message(STATUS "Checking for GBM (MESA) support...")
+
+# Search for pre-built GBM from MESA
+find_path(GBM_MESA_INSTALL_DIR
+    NAMES include/gbm.h lib/libgbm.so
+    PATHS
+        /lilyspark/opt/lib/driver
+        /usr
+        /usr/local
+    NO_DEFAULT_PATH
+)
+
+find_library(GBM_MESA_LIBRARY
+    NAMES gbm
+    PATHS
+        /lilyspark/opt/lib/driver/usr/lib
+        /lilyspark/opt/lib/driver/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+# Check if we need to build from source
+set(GBM_MESA_BUILD_FROM_SOURCE FALSE)
+set(GBM_MESA_FOUND FALSE)
+
+if(GBM_MESA_LIBRARY AND GBM_MESA_INSTALL_DIR)
+    set(GBM_MESA_FOUND TRUE)
+    message(STATUS "✓ GBM (MESA) found (pre-built)")
+    message(STATUS "  library: ${GBM_MESA_LIBRARY}")
+    message(STATUS "  install dir: ${GBM_MESA_INSTALL_DIR}")
+    
+else()
+    message(STATUS "ℹ GBM (MESA) not found as pre-built - checking if we can build from source")
+    
+    # Check for build dependencies
+    find_program(GIT_EXECUTABLE git)
+    find_program(MESON_EXECUTABLE meson)
+    find_program(NINJA_EXECUTABLE ninja)
+    find_program(CLANG_16_EXECUTABLE NAMES clang-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    find_program(CLANGXX_16_EXECUTABLE NAMES clang++-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    
+    # Check for libdrm dependency
+    find_library(DRM_LIB NAMES drm PATHS /lilyspark/opt/lib/sys/lib NO_DEFAULT_PATH)
+    
+    if(GIT_EXECUTABLE AND MESON_EXECUTABLE AND NINJA_EXECUTABLE AND 
+       CLANG_16_EXECUTABLE AND CLANGXX_16_EXECUTABLE AND DRM_LIB)
+        set(GBM_MESA_BUILD_FROM_SOURCE TRUE)
+        set(GBM_MESA_FOUND SOURCE_AVAILABLE)
+        message(STATUS "✓ GBM (MESA) build dependencies found - will build from source")
+        message(STATUS "  git: ${GIT_EXECUTABLE}")
+        message(STATUS "  meson: ${MESON_EXECUTABLE}")
+        message(STATUS "  clang-16: ${CLANG_16_EXECUTABLE}")
+        message(STATUS "  libdrm: ${DRM_LIB}")
+        
+    else()
+        set(GBM_MESA_FOUND FALSE)
+        message(STATUS "ℹ GBM (MESA) not available and cannot build from source")
+        if(NOT GIT_EXECUTABLE)
+            message(STATUS "  Missing: git")
+        endif()
+        if(NOT MESON_EXECUTABLE)
+            message(STATUS "  Missing: meson")
+        endif()
+        if(NOT CLANG_16_EXECUTABLE)
+            message(STATUS "  Missing: clang-16")
+        endif()
+        if(NOT DRM_LIB)
+            message(STATUS "  Missing: libdrm (required dependency)")
+        endif()
+    endif()
+endif()
+
+# Set compile definitions based on GBM (MESA) availability
+if(GBM_MESA_FOUND STREQUAL "TRUE")
+    add_compile_definitions(HAVE_GBM_MESA=1)
+    
+elseif(GBM_MESA_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_compile_definitions(HAVE_GBM_MESA_SOURCE=1)
+    add_compile_definitions(BUILD_GBM_MESA_FROM_SOURCE=1)
+    
+    # Use ExternalProject for GBM (MESA) source building
+    include(ExternalProject)
+    
+    set(GBM_MESA_PREFIX ${CMAKE_BINARY_DIR}/gbm-mesa-install)
+    
+    ExternalProject_Add(gbm_mesa_build
+        PREFIX ${GBM_MESA_PREFIX}
+        GIT_REPOSITORY https://gitlab.freedesktop.org/mesa/mesa.git
+        GIT_SHALLOW 1
+        GIT_PROGRESS 1
+        UPDATE_COMMAND ""
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS ${GBM_MESA_PREFIX}/lib/libgbm.so
+    )
+    
+    # Add custom steps for the actual build process
+    ExternalProject_Add_Step(gbm_mesa_build build_gbm_mesa
+        COMMAND export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" &&
+            export PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig" &&
+            ${MESON_EXECUTABLE} setup builddir
+                --prefix=${GBM_MESA_PREFIX}
+                -Dgbm=enabled
+                -Ddri-drivers=
+                -Dgallium-drivers=
+                -Degl=disabled
+                -Dgles1=disabled
+                -Dgles2=disabled
+                -Dopengl=disabled
+        COMMAND ${NINJA_EXECUTABLE} -C builddir -v
+        COMMAND ${NINJA_EXECUTABLE} -C builddir install
+        DEPENDEES download
+        WORKING_DIRECTORY <SOURCE_DIR>
+        COMMENT "Building and installing GBM from MESA source"
+    )
+    
+else()
+    add_compile_definitions(HAVE_GBM_MESA=0)
+    message(STATUS "ℹ Building without GBM (MESA) support")
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -2054,6 +2180,48 @@ elseif(MESA_FOUND STREQUAL "SOURCE_AVAILABLE")
     message(STATUS "  Drivers: swrast, kmsro, zink")
     message(STATUS "  Platforms: wayland")
     message(STATUS "  Features: EGL, GBM, Vulkan SWRAST")
+endif()
+
+# Link against GBM (MESA) if available
+if(GBM_MESA_FOUND STREQUAL "TRUE")
+    target_link_libraries(simplehttpserver PRIVATE ${GBM_MESA_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE
+        ${GBM_MESA_INSTALL_DIR}/include
+        /usr/include
+        /usr/local/include
+    )
+    
+elseif(GBM_MESA_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_dependencies(simplehttpserver gbm_mesa_build)
+    
+    # Add the include and library directories from the built GBM (MESA)
+    target_include_directories(simplehttpserver PRIVATE
+        ${GBM_MESA_PREFIX}/include
+    )
+    
+    target_link_directories(simplehttpserver PRIVATE
+        ${GBM_MESA_PREFIX}/lib
+    )
+    
+    target_link_libraries(simplehttpserver PRIVATE gbm)
+endif()
+
+# Add verification step
+if(GBM_MESA_FOUND STREQUAL "TRUE" OR GBM_MESA_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== GBM (MESA) VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "Library: $<IF:$<BOOL:${GBM_MESA_FOUND}>,Available,Missing>"
+        COMMENT "GBM (MESA) availability verification"
+    )
+endif()
+
+# Update configuration summary with GBM (MESA) status
+message(STATUS "GBM (MESA) Support: ${GBM_MESA_FOUND}")
+if(GBM_MESA_FOUND STREQUAL "TRUE")
+    message(STATUS "  library: ${GBM_MESA_LIBRARY}")
+elseif(GBM_MESA_FOUND STREQUAL "SOURCE_AVAILABLE")
+    message(STATUS "  Build: From MESA source during compilation")
+    message(STATUS "  Features: GBM only (other components disabled)")
 endif()
 
 # No external dependencies needed for Hello World
