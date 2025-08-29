@@ -1087,6 +1087,143 @@ else()
     message(STATUS "ℹ Building without Shaderc support")
 endif()
 
+# -------------------------------
+# libgbm Support
+# -------------------------------
+message(STATUS "Checking for libgbm support...")
+
+# Search for pre-built libgbm
+find_path(GBM_INSTALL_DIR
+    NAMES include/gbm.h lib/libgbm.so lib/libgbm.a
+    PATHS
+        /lilyspark/opt/lib/sys
+        /usr
+        /usr/local
+    NO_DEFAULT_PATH
+)
+
+find_library(GBM_LIBRARY
+    NAMES gbm
+    PATHS
+        /lilyspark/opt/lib/sys/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+# Check if we need to build from source
+set(GBM_BUILD_FROM_SOURCE FALSE)
+set(GBM_FOUND FALSE)
+
+if(GBM_LIBRARY AND GBM_INSTALL_DIR)
+    set(GBM_FOUND TRUE)
+    message(STATUS "✓ libgbm found (pre-built)")
+    message(STATUS "  library: ${GBM_LIBRARY}")
+    message(STATUS "  install dir: ${GBM_INSTALL_DIR}")
+    
+else()
+    message(STATUS "ℹ libgbm not found as pre-built - checking if we can build from source")
+    
+    # Check for build dependencies
+    find_program(GIT_EXECUTABLE git)
+    find_program(AUTOGEN_EXECUTABLE autogen.sh)
+    find_program(CONFIGURE_EXECUTABLE configure)
+    find_program(MAKE_EXECUTABLE make)
+    find_program(CLANG_16_EXECUTABLE NAMES clang-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    find_program(CLANGXX_16_EXECUTABLE NAMES clang++-16 PATHS /lilyspark/compiler/bin NO_DEFAULT_PATH)
+    
+    # Check for libdrm dependency
+    find_library(DRM_LIB NAMES drm PATHS /lilyspark/opt/lib/sys/lib NO_DEFAULT_PATH)
+    
+    if(GIT_EXECUTABLE AND AUTOGEN_EXECUTABLE AND CONFIGURE_EXECUTABLE AND 
+       MAKE_EXECUTABLE AND CLANG_16_EXECUTABLE AND CLANGXX_16_EXECUTABLE AND DRM_LIB)
+        set(GBM_BUILD_FROM_SOURCE TRUE)
+        set(GBM_FOUND SOURCE_AVAILABLE)
+        message(STATUS "✓ libgbm build dependencies found - will build from source with autotools")
+        message(STATUS "  git: ${GIT_EXECUTABLE}")
+        message(STATUS "  autogen: ${AUTOGEN_EXECUTABLE}")
+        message(STATUS "  clang-16: ${CLANG_16_EXECUTABLE}")
+        message(STATUS "  libdrm: ${DRM_LIB}")
+        
+    else()
+        set(GBM_FOUND FALSE)
+        message(STATUS "ℹ libgbm not available and cannot build from source")
+        if(NOT GIT_EXECUTABLE)
+            message(STATUS "  Missing: git")
+        endif()
+        if(NOT AUTOGEN_EXECUTABLE)
+            message(STATUS "  Missing: autogen.sh")
+        endif()
+        if(NOT CLANG_16_EXECUTABLE)
+            message(STATUS "  Missing: clang-16")
+        endif()
+        if(NOT DRM_LIB)
+            message(STATUS "  Missing: libdrm (required dependency)")
+        endif()
+    endif()
+endif()
+
+# Set compile definitions based on libgbm availability
+if(GBM_FOUND STREQUAL "TRUE")
+    add_compile_definitions(HAVE_GBM=1)
+    
+elseif(GBM_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_compile_definitions(HAVE_GBM_SOURCE=1)
+    add_compile_definitions(BUILD_GBM_FROM_SOURCE=1)
+    
+    # Use ExternalProject for libgbm source building
+    include(ExternalProject)
+    
+    set(GBM_PREFIX ${CMAKE_BINARY_DIR}/gbm-install)
+    
+    ExternalProject_Add(gbm_build
+        PREFIX ${GBM_PREFIX}
+        GIT_REPOSITORY https://github.com/robclark/libgbm.git
+        GIT_SHALLOW 1
+        GIT_PROGRESS 1
+        UPDATE_COMMAND ""
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS ${GBM_PREFIX}/lib/libgbm.so
+    )
+    
+    # Add custom steps for the actual build process
+    ExternalProject_Add_Step(gbm_build build_gbm
+        COMMAND ./autogen.sh --prefix=${GBM_PREFIX}
+        COMMAND export PKG_CONFIG_SYSROOT_DIR="/lilyspark" &&
+            export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/lib/pkgconfig:/lilyspark/opt/lib/sys/share/pkgconfig" &&
+            ./configure
+                --prefix=${GBM_PREFIX}
+                CC=${CLANG_16_EXECUTABLE}
+                CXX=${CLANGXX_16_EXECUTABLE}
+                CFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/sys/include -I/lilyspark/compiler/include -march=armv8-a"
+                CXXFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/sys/include -I/lilyspark/compiler/include -march=armv8-a"
+                LDFLAGS="--sysroot=/lilyspark -L/lilyspark/opt/lib/sys/lib -L/lilyspark/compiler/lib"
+        COMMAND ${MAKE_EXECUTABLE} -j${CMAKE_BUILD_PARALLEL_LEVEL}
+        COMMAND ${MAKE_EXECUTABLE} install
+        DEPENDEES download
+        WORKING_DIRECTORY <SOURCE_DIR>
+        COMMENT "Building and installing libgbm with autotools"
+    )
+    
+    # Add step to create symlinks
+    ExternalProject_Add_Step(gbm_build create_symlinks
+        COMMAND cd ${GBM_PREFIX}/lib &&
+            for lib in $(ls libgbm.so.* 2>/dev/null); do
+                soname=$(echo "$$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/');
+                basename=$(echo "$$lib" | sed 's/\(.*\.so\).*/\1/');
+                ln -sf "$$lib" "$$soname";
+                ln -sf "$$soname" "$$basename";
+            done
+        DEPENDEES build_gbm
+        COMMENT "Creating libgbm symlinks"
+    )
+    
+else()
+    add_compile_definitions(HAVE_GBM=0)
+    message(STATUS "ℹ Building without libgbm support")
+endif()
 
 # -------------------------------
 # Simple Hello World executable
@@ -1398,11 +1535,6 @@ elseif(SPIRV_TOOLS_FOUND STREQUAL "SOURCE_AVAILABLE")
     message(STATUS "  Build: From source during compilation with LLVM16")
 endif()
 
-# No external dependencies needed for Hello World
-target_compile_definitions(simplehttpserver PRIVATE
-    HELLO_WORLD_BUILD=1
-)
-
 # Link against Shaderc if available
 if(SHADERC_FOUND STREQUAL "TRUE")
     target_link_libraries(simplehttpserver PRIVATE ${SHADERC_LIBRARY})
@@ -1445,6 +1577,53 @@ elseif(SHADERC_FOUND STREQUAL "SOURCE_AVAILABLE")
     message(STATUS "  Build: From source during compilation with LLVM16")
     message(STATUS "  Depends on: SPIRV-Tools")
 endif()
+
+# Link against libgbm if available
+if(GBM_FOUND STREQUAL "TRUE")
+    target_link_libraries(simplehttpserver PRIVATE ${GBM_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE
+        ${GBM_INSTALL_DIR}/include
+        /usr/include
+        /usr/local/include
+    )
+    
+elseif(GBM_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_dependencies(simplehttpserver gbm_build)
+    
+    # Add the include and library directories from the built libgbm
+    target_include_directories(simplehttpserver PRIVATE
+        ${GBM_PREFIX}/include
+    )
+    
+    target_link_directories(simplehttpserver PRIVATE
+        ${GBM_PREFIX}/lib
+    )
+    
+    target_link_libraries(simplehttpserver PRIVATE gbm)
+endif()
+
+# Add verification step
+if(GBM_FOUND STREQUAL "TRUE" OR GBM_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== LIBGBM VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "Library: $<IF:$<BOOL:${GBM_FOUND}>,Available,Missing>"
+        COMMENT "libgbm availability verification"
+    )
+endif()
+
+# Update configuration summary with libgbm status
+message(STATUS "libgbm Support: ${GBM_FOUND}")
+if(GBM_FOUND STREQUAL "TRUE")
+    message(STATUS "  library: ${GBM_LIBRARY}")
+elseif(GBM_FOUND STREQUAL "SOURCE_AVAILABLE")
+    message(STATUS "  Build: From source during compilation with autotools")
+    message(STATUS "  Depends on: libdrm")
+endif()
+
+# No external dependencies needed for Hello World
+target_compile_definitions(simplehttpserver PRIVATE
+    HELLO_WORLD_BUILD=1
+)
 
 # Installation
 install(TARGETS simplehttpserver
