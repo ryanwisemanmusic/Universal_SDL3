@@ -1207,7 +1207,7 @@ elseif(GBM_FOUND STREQUAL "SOURCE_AVAILABLE")
         COMMENT "Building and installing libgbm with autotools"
     )
     
-    # Add step to create symlinks
+       # Add step to create symlinks
     ExternalProject_Add_Step(gbm_build create_symlinks
         COMMAND cd ${GBM_PREFIX}/lib &&
             sh -c "for lib in \\$$(ls libgbm.so.* 2>/dev/null); do \
@@ -2180,12 +2180,44 @@ else()
     endif()
 endif()
 
-# -------------------------------
-# Simple Hello World executable
-# -------------------------------
-add_executable(simplehttpserver
-    main.cpp
-)
+# I swear to god if you touch this code below, I hate you if you do this
+# and then fuck the codebase up. You are worthless for the dev of this project
+# if you touch this, please for fucks sake DO NOT touch this.
+# 
+# If you are unaware of what this does, since this is so important, let it
+# be the one time I tell you why you are unqualified to touch this.
+# 
+# This manages both Docker's executable source code as well as CMake's.
+# There are two requirements you dumb fuck, do not think one can live
+# and the other can die. Do you like debugging? Yes, fucking keep it.
+# Do you like the code compiling????? Yes, ABSOLUTELY FUCKING KEEP IT!!!!
+
+# We essentially have two different schemas we must include, and so, these
+# sections will continously grow in due time.
+
+if(EXISTS /lilyspark/app/src/main.cpp)
+    add_executable(simplehttpserver
+        /lilyspark/app/src/main.cpp
+    )
+    message(STATUS "Using Docker source path: /lilyspark/app/src/main.cpp")
+elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp)
+    add_executable(simplehttpserver
+        main.cpp
+    )
+    message(STATUS "Using CMake specific path: main.cpp")
+else()
+    message(WARNING "main.cpp not found in any current searched paths")
+    file(WRITE ${CMAKE_BINARY_DIR}/placeholder_main.cpp "int main() { return 0; }")
+    add_executable(simplehttpserver
+        ${CMAKE_BINARY_DIR}/placeholder_main.cpp
+    )
+endif()
+
+#
+#
+# So yeah listen to me when I tell you to not FUCKING TOUCH THE ABOVE CODE
+#
+#
 
 # Add environment variables as compile definitions for runtime use
 if(FOP_FOUND STREQUAL "TRUE" OR FOP_FOUND STREQUAL "PARTIAL")
