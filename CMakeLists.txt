@@ -647,12 +647,12 @@ elseif(EPOXY_FOUND STREQUAL "SOURCE_AVAILABLE")
     # Add step to create symlinks
     ExternalProject_Add_Step(epoxy_build create_symlinks
         COMMAND cd ${EPOXY_PREFIX}/lib &&
-            for lib in $(ls libepoxy*.so.*.* 2>/dev/null); do
-                soname=$(echo "$$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/');
-                basename=$(echo "$$lib" | sed 's/\(.*\.so\).*/\1/');
-                ln -sf "$$lib" "$$soname";
-                ln -sf "$$soname" "$$basename";
-            done
+            sh -c "for lib in \\$$(ls libepoxy*.so.*.* 2>/dev/null); do \
+                soname=\\$$(echo \"\\$$lib\" | sed 's/\\(.*\\.so\\.[0-9]*\\).*/\\1/'); \
+                basename=\\$$(echo \"\\$$lib\" | sed 's/\\(.*\\.so\\).*/\\1/'); \
+                ln -sf \"\\$$lib\" \"\\$$soname\"; \
+                ln -sf \"\\$$soname\" \"\\$$basename\"; \
+            done"
         DEPENDEES install
         COMMENT "Creating libepoxy symlinks"
     )
@@ -906,12 +906,12 @@ elseif(SPIRV_TOOLS_FOUND STREQUAL "SOURCE_AVAILABLE")
     # Add step to create symlinks
     ExternalProject_Add_Step(spirv_tools_build create_symlinks
         COMMAND cd ${SPIRV_TOOLS_PREFIX}/lib &&
-            for lib in $(ls libSPIRV-Tools*.so.* 2>/dev/null); do
-                soname=$(echo "$$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/');
-                basename=$(echo "$$lib" | sed 's/\(.*\.so\).*/\1/');
-                ln -sf "$$lib" "$$soname";
-                ln -sf "$$soname" "$$basename";
-            done
+            sh -c "for lib in \\$$(ls libSPIRV-Tools*.so.* 2>/dev/null); do \
+                soname=\\$$(echo \"\\$$lib\" | sed 's/\\(.*\\.so\\.[0-9]*\\).*/\\1/'); \
+                basename=\\$$(echo \"\\$$lib\" | sed 's/\\(.*\\.so\\).*/\\1/'); \
+                ln -sf \"\\$$lib\" \"\\$$soname\"; \
+                ln -sf \"\\$$soname\" \"\\$$basename\"; \
+            done"
         DEPENDEES build_spirv_tools
         COMMENT "Creating SPIRV-Tools symlinks"
     )
@@ -1072,12 +1072,12 @@ elseif(SHADERC_FOUND STREQUAL "SOURCE_AVAILABLE")
     # Add step to create symlinks
     ExternalProject_Add_Step(shaderc_build create_symlinks
         COMMAND cd ${SHADERC_PREFIX}/lib &&
-            for lib in $(ls libshaderc*.so.* 2>/dev/null); do
-                soname=$(echo "$$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/');
-                basename=$(echo "$$lib" | sed 's/\(.*\.so\).*/\1/');
-                ln -sf "$$lib" "$$soname";
-                ln -sf "$$soname" "$$basename";
-            done
+            sh -c "for lib in \\$$(ls libshaderc*.so.* 2>/dev/null); do \
+                soname=\\$$(echo \"\\$$lib\" | sed 's/\\(.*\\.so\\.[0-9]*\\).*/\\1/'); \
+                basename=\\$$(echo \"\\$$lib\" | sed 's/\\(.*\\.so\\).*/\\1/'); \
+                ln -sf \"\\$$lib\" \"\\$$soname\"; \
+                ln -sf \"\\$$soname\" \"\\$$basename\"; \
+            done"
         DEPENDEES build_shaderc
         COMMENT "Creating Shaderc symlinks"
     )
@@ -1210,12 +1210,12 @@ elseif(GBM_FOUND STREQUAL "SOURCE_AVAILABLE")
     # Add step to create symlinks
     ExternalProject_Add_Step(gbm_build create_symlinks
         COMMAND cd ${GBM_PREFIX}/lib &&
-            for lib in $(ls libgbm.so.* 2>/dev/null); do
-                soname=$(echo "$$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/');
-                basename=$(echo "$$lib" | sed 's/\(.*\.so\).*/\1/');
-                ln -sf "$$lib" "$$soname";
-                ln -sf "$$soname" "$$basename";
-            done
+            sh -c "for lib in \\$$(ls libgbm.so.* 2>/dev/null); do \
+                soname=\\$$(echo \"\\$$lib\" | sed 's/\\(.*\\.so\\.[0-9]*\\).*/\\1/'); \
+                basename=\\$$(echo \"\\$$lib\" | sed 's/\\(.*\\.so\\).*/\\1/'); \
+                ln -sf \"\\$$lib\" \"\\$$soname\"; \
+                ln -sf \"\\$$soname\" \"\\$$basename\"; \
+            done"
         DEPENDEES build_gbm
         COMMENT "Creating libgbm symlinks"
     )
@@ -2184,7 +2184,7 @@ endif()
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
-    /lilyspark/app/src/main.cpp
+    main.cpp
 )
 
 # Add environment variables as compile definitions for runtime use
