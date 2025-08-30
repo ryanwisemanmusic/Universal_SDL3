@@ -2017,6 +2017,58 @@ else()
 endif()
 
 # -------------------------------
+# Vulkan Support
+# -------------------------------
+message(STATUS "Checking for Vulkan support...")
+
+# Search for Vulkan headers
+find_path(VULKAN_HEADERS_DIR
+    NAMES vulkan/vulkan.h
+    PATHS
+        /lilyspark/opt/lib/vulkan/include
+        /usr/include
+        /usr/local/include
+    NO_DEFAULT_PATH
+)
+
+# Search for Vulkan loader library
+find_library(VULKAN_LIBRARY
+    NAMES vulkan
+    PATHS
+        /lilyspark/opt/lib/vulkan/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+# Simple detection
+set(VULKAN_HEADERS_FOUND FALSE)
+set(VULKAN_LOADER_FOUND FALSE)
+set(VULKAN_FOUND FALSE)
+
+if(VULKAN_HEADERS_DIR)
+    set(VULKAN_HEADERS_FOUND TRUE)
+    message(STATUS "✓ Vulkan headers found: ${VULKAN_HEADERS_DIR}")
+else()
+    message(STATUS "ℹ Vulkan headers not found")
+endif()
+
+if(VULKAN_LIBRARY)
+    set(VULKAN_LOADER_FOUND TRUE)
+    message(STATUS "✓ Vulkan loader found: ${VULKAN_LIBRARY}")
+else()
+    message(STATUS "ℹ Vulkan loader not found")
+endif()
+
+if(VULKAN_HEADERS_FOUND AND VULKAN_LOADER_FOUND)
+    set(VULKAN_FOUND TRUE)
+    message(STATUS "✓ Complete Vulkan support available")
+else()
+    set(VULKAN_FOUND FALSE)
+    message(STATUS "ℹ Incomplete or missing Vulkan support")
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -2815,6 +2867,69 @@ endif()
 message(STATUS "SDL3_ttf Support: ${SDL3_TTF_FOUND}")
 if(SDL3_TTF_FOUND)
     message(STATUS "  library: ${SDL3_TTF_LIBRARY}")
+endif()
+
+# Set compile definitions based on Vulkan availability
+if(VULKAN_FOUND)
+    target_compile_definitions(simplehttpserver PRIVATE HAVE_VULKAN=1)
+    
+    # Link against Vulkan
+    target_link_libraries(simplehttpserver PRIVATE ${VULKAN_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE ${VULKAN_HEADERS_DIR})
+    
+    # Add verification step
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== VULKAN VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "Vulkan: Complete support available"
+        COMMAND ${CMAKE_COMMAND} -E echo "  headers: ${VULKAN_HEADERS_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E echo "  loader: ${VULKAN_LIBRARY}"
+        COMMENT "Vulkan availability verification"
+    )
+    
+else()
+    target_compile_definitions(simplehttpserver PRIVATE HAVE_VULKAN=0)
+    
+    # Check for partial components
+    if(VULKAN_HEADERS_FOUND AND NOT VULKAN_LOADER_FOUND)
+        message(STATUS "Vulkan headers available but loader missing")
+        target_include_directories(simplehttpserver PRIVATE ${VULKAN_HEADERS_DIR})
+        
+        add_custom_command(TARGET simplehttpserver POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "=== VULKAN VERIFICATION ==="
+            COMMAND ${CMAKE_COMMAND} -E echo "Vulkan: Headers available but loader missing"
+            COMMENT "Partial Vulkan support"
+        )
+        
+    elseif(VULKAN_LOADER_FOUND AND NOT VULKAN_HEADERS_FOUND)
+        message(STATUS "Vulkan loader available but headers missing")
+        target_link_libraries(simplehttpserver PRIVATE ${VULKAN_LIBRARY})
+        
+        add_custom_command(TARGET simplehttpserver POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "=== VULKAN VERIFICATION ==="
+            COMMAND ${CMAKE_COMMAND} -E echo "Vulkan: Loader available but headers missing"
+            COMMENT "Partial Vulkan support"
+        )
+        
+    else()
+        add_custom_command(TARGET simplehttpserver POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "=== VULKAN VERIFICATION ==="
+            COMMAND ${CMAKE_COMMAND} -E echo "Vulkan: Not available"
+            COMMENT "No Vulkan support"
+        )
+    endif()
+endif()
+
+# Update configuration summary
+message(STATUS "=== VULKAN SUPPORT SUMMARY ===")
+message(STATUS "Vulkan Support: ${VULKAN_FOUND}")
+if(VULKAN_HEADERS_FOUND)
+    message(STATUS "  headers: ${VULKAN_HEADERS_DIR}")
+endif()
+if(VULKAN_LOADER_FOUND)
+    message(STATUS "  loader: ${VULKAN_LIBRARY}")
+endif()
+if(NOT VULKAN_FOUND)
+    message(STATUS "  status: Building without Vulkan support")
 endif()
 
 # No external dependencies needed for Hello World
