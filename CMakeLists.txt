@@ -1971,6 +1971,52 @@ else()
 endif()
 
 # -------------------------------
+# SDL3_ttf Support
+# -------------------------------
+message(STATUS "Checking for SDL3_ttf support...")
+
+# Search for SDL3_ttf in primary location first
+find_library(SDL3_TTF_LIBRARY
+    NAMES SDL3_ttf
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/lib
+    NO_DEFAULT_PATH
+)
+
+find_path(SDL3_TTF_INCLUDE_DIR
+    NAMES SDL3_ttf/SDL_ttf.h
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/include
+    NO_DEFAULT_PATH
+)
+
+# Simple detection - don't set compile definitions yet
+set(SDL3_TTF_FOUND FALSE)
+
+if(SDL3_TTF_LIBRARY AND SDL3_TTF_INCLUDE_DIR)
+    set(SDL3_TTF_FOUND TRUE)
+    message(STATUS "✓ SDL3_ttf found")
+    message(STATUS "  library: ${SDL3_TTF_LIBRARY}")
+    message(STATUS "  include: ${SDL3_TTF_INCLUDE_DIR}")
+else()
+    set(SDL3_TTF_FOUND FALSE)
+    message(STATUS "ℹ SDL3_ttf not found in expected location")
+    
+    # Additional fallback search
+    find_library(SDL3_TTF_LIBRARY_FALLBACK NAMES SDL3_ttf PATHS /usr/lib /usr/local/lib)
+    find_path(SDL3_TTF_INCLUDE_DIR_FALLBACK NAMES SDL3_ttf/SDL_ttf.h PATHS /usr/include /usr/local/include)
+    
+    if(SDL3_TTF_LIBRARY_FALLBACK AND SDL3_TTF_INCLUDE_DIR_FALLBACK)
+        set(SDL3_TTF_LIBRARY ${SDL3_TTF_LIBRARY_FALLBACK})
+        set(SDL3_TTF_INCLUDE_DIR ${SDL3_TTF_INCLUDE_DIR_FALLBACK})
+        set(SDL3_TTF_FOUND TRUE)
+        message(STATUS "✓ SDL3_ttf found in system locations")
+        message(STATUS "  library: ${SDL3_TTF_LIBRARY}")
+        message(STATUS "  include: ${SDL3_TTF_INCLUDE_DIR}")
+    else()
+        message(STATUS "ℹ SDL3_ttf not available anywhere")
+    endif()
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -2723,6 +2769,52 @@ endif()
 message(STATUS "SDL3_mixer Support: ${SDL3_MIXER_FOUND}")
 if(SDL3_MIXER_FOUND)
     message(STATUS "  library: ${SDL3_MIXER_LIBRARY}")
+endif()
+
+# Set compile definitions based on SDL3_ttf availability
+if(SDL3_TTF_FOUND)
+    target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL3_TTF=1)
+    
+    # Link against SDL3_ttf
+    target_link_libraries(simplehttpserver PRIVATE ${SDL3_TTF_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE ${SDL3_TTF_INCLUDE_DIR})
+    
+    # Add verification step
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== SDL3_ttf VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "SDL3_ttf: Available"
+        COMMENT "SDL3_ttf available"
+    )
+else()
+    target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL3_TTF=0)
+    
+    # Check for SDL2_ttf as fallback
+    find_library(SDL2_TTF_LIBRARY NAMES SDL2_ttf)
+    if(SDL2_TTF_LIBRARY)
+        message(STATUS "Using SDL2_ttf as fallback")
+        target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL2_TTF=1)
+        target_link_libraries(simplehttpserver PRIVATE ${SDL2_TTF_LIBRARY})
+        
+        add_custom_command(TARGET simplehttpserver POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "=== SDL_ttf VERIFICATION ==="
+            COMMAND ${CMAKE_COMMAND} -E echo "SDL3_ttf: Not available, using SDL2_ttf fallback"
+            COMMENT "SDL_ttf fallback"
+        )
+    else()
+        target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL2_TTF=0)
+        
+        add_custom_command(TARGET simplehttpserver POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "=== SDL_ttf VERIFICATION ==="
+            COMMAND ${CMAKE_COMMAND} -E echo "SDL_ttf: Not available"
+            COMMENT "No SDL_ttf available"
+        )
+    endif()
+endif()
+
+# Update configuration summary
+message(STATUS "SDL3_ttf Support: ${SDL3_TTF_FOUND}")
+if(SDL3_TTF_FOUND)
+    message(STATUS "  library: ${SDL3_TTF_LIBRARY}")
 endif()
 
 # No external dependencies needed for Hello World
