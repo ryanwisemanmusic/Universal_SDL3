@@ -1746,6 +1746,91 @@ else()
     endif()
 endif()
 
+# -------------------------------
+# GLES Support
+# -------------------------------
+message(STATUS "Checking for GLES support...")
+
+# Search for GLES in all possible locations
+set(GLES_SEARCH_PATHS
+    /lilyspark/opt/lib/driver
+    /lilyspark/opt/lib/driver/usr/lib
+    /lilyspark/opt/lib/driver/lib
+    /usr/lib
+    /usr/local/lib
+)
+
+# Look for both GLESv1 and GLESv2 libraries
+find_library(GLES1_LIBRARY
+    NAMES GLESv1_CM
+    PATHS ${GLES_SEARCH_PATHS}
+    NO_DEFAULT_PATH
+)
+
+find_library(GLES2_LIBRARY
+    NAMES GLESv2
+    PATHS ${GLES_SEARCH_PATHS}
+    NO_DEFAULT_PATH
+)
+
+find_path(GLES_INCLUDE_DIR
+    NAMES GLES/gl.h GLES2/gl2.h
+    PATHS
+        /lilyspark/opt/lib/driver/include
+        /lilyspark/opt/lib/driver/usr/include
+        /usr/include
+        /usr/local/include
+    NO_DEFAULT_PATH
+)
+
+# Simple detection
+set(GLES1_FOUND FALSE)
+set(GLES2_FOUND FALSE)
+set(GLES_FOUND FALSE)
+
+if(GLES1_LIBRARY OR GLES2_LIBRARY)
+    if(GLES1_LIBRARY)
+        set(GLES1_FOUND TRUE)
+        message(STATUS "✓ GLESv1 found: ${GLES1_LIBRARY}")
+        add_compile_definitions(HAVE_GLES1=1)
+    else()
+        message(STATUS "ℹ GLESv1 not found")
+        add_compile_definitions(HAVE_GLES1=0)
+    endif()
+    
+    if(GLES2_LIBRARY)
+        set(GLES2_FOUND TRUE)
+        message(STATUS "✓ GLESv2 found: ${GLES2_LIBRARY}")
+        add_compile_definitions(HAVE_GLES2=1)
+    else()
+        message(STATUS "ℹ GLESv2 not found")
+        add_compile_definitions(HAVE_GLES2=0)
+    endif()
+    
+    if(GLES_INCLUDE_DIR)
+        message(STATUS "✓ GLES headers found: ${GLES_INCLUDE_DIR}")
+    else()
+        message(STATUS "ℹ GLES headers not found")
+    endif()
+    
+    set(GLES_FOUND TRUE)
+    
+else()
+    set(GLES_FOUND FALSE)
+    message(STATUS "ℹ GLES not found")
+    
+    # Set compile definitions for missing GLES
+    add_compile_definitions(HAVE_GLES1=0)
+    add_compile_definitions(HAVE_GLES2=0)
+    
+    # Provide helpful information
+    message(STATUS "  Missing: GLES libraries")
+    foreach(path IN LISTS GLES_SEARCH_PATHS)
+        if(EXISTS ${path})
+            message(STATUS "  Checked: ${path}")
+        endif()
+    endforeach()
+endif()
 
 # -------------------------------
 # Simple Hello World executable
@@ -2317,6 +2402,51 @@ if(EGL_FOUND)
     message(STATUS "  headers: ${EGL_INCLUDE_DIR}")
 else()
     message(STATUS "  status: Building without EGL support")
+endif()
+
+# Link against GLES if available
+if(GLES_FOUND)
+    if(GLES1_FOUND)
+        target_link_libraries(simplehttpserver PRIVATE ${GLES1_LIBRARY})
+    endif()
+    
+    if(GLES2_FOUND)
+        target_link_libraries(simplehttpserver PRIVATE ${GLES2_LIBRARY})
+    endif()
+    
+    if(GLES_INCLUDE_DIR)
+        target_include_directories(simplehttpserver PRIVATE ${GLES_INCLUDE_DIR})
+    endif()
+    
+    # Add verification step
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== GLES VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "GLESv1: $<IF:$<BOOL:${GLES1_FOUND}>,Available,Missing>"
+        COMMAND ${CMAKE_COMMAND} -E echo "GLESv2: $<IF:$<BOOL:${GLES2_FOUND}>,Available,Missing>"
+        COMMENT "GLES availability verification"
+    )
+else()
+    # Add message for missing GLES
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== GLES VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "GLES: Not available - building without GLES support"
+        COMMENT "GLES not available"
+    )
+endif()
+
+# Update configuration summary
+message(STATUS "GLES Support: ${GLES_FOUND}")
+if(GLES1_FOUND)
+    message(STATUS "  GLESv1: ${GLES1_LIBRARY}")
+endif()
+if(GLES2_FOUND)
+    message(STATUS "  GLESv2: ${GLES2_LIBRARY}")
+endif()
+if(GLES_INCLUDE_DIR)
+    message(STATUS "  headers: ${GLES_INCLUDE_DIR}")
+endif()
+if(NOT GLES_FOUND)
+    message(STATUS "  status: Building without GLES support")
 endif()
 
 # No external dependencies needed for Hello World
