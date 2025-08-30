@@ -1925,6 +1925,52 @@ else()
 endif()
 
 # -------------------------------
+# SDL3_mixer Support
+# -------------------------------
+message(STATUS "Checking for SDL3_mixer support...")
+
+# Search for SDL3_mixer in primary location first
+find_library(SDL3_MIXER_LIBRARY
+    NAMES SDL3_mixer
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/lib
+    NO_DEFAULT_PATH
+)
+
+find_path(SDL3_MIXER_INCLUDE_DIR
+    NAMES SDL3_mixer/SDL_mixer.h
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/include
+    NO_DEFAULT_PATH
+)
+
+# Simple detection - don't set compile definitions yet
+set(SDL3_MIXER_FOUND FALSE)
+
+if(SDL3_MIXER_LIBRARY AND SDL3_MIXER_INCLUDE_DIR)
+    set(SDL3_MIXER_FOUND TRUE)
+    message(STATUS "✓ SDL3_mixer found")
+    message(STATUS "  library: ${SDL3_MIXER_LIBRARY}")
+    message(STATUS "  include: ${SDL3_MIXER_INCLUDE_DIR}")
+else()
+    set(SDL3_MIXER_FOUND FALSE)
+    message(STATUS "ℹ SDL3_mixer not found in expected location")
+    
+    # Additional fallback search
+    find_library(SDL3_MIXER_LIBRARY_FALLBACK NAMES SDL3_mixer PATHS /usr/lib /usr/local/lib)
+    find_path(SDL3_MIXER_INCLUDE_DIR_FALLBACK NAMES SDL3_mixer/SDL_mixer.h PATHS /usr/include /usr/local/include)
+    
+    if(SDL3_MIXER_LIBRARY_FALLBACK AND SDL3_MIXER_INCLUDE_DIR_FALLBACK)
+        set(SDL3_MIXER_LIBRARY ${SDL3_MIXER_LIBRARY_FALLBACK})
+        set(SDL3_MIXER_INCLUDE_DIR ${SDL3_MIXER_INCLUDE_DIR_FALLBACK})
+        set(SDL3_MIXER_FOUND TRUE)
+        message(STATUS "✓ SDL3_mixer found in system locations")
+        message(STATUS "  library: ${SDL3_MIXER_LIBRARY}")
+        message(STATUS "  include: ${SDL3_MIXER_INCLUDE_DIR}")
+    else()
+        message(STATUS "ℹ SDL3_mixer not available anywhere")
+    endif()
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -2631,6 +2677,52 @@ endif()
 message(STATUS "SDL3_image Support: ${SDL3_IMAGE_FOUND}")
 if(SDL3_IMAGE_FOUND)
     message(STATUS "  library: ${SDL3_IMAGE_LIBRARY}")
+endif()
+
+# Set compile definitions based on SDL3_mixer availability
+if(SDL3_MIXER_FOUND)
+    target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL3_MIXER=1)
+    
+    # Link against SDL3_mixer
+    target_link_libraries(simplehttpserver PRIVATE ${SDL3_MIXER_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE ${SDL3_MIXER_INCLUDE_DIR})
+    
+    # Add verification step
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== SDL3_mixer VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "SDL3_mixer: Available"
+        COMMENT "SDL3_mixer available"
+    )
+else()
+    target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL3_MIXER=0)
+    
+    # Check for SDL2_mixer as fallback
+    find_library(SDL2_MIXER_LIBRARY NAMES SDL2_mixer)
+    if(SDL2_MIXER_LIBRARY)
+        message(STATUS "Using SDL2_mixer as fallback")
+        target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL2_MIXER=1)
+        target_link_libraries(simplehttpserver PRIVATE ${SDL2_MIXER_LIBRARY})
+        
+        add_custom_command(TARGET simplehttpserver POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "=== SDL_mixer VERIFICATION ==="
+            COMMAND ${CMAKE_COMMAND} -E echo "SDL3_mixer: Not available, using SDL2_mixer fallback"
+            COMMENT "SDL_mixer fallback"
+        )
+    else()
+        target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL2_MIXER=0)
+        
+        add_custom_command(TARGET simplehttpserver POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "=== SDL_mixer VERIFICATION ==="
+            COMMAND ${CMAKE_COMMAND} -E echo "SDL_mixer: Not available"
+            COMMENT "No SDL_mixer available"
+        )
+    endif()
+endif()
+
+# Update configuration summary
+message(STATUS "SDL3_mixer Support: ${SDL3_MIXER_FOUND}")
+if(SDL3_MIXER_FOUND)
+    message(STATUS "  library: ${SDL3_MIXER_LIBRARY}")
 endif()
 
 # No external dependencies needed for Hello World
