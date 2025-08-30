@@ -1,9 +1,13 @@
 #include "main.hpp"
 #include <iostream>
+#include <SDL3/SDL.h>
+
 using namespace std;
 
 int main(int argc, char* argv[]) 
 {
+    SDL_Window *window;
+    
     cout << "Hello there! :D";
     return 0;
 }
