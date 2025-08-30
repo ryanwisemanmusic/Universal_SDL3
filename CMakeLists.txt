@@ -2069,6 +2069,118 @@ else()
 endif()
 
 # -------------------------------
+# glmark2 Support
+# -------------------------------
+message(STATUS "Checking for glmark2 support...")
+
+# Search for glmark2 binary
+find_program(GLMARK2_EXECUTABLE
+    NAMES glmark2
+    PATHS
+        /lilyspark/opt/lib/graphics/bin
+        /usr/bin
+        /usr/local/bin
+    NO_DEFAULT_PATH
+)
+
+# Simple detection
+set(GLMARK2_FOUND FALSE)
+
+if(GLMARK2_EXECUTABLE)
+    set(GLMARK2_FOUND TRUE)
+    message(STATUS "✓ glmark2 found: ${GLMARK2_EXECUTABLE}")
+    
+    # Set compile definition
+    add_compile_definitions(HAVE_GLMARK2=1)
+    
+else()
+    set(GLMARK2_FOUND FALSE)
+    message(STATUS "ℹ glmark2 not found")
+    
+    # Set compile definition for missing glmark2
+    add_compile_definitions(HAVE_GLMARK2=0)
+    
+    # Provide helpful information about what's missing
+    message(STATUS "  Missing: glmark2 benchmark tool")
+    message(STATUS "  Checked locations:")
+    message(STATUS "    - /lilyspark/opt/lib/graphics/bin")
+    message(STATUS "    - /usr/bin") 
+    message(STATUS "    - /usr/local/bin")
+endif()
+
+# -------------------------------
+# SQLite3 Support
+# -------------------------------
+message(STATUS "Checking for SQLite3 support...")
+
+# Search for SQLite3 in primary location first
+find_path(SQLITE3_INCLUDE_DIR
+    NAMES sqlite3.h
+    PATHS
+        /lilyspark/opt/lib/database/include
+        /usr/include
+        /usr/local/include
+    NO_DEFAULT_PATH
+)
+
+find_library(SQLITE3_LIBRARY
+    NAMES sqlite3
+    PATHS
+        /lilyspark/opt/lib/database/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+# Simple detection
+set(SQLITE3_FOUND FALSE)
+
+if(SQLITE3_LIBRARY AND SQLITE3_INCLUDE_DIR)
+    set(SQLITE3_FOUND TRUE)
+    message(STATUS "✓ SQLite3 found")
+    message(STATUS "  library: ${SQLITE3_LIBRARY}")
+    message(STATUS "  include: ${SQLITE3_INCLUDE_DIR}")
+    
+    # Set compile definitions
+    add_compile_definitions(HAVE_SQLITE3=1)
+    add_compile_definitions(SQLITE_ENABLE_COLUMN_METADATA=1)
+    add_compile_definitions(SQLITE_ENABLE_FTS3=1)
+    add_compile_definitions(SQLITE_ENABLE_FTS4=1)
+    add_compile_definitions(SQLITE_ENABLE_FTS5=1)
+    add_compile_definitions(SQLITE_ENABLE_JSON1=1)
+    add_compile_definitions(SQLITE_ENABLE_RTREE=1)
+    add_compile_definitions(SQLITE_ENABLE_DBSTAT_VTAB=1)
+    add_compile_definitions(SQLITE_SECURE_DELETE=1)
+    add_compile_definitions(SQLITE_USE_URI=1)
+    add_compile_definitions(SQLITE_ENABLE_UNLOCK_NOTIFY=1)
+    add_compile_definitions(SQLITE_ENABLE_ZLIB=1)
+    
+else()
+    set(SQLITE3_FOUND FALSE)
+    message(STATUS "ℹ SQLite3 not found in expected location")
+    
+    # Additional fallback search
+    find_library(SQLITE3_LIBRARY_FALLBACK NAMES sqlite3 PATHS /usr/lib /usr/local/lib)
+    find_path(SQLITE3_INCLUDE_DIR_FALLBACK NAMES sqlite3.h PATHS /usr/include /usr/local/include)
+    
+    if(SQLITE3_LIBRARY_FALLBACK AND SQLITE3_INCLUDE_DIR_FALLBACK)
+        set(SQLITE3_LIBRARY ${SQLITE3_LIBRARY_FALLBACK})
+        set(SQLITE3_INCLUDE_DIR ${SQLITE3_INCLUDE_DIR_FALLBACK})
+        set(SQLITE3_FOUND TRUE)
+        message(STATUS "✓ SQLite3 found in system locations")
+        message(STATUS "  library: ${SQLITE3_LIBRARY}")
+        message(STATUS "  include: ${SQLITE3_INCLUDE_DIR}")
+        
+        # Set basic compile definition for system SQLite3
+        add_compile_definitions(HAVE_SQLITE3=1)
+        
+    else()
+        message(STATUS "ℹ SQLite3 not available anywhere")
+        add_compile_definitions(HAVE_SQLITE3=0)
+    endif()
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -2930,6 +3042,64 @@ if(VULKAN_LOADER_FOUND)
 endif()
 if(NOT VULKAN_FOUND)
     message(STATUS "  status: Building without Vulkan support")
+endif()
+
+# Add verification step for glmark2
+if(GLMARK2_FOUND)
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== GLMARK2 VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "glmark2: Available (${GLMARK2_EXECUTABLE})"
+        COMMENT "glmark2 availability verification"
+    )
+else()
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== GLMARK2 VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "glmark2: Not available - OpenGL benchmarking tool missing"
+        COMMENT "glmark2 not available"
+    )
+endif()
+
+# Update configuration summary
+message(STATUS "glmark2 Support: ${GLMARK2_FOUND}")
+if(GLMARK2_FOUND)
+    message(STATUS "  executable: ${GLMARK2_EXECUTABLE}")
+else()
+    message(STATUS "  status: OpenGL benchmarking tool not available")
+endif()
+
+# Link against SQLite3 if available
+if(SQLITE3_FOUND)
+    target_link_libraries(simplehttpserver PRIVATE ${SQLITE3_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE ${SQLITE3_INCLUDE_DIR})
+    
+    # Add verification step
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== SQLITE3 VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "SQLite3: Available"
+        COMMAND ${CMAKE_COMMAND} -E echo "  library: ${SQLITE3_LIBRARY}"
+        COMMENT "SQLite3 availability verification"
+    )
+else()
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== SQLITE3 VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "SQLite3: Not available - database support disabled"
+        COMMENT "SQLite3 not available"
+    )
+endif()
+
+# Update configuration summary
+message(STATUS "=== SQLITE3 SUPPORT SUMMARY ===")
+message(STATUS "SQLite3 Support: ${SQLITE3_FOUND}")
+if(SQLITE3_FOUND)
+    message(STATUS "  library: ${SQLITE3_LIBRARY}")
+    message(STATUS "  headers: ${SQLITE3_INCLUDE_DIR}")
+    
+    # Show which features are available (only for custom build)
+    if(SQLITE3_LIBRARY MATCHES "/lilyspark/opt/lib/database/")
+        message(STATUS "  features: Column Metadata, FTS3/4/5, JSON1, RTree, DBSTAT, Secure Delete, URI, Unlock Notify, ZLIB")
+    endif()
+else()
+    message(STATUS "  status: Building without database support")
 endif()
 
 # No external dependencies needed for Hello World
