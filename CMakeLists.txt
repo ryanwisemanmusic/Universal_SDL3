@@ -1833,6 +1833,52 @@ else()
 endif()
 
 # -------------------------------
+# SDL3 Support
+# -------------------------------
+message(STATUS "Checking for SDL3 support...")
+
+# Search for SDL3 in primary location first
+find_library(SDL3_LIBRARY
+    NAMES SDL3
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/lib
+    NO_DEFAULT_PATH
+)
+
+find_path(SDL3_INCLUDE_DIR
+    NAMES SDL3/SDL.h
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/include
+    NO_DEFAULT_PATH
+)
+
+# Simple detection - don't set compile definitions yet
+set(SDL3_FOUND FALSE)
+
+if(SDL3_LIBRARY AND SDL3_INCLUDE_DIR)
+    set(SDL3_FOUND TRUE)
+    message(STATUS "✓ SDL3 found")
+    message(STATUS "  library: ${SDL3_LIBRARY}")
+    message(STATUS "  include: ${SDL3_INCLUDE_DIR}")
+else()
+    set(SDL3_FOUND FALSE)
+    message(STATUS "ℹ SDL3 not found in expected location")
+    
+    # Additional fallback search
+    find_library(SDL3_LIBRARY_FALLBACK NAMES SDL3 PATHS /usr/lib /usr/local/lib)
+    find_path(SDL3_INCLUDE_DIR_FALLBACK NAMES SDL3/SDL.h PATHS /usr/include /usr/local/include)
+    
+    if(SDL3_LIBRARY_FALLBACK AND SDL3_INCLUDE_DIR_FALLBACK)
+        set(SDL3_LIBRARY ${SDL3_LIBRARY_FALLBACK})
+        set(SDL3_INCLUDE_DIR ${SDL3_INCLUDE_DIR_FALLBACK})
+        set(SDL3_FOUND TRUE)
+        message(STATUS "✓ SDL3 found in system locations")
+        message(STATUS "  library: ${SDL3_LIBRARY}")
+        message(STATUS "  include: ${SDL3_INCLUDE_DIR}")
+    else()
+        message(STATUS "ℹ SDL3 not available anywhere")
+    endif()
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -2447,6 +2493,52 @@ if(GLES_INCLUDE_DIR)
 endif()
 if(NOT GLES_FOUND)
     message(STATUS "  status: Building without GLES support")
+endif()
+
+# Set compile definitions based on SDL3 availability
+if(SDL3_FOUND)
+    target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL3=1)
+    
+    # Link against SDL3
+    target_link_libraries(simplehttpserver PRIVATE ${SDL3_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE ${SDL3_INCLUDE_DIR})
+    
+    # Add verification step
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== SDL3 VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "SDL3: Available"
+        COMMENT "SDL3 available"
+    )
+else()
+    target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL3=0)
+    
+    # Check for SDL2 as fallback (simpler approach)
+    find_library(SDL2_LIBRARY NAMES SDL2)
+    if(SDL2_LIBRARY)
+        message(STATUS "Using SDL2 as fallback")
+        target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL2=1)
+        target_link_libraries(simplehttpserver PRIVATE ${SDL2_LIBRARY})
+        
+        add_custom_command(TARGET simplehttpserver POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "=== SDL VERIFICATION ==="
+            COMMAND ${CMAKE_COMMAND} -E echo "SDL3: Not available, using SDL2 fallback"
+            COMMENT "SDL fallback"
+        )
+    else()
+        target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL2=0)
+        
+        add_custom_command(TARGET simplehttpserver POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "=== SDL VERIFICATION ==="
+            COMMAND ${CMAKE_COMMAND} -E echo "SDL: Not available"
+            COMMENT "No SDL available"
+        )
+    endif()
+endif()
+
+# Update configuration summary (simple version)
+message(STATUS "SDL3 Support: ${SDL3_FOUND}")
+if(SDL3_FOUND)
+    message(STATUS "  library: ${SDL3_LIBRARY}")
 endif()
 
 # No external dependencies needed for Hello World
