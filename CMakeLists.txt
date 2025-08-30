@@ -1879,6 +1879,52 @@ else()
 endif()
 
 # -------------------------------
+# SDL3_image Support
+# -------------------------------
+message(STATUS "Checking for SDL3_image support...")
+
+# Search for SDL3_image in primary location first
+find_library(SDL3_IMAGE_LIBRARY
+    NAMES SDL3_image
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/lib
+    NO_DEFAULT_PATH
+)
+
+find_path(SDL3_IMAGE_INCLUDE_DIR
+    NAMES SDL3_image/SDL_image.h
+    PATHS /lilyspark/opt/lib/sdl3/usr/media/include
+    NO_DEFAULT_PATH
+)
+
+# Simple detection - don't set compile definitions yet
+set(SDL3_IMAGE_FOUND FALSE)
+
+if(SDL3_IMAGE_LIBRARY AND SDL3_IMAGE_INCLUDE_DIR)
+    set(SDL3_IMAGE_FOUND TRUE)
+    message(STATUS "✓ SDL3_image found")
+    message(STATUS "  library: ${SDL3_IMAGE_LIBRARY}")
+    message(STATUS "  include: ${SDL3_IMAGE_INCLUDE_DIR}")
+else()
+    set(SDL3_IMAGE_FOUND FALSE)
+    message(STATUS "ℹ SDL3_image not found in expected location")
+    
+    # Additional fallback search
+    find_library(SDL3_IMAGE_LIBRARY_FALLBACK NAMES SDL3_image PATHS /usr/lib /usr/local/lib)
+    find_path(SDL3_IMAGE_INCLUDE_DIR_FALLBACK NAMES SDL3_image/SDL_image.h PATHS /usr/include /usr/local/include)
+    
+    if(SDL3_IMAGE_LIBRARY_FALLBACK AND SDL3_IMAGE_INCLUDE_DIR_FALLBACK)
+        set(SDL3_IMAGE_LIBRARY ${SDL3_IMAGE_LIBRARY_FALLBACK})
+        set(SDL3_IMAGE_INCLUDE_DIR ${SDL3_IMAGE_INCLUDE_DIR_FALLBACK})
+        set(SDL3_IMAGE_FOUND TRUE)
+        message(STATUS "✓ SDL3_image found in system locations")
+        message(STATUS "  library: ${SDL3_IMAGE_LIBRARY}")
+        message(STATUS "  include: ${SDL3_IMAGE_INCLUDE_DIR}")
+    else()
+        message(STATUS "ℹ SDL3_image not available anywhere")
+    endif()
+endif()
+
+# -------------------------------
 # Simple Hello World executable
 # -------------------------------
 add_executable(simplehttpserver
@@ -2539,6 +2585,52 @@ endif()
 message(STATUS "SDL3 Support: ${SDL3_FOUND}")
 if(SDL3_FOUND)
     message(STATUS "  library: ${SDL3_LIBRARY}")
+endif()
+
+# Set compile definitions based on SDL3_image availability
+if(SDL3_IMAGE_FOUND)
+    target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL3_IMAGE=1)
+    
+    # Link against SDL3_image
+    target_link_libraries(simplehttpserver PRIVATE ${SDL3_IMAGE_LIBRARY})
+    target_include_directories(simplehttpserver PRIVATE ${SDL3_IMAGE_INCLUDE_DIR})
+    
+    # Add verification step
+    add_custom_command(TARGET simplehttpserver POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "=== SDL3_image VERIFICATION ==="
+        COMMAND ${CMAKE_COMMAND} -E echo "SDL3_image: Available"
+        COMMENT "SDL3_image available"
+    )
+else()
+    target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL3_IMAGE=0)
+    
+    # Check for SDL2_image as fallback
+    find_library(SDL2_IMAGE_LIBRARY NAMES SDL2_image)
+    if(SDL2_IMAGE_LIBRARY)
+        message(STATUS "Using SDL2_image as fallback")
+        target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL2_IMAGE=1)
+        target_link_libraries(simplehttpserver PRIVATE ${SDL2_IMAGE_LIBRARY})
+        
+        add_custom_command(TARGET simplehttpserver POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "=== SDL_image VERIFICATION ==="
+            COMMAND ${CMAKE_COMMAND} -E echo "SDL3_image: Not available, using SDL2_image fallback"
+            COMMENT "SDL_image fallback"
+        )
+    else()
+        target_compile_definitions(simplehttpserver PRIVATE HAVE_SDL2_IMAGE=0)
+        
+        add_custom_command(TARGET simplehttpserver POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "=== SDL_image VERIFICATION ==="
+            COMMAND ${CMAKE_COMMAND} -E echo "SDL_image: Not available"
+            COMMENT "No SDL_image available"
+        )
+    endif()
+endif()
+
+# Update configuration summary
+message(STATUS "SDL3_image Support: ${SDL3_IMAGE_FOUND}")
+if(SDL3_IMAGE_FOUND)
+    message(STATUS "  library: ${SDL3_IMAGE_LIBRARY}")
 endif()
 
 # No external dependencies needed for Hello World
