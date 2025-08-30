@@ -371,10 +371,22 @@ clean-runtime-docker-log:
 	@mkdir -p log
 	@$(MAKE) clean-runtime-docker > logs/clean/clean_runtime_docker.txt 2>&1
 
-LOGFILE := logs/build/cmake_output.txt
+LOGFILE := logs/build/build.log
 
 dump-cmake-output:
-	@mkdir -p build/cmake
-	@echo "===== CMake Output Dump =====" >> $(LOGFILE)
-	@cmake -S . -B build/cmake >> $(LOGFILE) 2>&1
-	@echo "===== End CMake Output =====" >> $(LOGFILE)
+	@echo "Creating build log directory..."
+	@mkdir -p logs/build
+	@echo "===== CMake Output Dump - $(shell date) =====" > $(LOGFILE)
+	@echo "Running CMake configuration..." | tee -a $(LOGFILE)
+	@cmake -S . -B build/cmake >> $(LOGFILE) 2>&1; \
+	CMake_EXIT_CODE=$$?; \
+	echo "CMake exit code: $$CMake_EXIT_CODE" >> $(LOGFILE); \
+	echo "===== End CMake Output =====" >> $(LOGFILE); \
+	if [ $$CMake_EXIT_CODE -eq 0 ]; then \
+		echo "CMake configuration completed successfully" | tee -a $(LOGFILE); \
+	else \
+		echo "CMake configuration failed with exit code $$CMake_EXIT_CODE" | tee -a $(LOGFILE); \
+		echo "===== TAIL OF BUILD LOG (last 50 lines) =====" | tee -a $(LOGFILE); \
+		tail -50 $(LOGFILE) | tee -a $(LOGFILE); \
+	fi; \
+	exit $$CMake_EXIT_CODE
