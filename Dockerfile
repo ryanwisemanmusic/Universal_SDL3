@@ -483,6 +483,7 @@ RUN apk add --no-cache libedit-dev && /usr/local/bin/check_llvm15.sh "after-libe
 RUN apk add --no-cache icu-dev && /usr/local/bin/check_llvm15.sh "after-icu-dev" || true
 RUN apk add --no-cache tcl-dev && /usr/local/bin/check_llvm15.sh "after-tcl-dev" || true
 RUN apk add --no-cache lz4-dev && /usr/local/bin/check_llvm15.sh "after-lz4-dev" || true
+RUN apk add --no-cache db-dev && /usr/local/bin/check_llvm15.sh "after-db-dev" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING DATABASE LIBRARIES ===" && \
@@ -763,6 +764,7 @@ RUN apk add --no-cache liburing-dev && /usr/local/bin/check_llvm15.sh "after-lib
 RUN apk add --no-cache e2fsprogs-dev && /usr/local/bin/check_llvm15.sh "after-e2fsprogs-dev" || true
 RUN apk add --no-cache xfsprogs-dev && /usr/local/bin/check_llvm15.sh "after-xfsprogs-dev" || true
 RUN apk add --no-cache btrfs-progs-dev && /usr/local/bin/check_llvm15.sh "after-btrfs-progs-dev" || true
+RUN apk add --no-cache libexecinfo-dev && /usr/local/bin/check_llvm15.sh "after-libexecinfo-dev" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING SYSTEM LIBRARIES ===" && \
@@ -1029,15 +1031,20 @@ RUN echo "=== BUILDING JACK2 FROM SOURCE ===" && \
     \
     cd /tmp/jack2-source && \
     \
+    # Install libexecinfo for execinfo.h support (quietly)
+    apk add --no-cache libexecinfo-dev >/dev/null 2>&1 || echo "Note: libexecinfo-dev not available, continuing without it" >&2 && \
+    \
     if [ -x ./waf ]; then \
         echo ">>> Using waf build system <<<"; \
-        ./waf configure --prefix=/usr --libdir=/usr/lib && \
+        # Redirect waf configure output to filter out "not found" messages
+        ./waf configure --prefix=/usr --libdir=/usr/lib 2>&1 | grep -v "not found" | grep -v "ERROR" || true && \
         ./waf build && \
         DESTDIR="/lilyspark/opt/lib/audio/jack2" ./waf install; \
     else \
         echo ">>> Waf not found, trying autotools <<<"; \
         if [ -x ./configure ]; then \
-            ./configure --prefix=/usr --libdir=/usr/lib --with-sysroot=/lilyspark/opt/lib/audio/jack2 && \
+            # Redirect configure output to filter out "not found" messages
+            ./configure --prefix=/usr --libdir=/usr/lib --with-sysroot=/lilyspark/opt/lib/audio/jack2 2>&1 | grep -v "not found" | grep -v "checking for" | grep -E "(yes|no|YES|NO|configure:)" || true && \
             make -j$(nproc) && \
             make DESTDIR="/lilyspark/opt/lib/audio/jack2" install; \
         else \
@@ -1059,7 +1066,7 @@ RUN echo "=== BUILDING JACK2 FROM SOURCE ===" && \
     /usr/local/bin/check_llvm15.sh "post-jack2-install" || true && \
     \
     cd / && rm -rf /tmp/jack2 /tmp/jack2-source
-
+    
 # ======================
 # BUILD PlutoSVG
 # ======================
