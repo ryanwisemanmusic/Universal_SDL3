@@ -1052,15 +1052,15 @@ RUN echo "=== BUILDING JACK2 FROM SOURCE ===" && \
     \
     if [ -x ./waf ]; then \
         echo ">>> Using waf build system <<<"; \
-        # Redirect waf configure output to filter out "not found" messages but keep important info
-        ./waf configure --prefix=/usr --libdir=/usr/lib 2>&1 | grep -v "not found" | grep -v "ERROR" | grep -E "(Checking for|yes|no|Setting|JACK)" || true && \
+        # Enhanced filtering: keep only "yes", important settings, and remove all "no" and ucontext checks
+        ./waf configure --prefix=/usr --libdir=/usr/lib 2>&1 | grep -v "not found" | grep -v "ERROR" | grep -v "no" | grep -E "(Checking for|yes|Setting|JACK|Maximum|Build|Enable|Use|C\+\+|Linker)" | grep -v "ucontext" || true && \
         ./waf build && \
         DESTDIR="/lilyspark/opt/lib/audio/jack2" ./waf install; \
     else \
         echo ">>> Waf not found, trying autotools <<<"; \
         if [ -x ./configure ]; then \
-            # Redirect configure output to filter out "not found" messages but keep important info
-            ./configure --prefix=/usr --libdir=/usr/lib --with-sysroot=/lilyspark/opt/lib/audio/jack2 2>&1 | grep -v "not found" | grep -v "checking for" | grep -E "(yes|no|YES|NO|configure:|checking)" || true && \
+            # Redirect configure output with enhanced filtering
+            ./configure --prefix=/usr --libdir=/usr/lib --with-sysroot=/lilyspark/opt/lib/audio/jack2 2>&1 | grep -v "not found" | grep -v "checking for" | grep -v "no" | grep -E "(yes|YES|configure:)" || true && \
             make -j$(nproc) && \
             make DESTDIR="/lilyspark/opt/lib/audio/jack2" install; \
         else \
