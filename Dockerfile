@@ -634,7 +634,23 @@ RUN echo "=== INTEGRATING IMAGE LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Java Libraries - /lilyspark/usr/local/lib/java
-RUN apk add --no-cache openjdk11 && /usr/local/bin/check_llvm15.sh "after-openjdk11" || true
+RUN apk add --no-cache openjdk11 && \
+    /usr/local/bin/check_llvm15.sh "after-openjdk11" || true && \
+    \
+    # Verify Java installation
+    echo "=== VERIFYING JAVA INSTALLATION ===" && \
+    JAVA_BIN="$(command -v java)" && \
+    if [ -n "$JAVA_BIN" ]; then \
+        echo "✓ Java found at: $JAVA_BIN" && \
+        echo "Java version:" && \
+        "$JAVA_BIN" -version 2>&1 || echo "Java version check failed"; \
+    else \
+        echo "✗ Java not found in PATH" >&2 && \
+        echo "Searching for Java..." && \
+        find /usr -name "java" -type f -executable 2>/dev/null | head -5 || true && \
+        false; \
+    fi
+
 RUN apk add --no-cache ant && /usr/local/bin/check_llvm15.sh "after-ant" || true
 
     # Copy Libraries To Directory
