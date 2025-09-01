@@ -975,6 +975,23 @@ RUN echo "=== INSTALLING Apache FOP 2.11 (isolated, safe) ===" && \
         find /tmp/fop -type f -path '*/fop/*' -name '*.jar' -print -exec cp -a {} /lilyspark/opt/lib/java/fop/lib/ \; || true; \
     fi && \
     \
+    # === NEW: CREATE FOP MANIFEST FILE FOR CMAKE ===
+    echo "Creating FOP manifest for CMake detection..." && \
+    mkdir -p /lilyspark/opt/lib/java/fop/metadata && \
+    # Get JAR files list
+    FOP_JARS=$(find /lilyspark/opt/lib/java/fop/lib -name "*.jar" 2>/dev/null | tr '\n' ':' | sed 's/:$//' || echo "") && \
+    # Get launcher path
+    FOP_LAUNCHER_PATH=$(find /lilyspark/opt/lib/java/fop \( -name "fop" -o -name "fop.sh" \) -type f 2>/dev/null | head -n1 || echo "") && \
+    # Create manifest JSON
+    echo "{" > /lilyspark/opt/lib/java/fop/metadata/manifest.json && \
+    echo "  \"version\": \"2.11\"," >> /lilyspark/opt/lib/java/fop/metadata/manifest.json && \
+    echo "  \"install_path\": \"/lilyspark/opt/lib/java/fop\"," >> /lilyspark/opt/lib/java/fop/metadata/manifest.json && \
+    echo "  \"jar_count\": $(ls -1 /lilyspark/opt/lib/java/fop/lib/*.jar 2>/dev/null | wc -l || echo 0)," >> /lilyspark/opt/lib/java/fop/metadata/manifest.json && \
+    echo "  \"classpath\": \"${FOP_JARS}\"," >> /lilyspark/opt/lib/java/fop/metadata/manifest.json && \
+    echo "  \"launcher\": \"${FOP_LAUNCHER_PATH}\"," >> /lilyspark/opt/lib/java/fop/metadata/manifest.json && \
+    echo "  \"status\": \"installed\"" >> /lilyspark/opt/lib/java/fop/metadata/manifest.json && \
+    echo "}" >> /lilyspark/opt/lib/java/fop/metadata/manifest.json && \
+    \
     # Copy docs/snippets (best-effort)
     cp -r /tmp/fop/javadocs /lilyspark/opt/lib/java/fop/docs/ 2>/dev/null || true && \
     cp -r /tmp/fop/README* /lilyspark/opt/lib/java/fop/docs/ 2>/dev/null || true && \
@@ -1015,6 +1032,7 @@ RUN echo "=== INSTALLING Apache FOP 2.11 (isolated, safe) ===" && \
     # Verify installation
     echo "=== VERIFYING Apache FOP INSTALLATION ===" && \
     echo "Contents of /lilyspark/opt/lib/java/fop/lib:" && ls -la /lilyspark/opt/lib/java/fop/lib || true && \
+    echo "FOP manifest created:" && cat /lilyspark/opt/lib/java/fop/metadata/manifest.json || true && \
     JAVA_BIN="$(command -v java || true)" && \
     if [ -n "$JAVA_BIN" ]; then \
         echo "Found java at: $JAVA_BIN"; \
