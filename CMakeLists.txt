@@ -8,11 +8,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ===========
-# Apache FOP - BULLETPROOF VERSION
+# Apache FOP - FIXED DETECTION
 # ===========
 message(STATUS "Starting FOP detection (safe mode)...")
 
-# Safe Java detection with multiple fallbacks
+# Safe Java detection
 set(JAVA_EXECUTABLE "NOTFOUND")
 find_program(JAVA_EXECUTABLE_TMP java)
 if(JAVA_EXECUTABLE_TMP)
@@ -30,7 +30,7 @@ set(FOP_JARS "")
 set(FOP_JAR_COUNT 0)
 set(FOP_CLASSPATH "")
 
-# Check if FOP directory exists - with multiple safety checks
+# Check if FOP directory exists
 if(EXISTS ${FOP_BASE_DIR} AND IS_DIRECTORY ${FOP_BASE_DIR})
     set(FOP_INSTALL_DIR ${FOP_BASE_DIR})
     message(STATUS "✓ FOP directory found: ${FOP_INSTALL_DIR}")
@@ -41,12 +41,12 @@ if(EXISTS ${FOP_BASE_DIR} AND IS_DIRECTORY ${FOP_BASE_DIR})
         "${FOP_BASE_DIR}/bin/fop.sh" 
         "${FOP_BASE_DIR}/launchers/fop"
     )
-        if(EXISTS ${LAUNCHER_PATH} AND NOT FOP_LAUNCHER)
+        if(EXISTS ${LAUNCHER_PATH} AND FOP_LAUNCHER STREQUAL "NOTFOUND")
             set(FOP_LAUNCHER ${LAUNCHER_PATH})
         endif()
     endforeach()
     
-    # Safe JAR detection with error suppression
+    # Safe JAR detection - FIXED: Check if lib directory exists first
     if(EXISTS "${FOP_BASE_DIR}/lib")
         file(GLOB FOP_JARS_TMP "${FOP_BASE_DIR}/lib/*.jar")
         if(FOP_JARS_TMP)
@@ -57,43 +57,58 @@ if(EXISTS ${FOP_BASE_DIR} AND IS_DIRECTORY ${FOP_BASE_DIR})
                 list(JOIN FOP_JARS ":" FOP_CLASSPATH)
             endif()
         endif()
+    else()
+        message(STATUS "FOP lib directory not found: ${FOP_BASE_DIR}/lib")
     endif()
+else()
+    message(STATUS "FOP base directory not found: ${FOP_BASE_DIR}")
 endif()
 
 message(STATUS "FOP install dir: ${FOP_INSTALL_DIR}")
 message(STATUS "FOP launcher: ${FOP_LAUNCHER}")
 message(STATUS "FOP JARs found: ${FOP_JAR_COUNT}")
 
-# SUPER SAFE FOP testing - no Java execution that could fail
-set(FOP_FOUND "FALSE")
+# Check for manifest file - NEW: Read from the manifest you created
+set(FOP_MANIFEST_FILE "${FOP_BASE_DIR}/metadata/manifest.json")
 set(FOP_VERSION "unknown")
 
-if(JAVA_EXECUTABLE AND JAVA_EXECUTABLE STREQUAL "NOTFOUND")
-    message(STATUS "Java not available for FOP testing")
-elseif(FOP_JAR_COUNT GREATER 0)
-    # Method 1: Simple existence check without execution
-    set(FOP_FOUND "PARTIAL")
-    message(STATUS "✓ FOP JARs found - assuming partial functionality")
-    
-    # Method 2: Try to extract version from filename (safe)
-    if(FOP_JARS)
-        list(GET FOP_JARS 0 FIRST_JAR)
-        get_filename_component(JAR_NAME ${FIRST_JAR} NAME)
-        if(JAR_NAME MATCHES "fop.*([0-9]+\\.[0-9]+\\.[0-9]+)")
-            set(FOP_VERSION ${CMAKE_MATCH_1})
-            set(FOP_FOUND "TRUE")
-            message(STATUS "✓ FOP version detected from filename: ${FOP_VERSION}")
+if(EXISTS ${FOP_MANIFEST_FILE})
+    file(READ ${FOP_MANIFEST_FILE} MANIFEST_CONTENT)
+    if(MANIFEST_CONTENT MATCHES "\"version\": \"([^\"]+)\"")
+        set(FOP_VERSION ${CMAKE_MATCH_1})
+        message(STATUS "✓ FOP version from manifest: ${FOP_VERSION}")
+    endif()
+    if(MANIFEST_CONTENT MATCHES "\"jar_count\": ([0-9]+)")
+        set(MANIFEST_JAR_COUNT ${CMAKE_MATCH_1})
+        if(MANIFEST_JAR_COUNT GREATER 0 AND FOP_JAR_COUNT EQUAL 0)
+            set(FOP_JAR_COUNT ${MANIFEST_JAR_COUNT})
+            message(STATUS "✓ FOP JAR count from manifest: ${FOP_JAR_COUNT}")
         endif()
     endif()
-elseif(JAVA_EXECUTABLE AND NOT JAVA_EXECUTABLE STREQUAL "NOTFOUND")
-    set(FOP_FOUND "JAVA_ONLY")
-    message(STATUS "ℹ Java available but no FOP found")
+endif()
+
+# FIXED: Proper FOP status detection
+set(FOP_FOUND "FALSE")
+
+if(JAVA_EXECUTABLE AND NOT JAVA_EXECUTABLE STREQUAL "NOTFOUND")
+    if(FOP_JAR_COUNT GREATER 0)
+        if(FOP_LAUNCHER AND NOT FOP_LAUNCHER STREQUAL "NOTFOUND")
+            set(FOP_FOUND "TRUE")
+            message(STATUS "✓ Apache FOP found and functional")
+        else()
+            set(FOP_FOUND "PARTIAL")
+            message(STATUS "⚠ Apache FOP JARs found but launcher missing")
+        endif()
+    else()
+        set(FOP_FOUND "JAVA_ONLY")
+        message(STATUS "ℹ Java available but no FOP found")
+    endif()
 else()
     set(FOP_FOUND "FALSE")
     message(STATUS "ℹ No Java or FOP available")
 endif()
 
-# SAFEST POSSIBLE compile definitions - no complex operations
+# Compile definitions
 if(FOP_FOUND STREQUAL "TRUE")
     add_compile_definitions(HAVE_APACHE_FOP=1)
     message(STATUS "✓ Building with full FOP support")
@@ -114,6 +129,9 @@ if(FOP_CLASSPATH AND NOT FOP_CLASSPATH STREQUAL "")
 endif()
 if(FOP_LAUNCHER AND NOT FOP_LAUNCHER STREQUAL "NOTFOUND")
     add_compile_definitions(FOP_LAUNCHER="${FOP_LAUNCHER}")
+endif()
+if(NOT FOP_VERSION STREQUAL "unknown")
+    add_compile_definitions(FOP_VERSION="${FOP_VERSION}")
 endif()
 
 # -------------------------------
@@ -2262,20 +2280,22 @@ endif()
 #
 #
 
-# Safe dependency tracking - cannot fail
+# Safe dependency tracking
 if(FOP_FOUND STREQUAL "TRUE" OR FOP_FOUND STREQUAL "PARTIAL")
     message(STATUS "Creating FOP version info...")
     
-    # Create simple version file without complex commands
+    # Create version info file
     file(WRITE ${CMAKE_BINARY_DIR}/fop_version.json
         "{\n"
         "  \"type\": \"apache-fop\",\n"
         "  \"version\": \"${FOP_VERSION}\",\n"
         "  \"status\": \"${FOP_FOUND}\",\n"
-        "  \"jar_count\": ${FOP_JAR_COUNT}\n"
+        "  \"jar_count\": ${FOP_JAR_COUNT},\n"
+        "  \"java\": \"${JAVA_EXECUTABLE}\",\n"
+        "  \"install_path\": \"${FOP_INSTALL_DIR}\"\n"
         "}\n"
     )
-    message(STATUS "FOP info saved to fop_version.json")
+    message(STATUS "FOP info saved to ${CMAKE_BINARY_DIR}/fop_version.json")
     
     # Safe Java definition
     if(JAVA_EXECUTABLE AND NOT JAVA_EXECUTABLE STREQUAL "NOTFOUND")
@@ -2283,12 +2303,14 @@ if(FOP_FOUND STREQUAL "TRUE" OR FOP_FOUND STREQUAL "PARTIAL")
     endif()
 endif()
 
-# Final summary (cannot fail)
+# Final summary
 message(STATUS "=== FINAL FOP STATUS ===")
 message(STATUS "Status: ${FOP_FOUND}")
 message(STATUS "Version: ${FOP_VERSION}")
 message(STATUS "JARs: ${FOP_JAR_COUNT}")
 message(STATUS "Java: ${JAVA_EXECUTABLE}")
+message(STATUS "Install path: ${FOP_INSTALL_DIR}")
+message(STATUS "Launcher: ${FOP_LAUNCHER}")
 message(STATUS "=========================")
 
 
