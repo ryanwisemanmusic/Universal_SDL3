@@ -35,24 +35,12 @@ if(EXISTS ${FOP_BASE_DIR} AND IS_DIRECTORY ${FOP_BASE_DIR})
     set(FOP_INSTALL_DIR ${FOP_BASE_DIR})
     message(STATUS "✓ FOP directory found: ${FOP_INSTALL_DIR}")
     
-    # Safe launcher detection
-    foreach(LAUNCHER_PATH 
-        "${FOP_BASE_DIR}/bin/fop"
-        "${FOP_BASE_DIR}/bin/fop.sh" 
-        "${FOP_BASE_DIR}/launchers/fop"
-    )
-        if(EXISTS ${LAUNCHER_PATH} AND FOP_LAUNCHER STREQUAL "NOTFOUND")
-            set(FOP_LAUNCHER ${LAUNCHER_PATH})
-        endif()
-    endforeach()
-    
-    # Safe JAR detection - FIXED: Check if lib directory exists first
+    # Safe JAR detection
     if(EXISTS "${FOP_BASE_DIR}/lib")
         file(GLOB FOP_JARS_TMP "${FOP_BASE_DIR}/lib/*.jar")
         if(FOP_JARS_TMP)
             set(FOP_JARS ${FOP_JARS_TMP})
             list(LENGTH FOP_JARS FOP_JAR_COUNT)
-            # Safe classpath creation
             if(FOP_JAR_COUNT GREATER 0)
                 list(JOIN FOP_JARS ":" FOP_CLASSPATH)
             endif()
@@ -64,35 +52,44 @@ else()
     message(STATUS "FOP base directory not found: ${FOP_BASE_DIR}")
 endif()
 
-message(STATUS "FOP install dir: ${FOP_INSTALL_DIR}")
-message(STATUS "FOP launcher: ${FOP_LAUNCHER}")
-message(STATUS "FOP JARs found: ${FOP_JAR_COUNT}")
-
-# Check for manifest file - NEW: Read from the manifest you created
+# Check for manifest file - PRIMARY SOURCE OF TRUTH
 set(FOP_MANIFEST_FILE "${FOP_BASE_DIR}/metadata/manifest.json")
 set(FOP_VERSION "unknown")
 
 if(EXISTS ${FOP_MANIFEST_FILE})
     file(READ ${FOP_MANIFEST_FILE} MANIFEST_CONTENT)
+    message(STATUS "✓ FOP manifest found: ${FOP_MANIFEST_FILE}")
+    
+    # Extract all values from manifest
     if(MANIFEST_CONTENT MATCHES "\"version\": \"([^\"]+)\"")
         set(FOP_VERSION ${CMAKE_MATCH_1})
-        message(STATUS "✓ FOP version from manifest: ${FOP_VERSION}")
     endif()
     if(MANIFEST_CONTENT MATCHES "\"jar_count\": ([0-9]+)")
         set(MANIFEST_JAR_COUNT ${CMAKE_MATCH_1})
-        if(MANIFEST_JAR_COUNT GREATER 0 AND FOP_JAR_COUNT EQUAL 0)
+        if(MANIFEST_JAR_COUNT GREATER 0)
             set(FOP_JAR_COUNT ${MANIFEST_JAR_COUNT})
-            message(STATUS "✓ FOP JAR count from manifest: ${FOP_JAR_COUNT}")
         endif()
     endif()
+    if(MANIFEST_CONTENT MATCHES "\"launcher\": \"([^\"]+)\"")
+        set(FOP_LAUNCHER ${CMAKE_MATCH_1})
+    endif()
+    if(MANIFEST_CONTENT MATCHES "\"classpath\": \"([^\"]+)\"")
+        set(FOP_CLASSPATH ${CMAKE_MATCH_1})
+    endif()
+    
+    message(STATUS "✓ FOP version from manifest: ${FOP_VERSION}")
+    message(STATUS "✓ FOP JAR count from manifest: ${FOP_JAR_COUNT}")
+    message(STATUS "✓ FOP launcher from manifest: ${FOP_LAUNCHER}")
+else()
+    message(STATUS "FOP manifest not found: ${FOP_MANIFEST_FILE}")
 endif()
 
-# FIXED: Proper FOP status detection
+# FIXED: Proper FOP status detection based on manifest
 set(FOP_FOUND "FALSE")
 
 if(JAVA_EXECUTABLE AND NOT JAVA_EXECUTABLE STREQUAL "NOTFOUND")
     if(FOP_JAR_COUNT GREATER 0)
-        if(FOP_LAUNCHER AND NOT FOP_LAUNCHER STREQUAL "NOTFOUND")
+        if(FOP_LAUNCHER AND NOT FOP_LAUNCHER STREQUAL "NOTFOUND" AND NOT FOP_LAUNCHER STREQUAL "")
             set(FOP_FOUND "TRUE")
             message(STATUS "✓ Apache FOP found and functional")
         else()
@@ -127,7 +124,7 @@ endif()
 if(FOP_CLASSPATH AND NOT FOP_CLASSPATH STREQUAL "")
     add_compile_definitions(FOP_CLASSPATH="${FOP_CLASSPATH}")
 endif()
-if(FOP_LAUNCHER AND NOT FOP_LAUNCHER STREQUAL "NOTFOUND")
+if(FOP_LAUNCHER AND NOT FOP_LAUNCHER STREQUAL "NOTFOUND" AND NOT FOP_LAUNCHER STREQUAL "")
     add_compile_definitions(FOP_LAUNCHER="${FOP_LAUNCHER}")
 endif()
 if(NOT FOP_VERSION STREQUAL "unknown")
@@ -2292,7 +2289,8 @@ if(FOP_FOUND STREQUAL "TRUE" OR FOP_FOUND STREQUAL "PARTIAL")
         "  \"status\": \"${FOP_FOUND}\",\n"
         "  \"jar_count\": ${FOP_JAR_COUNT},\n"
         "  \"java\": \"${JAVA_EXECUTABLE}\",\n"
-        "  \"install_path\": \"${FOP_INSTALL_DIR}\"\n"
+        "  \"install_path\": \"${FOP_INSTALL_DIR}\",\n"
+        "  \"launcher\": \"${FOP_LAUNCHER}\"\n"
         "}\n"
     )
     message(STATUS "FOP info saved to ${CMAKE_BINARY_DIR}/fop_version.json")
