@@ -1,3 +1,12 @@
+The priority stuff atm pertains to Docker exclusively. While we most certainly
+want to address the issues with CMake, I give less of a fuck outside of satisfying that
+output dump. So if things are working for Docker, its "good enough" at least for now.
+
+So, we need to ensure that libdrm, libepoxy, python dependencies (mako, MarkupSafe),
+Shaderc, libgbm, Xorg, gstreamer, MESA, GBM, EGL, SDL3_mixer, glmark2; all do not have 
+any fucky-wucky problems via Docker. These all have their own issues with being
+recognized.
+
 In order to move this project to a great state, there are a few important
 things to tackle.
 
