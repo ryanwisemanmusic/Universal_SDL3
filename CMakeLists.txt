@@ -1716,6 +1716,26 @@ elseif(GBM_MESA_FOUND STREQUAL "SOURCE_AVAILABLE")
     
     # Add custom steps for the actual build process
     ExternalProject_Add_Step(gbm_mesa_build build_gbm_mesa
+        COMMAND ${CMAKE_COMMAND} -E make_directory build
+        COMMAND cd build &&
+            export PATH="/lilyspark/compiler/bin:$$PATH" &&
+            export CC=${CLANG_16_EXECUTABLE} &&
+            export CXX=${CLANGXX_16_EXECUTABLE} &&
+            export LLVM_CONFIG=${LLVM_CONFIG_EXECUTABLE} &&
+            export PKG_CONFIG_SYSROOT_DIR="/lilyspark" &&
+            export PKG_CONFIG_PATH="/lilyspark/usr/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig" &&
+            export CFLAGS="--sysroot=/lilyspark -I/lilyspark/usr/include -I/lilyspark/compiler/include -march=armv8-a" &&
+            export CXXFLAGS="$$CFLAGS" &&
+            export LDFLAGS="--sysroot=/lilyspark -L/lilyspark/usr/lib -L/lilyspark/compiler/lib" &&
+            ${MESON_EXECUTABLE} setup builddir
+                --prefix=${GBM_MESA_PREFIX}
+                -Dglx=disabled
+                -Ddri3=disabled
+                -
+    )
+    
+    # Add custom steps for the actual build process
+    ExternalProject_Add_Step(gbm_mesa_build build_gbm_mesa
         COMMAND export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" &&
             export PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig" &&
             ${MESON_EXECUTABLE} setup builddir
@@ -2411,7 +2431,8 @@ if(LIBDRM_FOUND STREQUAL "TRUE")
     )
     
 elseif(LIBDRM_FOUND STREQUAL "SOURCE_AVAILABLE")
-    add_dependencies(simplehttpserver libdrm_build)
+    # TEMPORARY: Comment out to test segfault cause
+    # add_dependencies(simplehttpserver libdrm_build)
     
     # Add the include and library directories from the built libdrm
     target_include_directories(simplehttpserver PRIVATE
@@ -2419,11 +2440,12 @@ elseif(LIBDRM_FOUND STREQUAL "SOURCE_AVAILABLE")
         ${LIBDRM_PREFIX}/include/libdrm
     )
     
-    target_link_directories(simplehttpserver PRIVATE
-        ${LIBDRM_PREFIX}/lib
-    )
-    
-    target_link_libraries(simplehttpserver PRIVATE drm)
+    # TEMPORARY: Comment out linking to test segfault
+    # target_link_directories(simplehttpserver PRIVATE
+    #     ${LIBDRM_PREFIX}/lib
+    # )
+    # 
+    # target_link_libraries(simplehttpserver PRIVATE drm)
 endif()
 
 # Update configuration summary with libdrm status
