@@ -71,6 +71,8 @@ RUN mkdir -p \
     /lilyspark/opt/lib/python \
     /lilyspark/opt/lib/sdl3 \
     /lilyspark/opt/lib/sys \
+    /lilyspark/opt/lib/sys/usr \
+    /lilyspark/opt/lib/sys/usr/lib \
     /lilyspark/opt/lib/vulkan \
     # Main Compiler
     /lilyspark/compiler/bin \
@@ -284,6 +286,8 @@ RUN apk add --no-cache build-base && /usr/local/bin/check_llvm15.sh "after-build
 RUN apk add --no-cache bsd-compat-headers && /usr/local/bin/check_llvm15.sh "after-bsd-compat-headers" || true
 RUN apk add --no-cache linux-headers && /usr/local/bin/check_llvm15.sh "after-linux-headers" || true
 RUN apk add --no-cache musl-dev && /usr/local/bin/check_llvm15.sh "after-musl-dev" || true
+RUN apk add --no-cache libc-dev && /usr/local/bin/check_llvm15.sh "after-libc-dev" || true
+RUN apk add --no-cache libstdc++ && /usr/local/bin/check_llvm15.sh "after-libstdc++" || true
 RUN apk add --no-cache pkgconf && /usr/local/bin/check_llvm15.sh "after-pkgconf" || true
 RUN apk add --no-cache pkgconf-dev && /usr/local/bin/check_llvm15.sh "after-pkgconf-dev" || true
 RUN apk add --no-cache autoconf && /usr/local/bin/check_llvm15.sh "after-autoconf" || true
@@ -933,10 +937,8 @@ RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
     rm -f /tmp/nocache/timestamp
 
 COPY setup-scripts/dep_chain_visualizer.sh /usr/local/bin/dep_chain_visualizer.sh
-RUN chmod +x /usr/local/bin/dep_chain_visualizer.sh \
-#
-# Yes, you will indeed need to populate any folder in which you need llvm/clang for ANYTHING build-from-source
-#
+RUN chmod +x /usr/local/bin/dep_chain_visualizer.sh
+
 # ======================
 # STEP: Robust Sysroot Population with Fallbacks
 # (Must run BEFORE any build that uses /lilyspark/opt/lib/sys)
@@ -971,13 +973,28 @@ RUN echo "=== ATTEMPTING ROBUST SYSROOT POPULATION ===" && \
     copy_and_verify "/usr/lib/crt*.o" "/lilyspark/opt/lib/sys/usr/lib/"; \
     copy_and_verify "/usr/lib/gcc/*/*/crt*.o" "/lilyspark/opt/lib/sys/usr/lib/"; \
     \
-    # Copy compiler libraries
+    # Copy compiler libraries (FIXED: Include static libraries)
     copy_and_verify "/usr/lib/libgcc*" "/lilyspark/opt/lib/sys/usr/lib/"; \
+    copy_and_verify "/usr/lib/gcc/*/*/libgcc*" "/lilyspark/opt/lib/sys/usr/lib/"; \
+    copy_and_verify "/usr/lib/gcc/*/*/*.a" "/lilyspark/opt/lib/sys/usr/lib/"; \
     copy_and_verify "/usr/lib/libssp*" "/lilyspark/opt/lib/sys/usr/lib/"; \
     \
     # Copy C library and dynamic linker
     copy_and_verify "/lib/libc.musl-*.so.1" "/lilyspark/opt/lib/sys/lib/"; \
     copy_and_verify "/lib/ld-musl-*.so.1" "/lilyspark/opt/lib/sys/lib/"; \
+    \
+    # CRITICAL: Create libc.so symlink for linker
+    if [ -f "/lilyspark/opt/lib/sys/lib/libc.musl-aarch64.so.1" ]; then \
+        cd "/lilyspark/opt/lib/sys/lib" && \
+        ln -sf "libc.musl-aarch64.so.1" "libc.so" && \
+        echo "✓ Created libc.so symlink"; \
+        cd - >/dev/null; \
+    else \
+        echo "⚠ Cannot create libc.so symlink, musl library missing"; \
+    fi; \
+    \
+    # Also copy musl-dev static library if it exists
+    copy_and_verify "/usr/lib/libc.a" "/lilyspark/opt/lib/sys/usr/lib/"; \
     \
     # Copy headers
     echo "Populating sysroot usr/include..." && \
@@ -1396,7 +1413,12 @@ RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
     # CRITICAL FIX: Add proper sysroot flags and isolate from system
     export CFLAGS="--sysroot=/lilyspark/opt/lib/sys -I/lilyspark/opt/lib/sys/usr/include -march=armv8-a"; \
     export CXXFLAGS="$CFLAGS"; \
-    export LDFLAGS="--sysroot=/lilyspark/opt/lib/sys -L/lilyspark/opt/lib/sys/usr/lib"; \
+    # FIXED: Add library search paths for GCC libraries
+    export LDFLAGS="--sysroot=/lilyspark/opt/lib/sys -L/lilyspark/opt/lib/sys/usr/lib -L/lilyspark/opt/lib/sys/lib -L/lilyspark/compiler/lib"; \
+    \
+    # CRITICAL: Tell clang to use our sysroot's libgcc
+    export CFLAGS="--sysroot=/lilyspark/opt/lib/sys -I/lilyspark/opt/lib/sys/usr/include -I/lilyspark/compiler/include -march=armv8-a --gcc-toolchain=/lilyspark/opt/lib/sys"; \
+    export CXXFLAGS="$CFLAGS"; \
     \
     # SYSROOT sanity & fix-ups
     echo "=== SYSROOT RUNTIME CHECK ==="; \
