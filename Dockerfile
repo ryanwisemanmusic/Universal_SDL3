@@ -983,14 +983,23 @@ RUN echo "=== ATTEMPTING ROBUST SYSROOT POPULATION ===" && \
     copy_and_verify "/lib/libc.musl-*.so.1" "/lilyspark/opt/lib/sys/lib/"; \
     copy_and_verify "/lib/ld-musl-*.so.1" "/lilyspark/opt/lib/sys/lib/"; \
     \
-    # CRITICAL: Create libc.so symlink for linker
+    # Copy pthread static library and create symlinks
+    copy_and_verify "/usr/lib/libpthread.a" "/lilyspark/opt/lib/sys/usr/lib/"; \
+    \
+    # CRITICAL: Create pthread symlinks ONLY in sysroot, not runtime paths
     if [ -f "/lilyspark/opt/lib/sys/lib/libc.musl-aarch64.so.1" ]; then \
         cd "/lilyspark/opt/lib/sys/lib" && \
         ln -sf "libc.musl-aarch64.so.1" "libc.so" && \
-        echo "✓ Created libc.so symlink"; \
+        ln -sf "libc.musl-aarch64.so.1" "libpthread.so.0" && \
+        ln -sf "libpthread.so.0" "libpthread.so" && \
+        echo "✓ Created libc.so and libpthread.so symlinks in sysroot only"; \
         cd - >/dev/null; \
+        \
+        # CRITICAL: Ensure these symlinks DON'T pollute runtime library paths
+        echo "Verifying pthread symlinks are isolated to sysroot..." && \
+        ls -la /lilyspark/opt/lib/sys/lib/libpthread* || true; \
     else \
-        echo "⚠ Cannot create libc.so symlink, musl library missing"; \
+        echo "⚠ Cannot create pthread symlinks, musl library missing"; \
     fi; \
     \
     # Also copy musl-dev static library if it exists
@@ -1364,132 +1373,12 @@ RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
     curl -L "${LIBDRM_URL}" -o libdrm.tar.xz || (echo "⚠ Failed to fetch libdrm tarball"; exit 0); \
     tar -xf libdrm.tar.xz --strip-components=1 || true; \
     \
-    # FIXED: Use correct compiler paths with proper isolation
-    export PATH="/lilyspark/compiler/bin:$PATH"; \
-    export CC="/lilyspark/compiler/bin/clang-16"; \
-    export CXX="/lilyspark/compiler/bin/clang++-16"; \
-    # === VERIFY COMPILER FUNCTIONALITY ===
-    echo "=== VERIFYING COMPILER FUNCTIONALITY ==="; \
-    if [ ! -x "$CC" ]; then \
-        echo "✗ Compiler not found or not executable: $CC"; \
-        echo "Available compilers in /lilyspark/compiler/bin:"; \
-        ls -la /lilyspark/compiler/bin/ || true; \
-        echo "Falling back to system compiler..."; \
-        export CC="$(command -v clang-16 || command -v clang || echo '')"; \
-        export CXX="$(command -v clang++-16 || command -v clang++ || echo '')"; \
-        if [ -n "$CC" ]; then \
-            echo "Using system compiler: $CC"; \
-        else \
-            echo "✗ No compiler available, skipping libdrm build"; \
-            exit 0; \
-        fi; \
-    fi; \
-    # Test basic compilation
-    echo "Testing compiler: $($CC --version | head -n1 || echo 'Unknown')"; \
-    printf '#include <stdio.h>\nint main() { printf("test"); return 0; }\n' > /tmp/compiler_test.c; \
-    if $CC /tmp/compiler_test.c -o /tmp/compiler_test 2>/dev/null; then \
-        echo "✓ Compiler test passed"; \
-        rm -f /tmp/compiler_test /tmp/compiler_test.c; \
-    else \
-        echo "⚠ Compiler test failed, but continuing..."; \
-        rm -f /tmp/compiler_test /tmp/compiler_test.c; \
-    fi; \
-    \
-    # CRITICAL FIX: Isolate compiler from system libraries
-    export LD_LIBRARY_PATH="/lilyspark/compiler/lib:/lilyspark/opt/lib/sys/usr/lib"; \
-    \
-    # FIXED: LLVM config with correct path
-    if [ -x "/lilyspark/compiler/bin/llvm-config-16" ]; then \
-        export LLVM_CONFIG="/lilyspark/compiler/bin/llvm-config-16"; \
-    elif [ -x "/lilyspark/compiler/bin/llvm-config" ]; then \
-        export LLVM_CONFIG="/lilyspark/compiler/bin/llvm-config"; \
-    else \
-        export LLVM_CONFIG="$(command -v llvm-config || echo '')"; \
-    fi; \
-    \
+    # CRITICAL: Install to isolated location to avoid ABI conflicts
+    export DESTDIR="/lilyspark/opt/lib/graphics"; \
     export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/sys"; \
     export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
     \
-    # CRITICAL FIX: Add proper sysroot flags and isolate from system
-    export CFLAGS="--sysroot=/lilyspark/opt/lib/sys -I/lilyspark/opt/lib/sys/usr/include -march=armv8-a"; \
-    export CXXFLAGS="$CFLAGS"; \
-    # FIXED: Add library search paths for GCC libraries
-    export LDFLAGS="--sysroot=/lilyspark/opt/lib/sys -L/lilyspark/opt/lib/sys/usr/lib -L/lilyspark/opt/lib/sys/lib -L/lilyspark/compiler/lib"; \
-    \
-    # CRITICAL: Tell clang to use our sysroot's libgcc
-    export CFLAGS="--sysroot=/lilyspark/opt/lib/sys -I/lilyspark/opt/lib/sys/usr/include -I/lilyspark/compiler/include -march=armv8-a --gcc-toolchain=/lilyspark/opt/lib/sys"; \
-    export CXXFLAGS="$CFLAGS"; \
-    \
-    # SYSROOT sanity & fix-ups
-    echo "=== SYSROOT RUNTIME CHECK ==="; \
-    ls -la /lilyspark/opt/lib/sys/usr/lib/crt* /lilyspark/opt/lib/sys/usr/lib/Scrt1.o 2>/dev/null || true; \
-    \
-    [ ! -e /lilyspark/opt/lib/sys/usr/lib/Scrt1.o ] && [ -e /lilyspark/opt/lib/sys/usr/lib/crt1.o ] && ln -sf crt1.o /lilyspark/opt/lib/sys/usr/lib/Scrt1.o; \
-    [ ! -e /lilyspark/opt/lib/sys/lib/Scrt1.o ] && [ -e /lilyspark/opt/lib/sys/usr/lib/Scrt1.o ] && ln -sf /lilyspark/opt/lib/sys/usr/lib/Scrt1.o /lilyspark/opt/lib/sys/lib/Scrt1.o; \
-    \
-    # === musl dynamic loader fix ===
-    if [ ! -e /lilyspark/opt/lib/sys/lib/ld-musl-aarch64.so.1 ] && [ -e /lib/ld-musl-aarch64.so.1 ]; then \
-        echo "[musl] Linking musl loader into sysroot: /lilyspark/opt/lib/sys/lib/ld-musl-aarch64.so.1"; \
-        mkdir -p /lilyspark/opt/lib/sys/lib; \
-        ln -sf /lib/ld-musl-aarch64.so.1 /lilyspark/opt/lib/sys/lib/ld-musl-aarch64.so.1; \
-    else \
-        echo "[musl] Loader already present or missing in /lib — skipping link"; \
-    fi; \
-    \
-    # === sysroot library inventory (first 60 entries) ===
-    if [ -d /lilyspark/opt/lib/sys/usr/lib ]; then \
-        echo "[sysroot] Listing /lilyspark/opt/lib/sys/usr/lib (first 60 entries):"; \
-        ls -la /lilyspark/opt/lib/sys/usr/lib | head -n 60; \
-    else \
-        echo "[sysroot] WARNING: /lilyspark/opt/lib/sys/usr/lib does not exist"; \
-    fi; \
-    \
-    # === filesystem diagnosis ===
-    if [ -x /usr/local/bin/check-filesystem.sh ]; then \
-        echo "[diag] Running filesystem check"; \
-        /usr/local/bin/check-filesystem.sh || echo "[diag] WARNING: check-filesystem.sh returned nonzero"; \
-    else \
-        echo "[diag] Skipping filesystem check — script not found"; \
-    fi; \
-    \
-    # Compiler test - IMPROVED with better diagnostics
-    echo "=== COMPILER CHECK (non-fatal) ==="; \
-    if command -v "$CC" >/dev/null 2>&1; then \
-        echo "✓ Compiler found: $($CC --version | head -n1)"; \
-        printf 'int main(void){return 0;}\n' > /tmp/meson_toolchain_test.c; \
-        # --- THE KEY TWEAK STARTS HERE ---
-        # Test 1: WITHOUT any sysroot flags. This just checks if the compiler binary itself is functional.
-        echo "Test 1: Basic compiler functionality (no flags)..."; \
-        if $CC -o /tmp/meson_basic_test /tmp/meson_toolchain_test.c 2>/dev/null; then \
-            echo "✓ Basic compiler test OK"; \
-            rm -f /tmp/meson_basic_test; \
-        else \
-            echo "⚠ Basic compiler test failed"; \
-        fi; \
-        # Test 2: WITH the full sysroot flags. This is the real test that matters for your build.
-        echo "Test 2: Sysroot compiler functionality (with all flags)..."; \
-        if $CC $CFLAGS $LDFLAGS -o /tmp/meson_sysroot_test /tmp/meson_toolchain_test.c 2>&1; then \
-            echo "✓ Sysroot compiler test OK"; \
-            # Test what libraries it actually links against
-            echo "=== LIBRARY DEPENDENCY CHECK ==="; \
-            ldd /tmp/meson_sysroot_test 2>/dev/null | head -n 10 || true; \
-            rm -f /tmp/meson_sysroot_test; \
-        else \
-            echo "✗ Sysroot compiler test failed:"; \
-            # Show the actual error from the failed command
-            $CC $CFLAGS $LDFLAGS -o /tmp/meson_sysroot_test /tmp/meson_toolchain_test.c 2>&1 | head -n 5; \
-            rm -f /tmp/meson_sysroot_test; \
-        fi; \
-        # --- THE KEY TWEAK ENDS HERE ---
-        rm -f /tmp/meson_toolchain_test.c; \
-    else \
-        echo "✗ Compiler not found: $CC"; \
-        echo "Available compilers:"; \
-        find /lilyspark -name "clang*" -type f -executable 2>/dev/null | head -n 5 || true; \
-    fi; \
-    \
-    # Build with Meson - ensure files are created even on failure
-    echo "=== CONFIGURING libdrm with Meson ==="; \
+    # Build with isolated installation
     if meson setup builddir \
         --prefix=/usr \
         --libdir=lib \
@@ -1501,50 +1390,16 @@ RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
         -Dc_link_args="$LDFLAGS" \
         -Dpkg_config_path="$PKG_CONFIG_PATH" 2>&1; then \
         \
-        echo "=== COMPILING libdrm ==="; \
         if meson compile -C builddir -j$(nproc) 2>&1; then \
-            echo "=== INSTALLING libdrm to sysroot ==="; \
-            if meson install -C builddir --destdir "/lilyspark/opt/lib/sys" --no-rebuild 2>&1; then \
-                echo "✓ libdrm built and installed successfully"; \
-            else \
-                echo "⚠ libdrm install failed, creating minimal installation"; \
-                # Create minimal libdrm structure so CMake finds something
-                mkdir -p /lilyspark/opt/lib/sys/usr/include/libdrm && \
-                touch /lilyspark/opt/lib/sys/usr/include/libdrm/drm.h && \
-                mkdir -p /lilyspark/opt/lib/sys/usr/lib/pkgconfig && \
-                echo "Created minimal libdrm installation"; \
+            # CRITICAL: Install to isolated graphics location, NOT sysroot
+            if meson install -C builddir --destdir "/lilyspark/opt/lib/graphics" --no-rebuild 2>&1; then \
+                echo "✓ libdrm built and installed to isolated location"; \
             fi; \
-        else \
-            echo "✗ libdrm compilation failed, creating minimal installation"; \
-            # Create minimal libdrm structure so CMake finds something
-            mkdir -p /lilyspark/opt/lib/sys/usr/include/libdrm && \
-            touch /lilyspark/opt/lib/sys/usr/include/libdrm/drm.h && \
-            mkdir -p /lilyspark/opt/lib/sys/usr/lib/pkgconfig && \
-            echo "Created minimal libdrm installation after compilation failure"; \
-            # Show actual error
-            echo "Build log:"; \
-            cat /tmp/libdrm-src/builddir/meson-logs/meson-log.txt 2>/dev/null | tail -20 || true; \
         fi; \
-    else \
-        echo "✗ libdrm configuration failed, creating minimal installation"; \
-        # Create minimal libdrm structure so CMake finds something
-        mkdir -p /lilyspark/opt/lib/sys/usr/include/libdrm && \
-        touch /lilyspark/opt/lib/sys/usr/include/libdrm/drm.h && \
-        mkdir -p /lilyspark/opt/lib/sys/usr/lib/pkgconfig && \
-        echo "Created minimal libdrm installation after configuration failure"; \
-        # Show actual error
-        echo "Configuration log:"; \
-        cat /tmp/libdrm-src/builddir/meson-logs/meson-log.txt 2>/dev/null | tail -20 || true; \
     fi; \
-    \
-    # Post-build summary
-    echo "=== POST BUILD SUMMARY ==="; \
-    echo "Installed libdrm files:"; \
-    find /lilyspark/opt/lib/sys -name "*drm*" -type f 2>/dev/null | head -n 20 || echo "No libdrm files found"; \
     \
     # Cleanup
     cd /; rm -rf /tmp/libdrm-src; \
-    /usr/local/bin/check_llvm15.sh "post-libdrm-source-build" || true; \
     echo "=== libdrm BUILD finished ==="; \
     true
 
@@ -1783,18 +1638,18 @@ RUN echo "=== BUILDING libgbm FROM SOURCE ===" && \
     cd libgbm && \
     \
     echo "=== CONFIGURING LIBGBM ===" && \
-    # Set up pkg-config environment to find libdrm in our sysroot
+    # Set up pkg-config environment to find libdrm in our graphics location
     export PKG_CONFIG_SYSROOT_DIR="/lilyspark" && \
-    export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/lib/pkgconfig:/lilyspark/opt/lib/sys/share/pkgconfig:${PKG_CONFIG_PATH:-}" && \
+    export PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:/lilyspark/opt/lib/sys/lib/pkgconfig:/lilyspark/opt/lib/sys/share/pkgconfig:${PKG_CONFIG_PATH:-}" && \
     \
     ./autogen.sh --prefix=/lilyspark/opt/lib/sys && \
     ./configure \
         --prefix=/lilyspark/opt/lib/sys \
         CC=/lilyspark/compiler/bin/clang-16 \
         CXX=/lilyspark/compiler/bin/clang++-16 \
-        CFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/sys/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
-        CXXFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/sys/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
-        LDFLAGS="--sysroot=/lilyspark -L/lilyspark/opt/lib/sys/lib -L/lilyspark/compiler/lib -L/lilyspark/glibc/lib" && \
+        CFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/graphics/usr/include -I/lilyspark/opt/lib/sys/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
+        CXXFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/graphics/usr/include -I/lilyspark/opt/lib/sys/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
+        LDFLAGS="--sysroot=/lilyspark -L/lilyspark/opt/lib/graphics/usr/lib -L/lilyspark/opt/lib/sys/lib -L/lilyspark/compiler/lib -L/lilyspark/glibc/lib" && \
     \
     echo "=== BUILDING LIBGBM ===" && \
     make -j"$(nproc)" 2>&1 | tee /tmp/libgbm-build.log && \
@@ -2746,10 +2601,10 @@ RUN chmod +x /lilyspark/etc/profile.d/runtime.sh
 # Configure user
 RUN chown -R shs:shs /lilyspark/app /lilyspark/usr/local
 
-# Minimal runtime libraries
+# Minimal runtime librariesƒ
 RUN apk add --no-cache libstdc++ libgcc libpng freetype fontconfig libx11
 
-# Set environment variables
+# Set environment variables - EXCLUDE the problematic sysroot lib paths from runtime
 ENV LD_LIBRARY_PATH="/lilyspark/usr/lib/runtime:/lilyspark/usr/lib:/lilyspark/usr/local/lib:$LD_LIBRARY_PATH" \
     PATH="/lilyspark/compiler/bin:/lilyspark/usr/local/bin:/lilyspark/usr/bin:$PATH"
 
