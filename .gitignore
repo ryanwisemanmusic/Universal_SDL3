@@ -218,3 +218,8 @@ build/cmake/CMakeFiles/TargetDirectories.txt
 build/cmake/compile_commands.json
 build/cmake/Makefile
 logs/build/build.log
+logs/debug/binary_debug.log
+logs/debug/debug_summary.log
+logs/debug/docker_debug.log
+logs/debug/filesystem_debug.log
+logs/debug/runtime_debug.log
