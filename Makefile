@@ -1,4 +1,6 @@
-.PHONY: all update-libraries build run run-software run-headless clean check-native help
+.PHONY: all update-libraries build run run-software run-headless clean check-native help \
+        debug-docker-all debug-docker-comprehensive debug-docker-interactive \
+        debug-docker-gdb debug-docker-strace debug-docker-filesystem debug-docker-binaries
 
 UNAME_S := $(shell uname -s)
 HAS_BREW := $(shell command -v brew >/dev/null 2>&1 && echo yes || echo no)
@@ -123,6 +125,170 @@ run-docker-log:
 	@echo "Running with Docker and logging output to run_docker.txt"
 	@$(MAKE) run-docker > run_docker.txt 2>&1
 
+debug-runtime-quick:
+	@echo "=== QUICK RUNTIME DEBUG ==="
+	@mkdir -p logs/debug
+	@echo "Testing container startup with verbose logging..."
+	@docker run --rm --name sdl3-runtime-debug \
+		-e DISPLAY=host.docker.internal:0 \
+		-e SDL_VIDEODRIVER=x11 \
+		-e SDL_LOG_PRIORITY=verbose \
+		--platform=linux/arm64 \
+		--shm-size=512m \
+		mostsignificant/simplehttpserver 2>&1 | tee logs/debug/runtime_debug.log; \
+		EXIT_CODE=$${PIPESTATUS[0]}; \
+		echo "Exit code: $$EXIT_CODE" | tee -a logs/debug/runtime_debug.log; \
+		if [ $$EXIT_CODE -eq 139 ]; then \
+			echo "SEGMENTATION FAULT detected" | tee -a logs/debug/runtime_debug.log; \
+		fi
+
+debug-runtime-shell:
+	@echo "=== RUNTIME SHELL DEBUG ==="
+	@echo "Opening shell in container to manually test..."
+	@docker run -it --rm --name sdl3-shell-debug \
+		-e DISPLAY=host.docker.internal:0 \
+		-e SDL_VIDEODRIVER=x11 \
+		--platform=linux/arm64 \
+		--shm-size=512m \
+		--entrypoint=/bin/sh \
+		mostsignificant/simplehttpserver
+
+# Enhanced debugging targets
+debug-docker-comprehensive: check-xquartz-settings
+	@echo "=== COMPREHENSIVE DOCKER DEBUG SESSION ==="
+	@mkdir -p logs/debug
+	@echo "1. Checking Docker daemon status..." | tee logs/debug/docker_debug.log
+	@docker version >> logs/debug/docker_debug.log 2>&1 || echo "Docker version check failed" >> logs/debug/docker_debug.log
+	@docker system info >> logs/debug/docker_debug.log 2>&1 || echo "Docker system info failed" >> logs/debug/docker_debug.log
+	@echo "2. Checking if image exists..." | tee -a logs/debug/docker_debug.log
+	@docker images mostsignificant/simplehttpserver >> logs/debug/docker_debug.log 2>&1 || echo "Image not found" >> logs/debug/docker_debug.log
+	@echo "3. Testing container creation (dry run)..." | tee -a logs/debug/docker_debug.log
+	@docker create --name sdl3-debug-test \
+		-e DISPLAY=host.docker.internal:0 \
+		-e SDL_VIDEODRIVER=x11 \
+		--platform=linux/arm64 \
+		--shm-size=512m \
+		mostsignificant/simplehttpserver >> logs/debug/docker_debug.log 2>&1 && \
+		echo "Container creation successful" >> logs/debug/docker_debug.log || \
+		echo "Container creation failed" >> logs/debug/docker_debug.log
+	@docker rm sdl3-debug-test >> logs/debug/docker_debug.log 2>&1 || true
+	@echo "4. Running container with verbose logging..." | tee -a logs/debug/docker_debug.log
+	@docker run --rm --name sdl3-opengl-app-debug \
+		-e DISPLAY=host.docker.internal:0 \
+		-e SDL_VIDEODRIVER=x11 \
+		-e SDL_LOG_PRIORITY=verbose \
+		-e LIBGL_DEBUG=verbose \
+		--platform=linux/arm64 \
+		--shm-size=512m \
+		mostsignificant/simplehttpserver >> logs/debug/docker_debug.log 2>&1; \
+		EXIT_CODE=$$?; \
+		echo "Container exit code: $$EXIT_CODE" | tee -a logs/debug/docker_debug.log; \
+		if [ $$EXIT_CODE -eq 139 ]; then \
+			echo "SEGMENTATION FAULT DETECTED (exit code 139)" | tee -a logs/debug/docker_debug.log; \
+		fi
+	@echo "Debug log saved to logs/debug/docker_debug.log"
+
+debug-docker-interactive: check-xquartz-settings
+	@echo "=== INTERACTIVE DOCKER DEBUG SESSION ==="
+	@echo "Starting container with shell access for debugging..."
+	@docker run -it --rm --name sdl3-debug-interactive \
+		-e DISPLAY=host.docker.internal:0 \
+		-e SDL_VIDEODRIVER=x11 \
+		--platform=linux/arm64 \
+		--shm-size=512m \
+		--entrypoint=/bin/sh \
+		mostsignificant/simplehttpserver
+
+debug-docker-strace: check-xquartz-settings
+	@echo "=== DOCKER DEBUG WITH STRACE ==="
+	@mkdir -p logs/debug
+	@echo "Running container with strace to trace system calls..."
+	@docker run --rm --name sdl3-strace-debug \
+		-e DISPLAY=host.docker.internal:0 \
+		-e SDL_VIDEODRIVER=x11 \
+		--platform=linux/arm64 \
+		--shm-size=512m \
+		--cap-add=SYS_PTRACE \
+		--entrypoint=/bin/sh \
+		mostsignificant/simplehttpserver \
+		-c "apk add --no-cache strace && strace -f -o /tmp/strace.log /lilyspark/app/simplehttpserver 2>&1; cat /tmp/strace.log" > logs/debug/strace_output.log 2>&1 || true
+	@echo "Strace output saved to logs/debug/strace_output.log"
+
+debug-docker-gdb: check-xquartz-settings
+	@echo "=== DOCKER DEBUG WITH GDB ==="
+	@mkdir -p logs/debug
+	@echo "Running container with GDB for debugging..."
+	@docker run -it --rm --name sdl3-gdb-debug \
+		-e DISPLAY=host.docker.internal:0 \
+		-e SDL_VIDEODRIVER=x11 \
+		--platform=linux/arm64 \
+		--shm-size=512m \
+		--cap-add=SYS_PTRACE \
+		--entrypoint=/bin/sh \
+		mostsignificant/simplehttpserver \
+		-c "apk add --no-cache gdb && gdb -batch -ex run -ex bt -ex quit --args /lilyspark/app/simplehttpserver"
+
+debug-docker-filesystem:
+	@echo "=== DOCKER FILESYSTEM DEBUG ==="
+	@mkdir -p logs/debug
+	@echo "Inspecting container filesystem..."
+	@docker run --rm --name sdl3-fs-debug \
+		--platform=linux/arm64 \
+		--entrypoint=/bin/sh \
+		mostsignificant/simplehttpserver \
+		-c "/usr/local/bin/check-filesystem.sh debug-comprehensive" > logs/debug/filesystem_debug.log 2>&1 || true
+	@echo "Filesystem debug saved to logs/debug/filesystem_debug.log"
+
+debug-docker-binaries:
+	@echo "=== DOCKER BINARY VALIDATION ==="
+	@mkdir -p logs/debug
+	@echo "Validating binaries and libraries..."
+	@docker run --rm --name sdl3-bin-debug \
+		--platform=linux/arm64 \
+		--entrypoint=/bin/sh \
+		mostsignificant/simplehttpserver \
+		-c "/usr/local/bin/binlib_validator.sh /lilyspark/app/simplehttpserver" > logs/debug/binary_debug.log 2>&1 || true
+	@echo "Binary validation saved to logs/debug/binary_debug.log"
+
+debug-docker-all: debug-docker-comprehensive debug-docker-filesystem debug-docker-binaries
+	@echo "=== COMPLETE DOCKER DEBUG ANALYSIS ==="
+	@mkdir -p logs/debug
+	@echo "Generating comprehensive debug report..."
+	@echo "=== DOCKER DEBUG SUMMARY REPORT ===" > logs/debug/debug_summary.log
+	@echo "Generated on: $$(date)" >> logs/debug/debug_summary.log
+	@echo "" >> logs/debug/debug_summary.log
+	@echo "=== DOCKER RUNTIME DEBUG ===" >> logs/debug/debug_summary.log
+	@tail -20 logs/debug/docker_debug.log >> logs/debug/debug_summary.log 2>/dev/null || echo "No docker debug log found" >> logs/debug/debug_summary.log
+	@echo "" >> logs/debug/debug_summary.log
+	@echo "=== FILESYSTEM STATUS ===" >> logs/debug/debug_summary.log
+	@tail -20 logs/debug/filesystem_debug.log >> logs/debug/debug_summary.log 2>/dev/null || echo "No filesystem debug log found" >> logs/debug/debug_summary.log
+	@echo "" >> logs/debug/debug_summary.log
+	@echo "=== BINARY VALIDATION ===" >> logs/debug/debug_summary.log
+	@tail -20 logs/debug/binary_debug.log >> logs/debug/debug_summary.log 2>/dev/null || echo "No binary debug log found" >> logs/debug/debug_summary.log
+	@echo "" >> logs/debug/debug_summary.log
+	@echo "=== RECOMMENDATIONS ===" >> logs/debug/debug_summary.log
+	@if grep -q "exit code: 139" logs/debug/docker_debug.log 2>/dev/null; then \
+		echo "• SEGMENTATION FAULT detected - check binary compatibility and dependencies" >> logs/debug/debug_summary.log; \
+		echo "• Run 'make debug-docker-gdb' for detailed crash analysis" >> logs/debug/debug_summary.log; \
+		echo "• Run 'make debug-docker-strace' to trace system calls" >> logs/debug/debug_summary.log; \
+	fi
+	@if grep -q "Container creation failed" logs/debug/docker_debug.log 2>/dev/null; then \
+		echo "• Container creation failed - check Docker daemon and image integrity" >> logs/debug/debug_summary.log; \
+	fi
+	@echo "" >> logs/debug/debug_summary.log
+	@echo "=== DEBUG FILES GENERATED ===" >> logs/debug/debug_summary.log
+	@ls -la logs/debug/ >> logs/debug/debug_summary.log 2>/dev/null || true
+	@echo ""
+	@echo "🔍 Complete debug analysis finished!"
+	@echo "📋 Summary report: logs/debug/debug_summary.log"
+	@echo "📁 All debug files: logs/debug/"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Review logs/debug/debug_summary.log"
+	@echo "  2. For interactive debugging: make debug-docker-interactive"
+	@echo "  3. For crash analysis: make debug-docker-gdb"
+	@echo "  4. For system call tracing: make debug-docker-strace"
+
 run:
 	@if [ "$(UNAME_S)" = "Darwin" ] && [ "$(HAS_BREW)" = "yes" ] && [ "$(HAS_CMAKE)" = "yes" ] && [ -f "build/native/simplehttpserver" ]; then \
 		echo "Using native macOS build..."; \
@@ -234,6 +400,17 @@ run-headless:
 help:
 	@echo "=== Hybrid Build System ==="
 	@echo "Available targets: all, build-native, run-native, build-docker, run-docker, test-native, run-headless, clean, debug"
+	@echo ""
+	@echo "=== Debug Targets ==="
+	@echo "  debug-docker-all           - Complete Docker debugging analysis"
+	@echo "  debug-docker-comprehensive - Detailed Docker runtime debugging"
+	@echo "  debug-docker-interactive   - Interactive shell in container"
+	@echo "  debug-docker-gdb           - Debug with GDB (for crashes)"
+	@echo "  debug-docker-strace        - Trace system calls"
+	@echo "  debug-docker-filesystem    - Inspect container filesystem"
+	@echo "  debug-docker-binaries      - Validate binaries and libraries"
+	@echo ""
+	@echo "For Docker issues, start with: make debug-docker-all"
 
 build-native-log:
 	@echo "Building natively and logging output to build_native.txt..."
