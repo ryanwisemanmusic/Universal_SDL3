@@ -1430,79 +1430,6 @@ RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
     true
 
 # ======================
-# SECTION: libepoxy Build (sysroot-focused)
-# ======================
-RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-libepoxy-source-build" || true && \
-    \
-    echo "=== INSTALLING BUILD DEPENDENCIES ===" && \
-    /usr/local/bin/check_llvm15.sh "after-libepoxy-deps-install" || true && \
-    \
-    echo "=== CLONING LIBEPOXY SOURCE ===" && \
-    git clone --depth=1 --branch 1.5.10 https://github.com/anholt/libepoxy.git libepoxy && \
-    cd libepoxy && \
-    \
-    echo "=== SOURCE CONTAMINATION SCAN ===" && \
-    grep -RIn "LLVM15\|llvm-15" . 2>/dev/null | tee /tmp/libepoxy_source_scan.log || true && \
-    \
-    echo "=== CONFIGURING LIBEPOXY WITH LLVM16 EXPLICIT PATHS ===" && \
-    CC=/lilyspark/opt/lib/sys/compiler/bin/clang-16 \
-    CXX=/lilyspark/opt/lib/sys/compiler/bin/clang++-16 \
-    LLVM_CONFIG=/lilyspark/opt/lib/sys/compiler/bin/llvm-config \
-    CFLAGS="-I/lilyspark/opt/lib/sys/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
-    CXXFLAGS="-I/lilyspark/opt/lib/sys/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
-    LDFLAGS="-L/lilyspark/opt/lib/sys/compiler/lib -L/lilyspark/opt/lib/sys/glibc/lib -Wl,-rpath,/lilyspark/opt/lib/sys/compiler/lib:/lilyspark/opt/lib/sys/glibc/lib" \
-    PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/opt/lib/sys/compiler/lib/pkgconfig" \
-    meson setup builddir \
-        --prefix=/lilyspark/opt/lib/sys/usr \
-        --libdir=/lilyspark/opt/lib/sys/usr/lib \
-        --includedir=/lilyspark/opt/lib/sys/usr/include \
-        --buildtype=release \
-        -Dglx=yes \
-        -Degl=yes \
-        -Dx11=true \
-        -Dwayland=true \
-        -Dtests=false && \
-    \
-    echo "=== BUILDING LIBEPOXY ===" && \
-    ninja -C builddir -j"$(nproc)" 2>&1 | tee /tmp/libepoxy-build.log && \
-    \
-    echo "=== INSTALLING LIBEPOXY ===" && \
-    ninja -C builddir install 2>&1 | tee /tmp/libepoxy-install.log && \
-    \
-    echo "=== LIBEPOXY INSTALLATION VERIFICATION ===" && \
-    echo "Libraries installed:" && \
-    ls -la /lilyspark/opt/lib/sys/usr/lib/libepoxy* 2>/dev/null || echo "No libepoxy libraries found" && \
-    echo "Headers installed:" && \
-    ls -la /lilyspark/opt/lib/sys/usr/include/epoxy/ 2>/dev/null || echo "No epoxy headers found" && \
-    echo "PKG-config files:" && \
-    ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig/epoxy.pc 2>/dev/null || echo "No epoxy.pc found" && \
-    \
-    echo "=== CREATING REQUIRED SYMLINKS ===" && \
-    cd /lilyspark/opt/lib/sys/usr/lib && \
-    for lib in $(ls libepoxy*.so.*.* 2>/dev/null); do \
-        soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
-        basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
-        ln -sf "$lib" "$soname"; \
-        ln -sf "$soname" "$basename"; \
-        echo "Created symlinks for $lib"; \
-    done && \
-    \
-    echo "=== FINAL CONTAMINATION SCAN ===" && \
-    find /lilyspark/opt/lib/sys/usr/lib -name "libepoxy*" -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee /tmp/libepoxy_contamination.log || true && \
-    \
-    cd / && \
-    rm -rf libepoxy && \
-    \
-    /usr/local/bin/check_llvm15.sh "post-libepoxy-source-build" || true && \
-    echo "=== LIBEPOXY BUILD COMPLETE ===" && \
-    if [ -f /lilyspark/opt/lib/sys/usr/lib/libepoxy.so ] && [ -f /lilyspark/opt/lib/sys/usr/include/epoxy/gl.h ]; then \
-        echo "✓ SUCCESS: libepoxy components installed"; \
-    else \
-        echo "⚠ WARNING: Some libepoxy components missing"; \
-    fi
-
-# ======================
 # SECTION: SDL3 Image Dependencies
 # ======================
 RUN echo "=== INSTALLING SDL3_IMAGE DEPENDENCIES ===" && \
@@ -1964,6 +1891,86 @@ RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
     /usr/local/bin/check_llvm15.sh "post-mesa-cleanup" || true; \
     echo "=== MESA SECTION COMPLETE ==="; \
     true
+
+# ======================
+# SECTION: libepoxy Build (sysroot-focused) - uses /lilyspark/compiler clang wiring
+# ======================
+RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-libepoxy-source-build" || true && \
+    \
+    echo "=== INSTALLING BUILD DEPENDENCIES ===" && \
+    /usr/local/bin/check_llvm15.sh "after-libepoxy-deps-install" || true && \
+    \
+    echo "=== CLONING LIBEPOXY SOURCE ===" && \
+    git clone --depth=1 https://github.com/anholt/libepoxy.git /tmp/libepoxy && \
+    cd /tmp/libepoxy && \
+    git checkout c84bc9459357a40e46e2fec0408d04fbdde2c973 -b libepoxy-1.5.10 && \
+    \
+    echo "=== SOURCE CONTAMINATION SCAN ===" && \
+    grep -RIn "LLVM15\|llvm-15" . 2>/dev/null | tee /tmp/libepoxy_source_scan.log || true && \
+    \
+    echo "=== VERIFY /lilyspark/compiler clang-16 presence ===" && \
+    if [ -x /lilyspark/compiler/bin/clang-16 ] && [ -x /lilyspark/compiler/bin/clang++-16 ] && [ -x /lilyspark/compiler/bin/llvm-config ]; then \
+        echo "Found clang-16 toolchain in /lilyspark/compiler/bin"; \
+    else \
+        echo "WARNING: clang-16 (or clang++-16 / llvm-config) NOT FOUND at /lilyspark/compiler/bin - libepoxy build may fail"; \
+        echo "Available compilers under /lilyspark/compiler/bin:"; ls -la /lilyspark/compiler/bin || true; \
+    fi && \
+    \
+    echo "=== CONFIGURING LIBEPOXY WITH /lilyspark/compiler clang/llvm paths ===" && \
+    CC=/lilyspark/compiler/bin/clang-16 \
+    CXX=/lilyspark/compiler/bin/clang++-16 \
+    LLVM_CONFIG=/lilyspark/compiler/bin/llvm-config \
+    CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
+    CXXFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
+    LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/opt/lib/sys/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/opt/lib/sys/glibc/lib" \
+    PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig" \
+    meson setup builddir \
+        --prefix=/lilyspark/opt/lib/sys/usr \
+        --libdir=/lilyspark/opt/lib/sys/usr/lib \
+        --includedir=/lilyspark/opt/lib/sys/usr/include \
+        --buildtype=release \
+        -Dglx=yes \
+        -Degl=yes \
+        -Dx11=true \
+        -Dtests=false || (cat /libepoxy/builddir/meson-logs/meson-log.txt 2>/dev/null || true) && \
+    \
+    echo "=== BUILDING LIBEPOXY ===" && \
+    ninja -C builddir -v && \
+    \
+    echo "=== INSTALLING LIBEPOXY INTO SYSROOT ===" && \
+    DESTDIR="/lilyspark/opt/lib/sys" ninja -C builddir install && \
+    \
+    echo "=== LIBEPOXY INSTALLATION VERIFICATION ===" && \
+    echo "Libraries installed:" && \
+    ls -la /lilyspark/opt/lib/sys/usr/lib/libepoxy* 2>/dev/null || echo "No libepoxy libraries found" && \
+    echo "Headers installed:" && \
+    ls -la /lilyspark/opt/lib/sys/usr/include/epoxy/ 2>/dev/null || echo "No epoxy headers found" && \
+    echo "PKG-config files:" && \
+    ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig/epoxy.pc 2>/dev/null || echo "No epoxy.pc found" && \
+    \
+    echo "=== CREATING REQUIRED SYMLINKS ===" && \
+    cd /lilyspark/opt/lib/sys/usr/lib && \
+    for lib in $(ls libepoxy*.so.*.* 2>/dev/null); do \
+        soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
+        basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
+        ln -sf "$lib" "$soname"; \
+        ln -sf "$soname" "$basename"; \
+        echo "Created symlinks for $lib"; \
+    done && \
+    \
+    echo "=== FINAL CONTAMINATION SCAN ===" && \
+    find /lilyspark/opt/lib/sys/usr/lib -name "libepoxy*" -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee /tmp/libepoxy_contamination.log || true && \
+    \
+    cd / && rm -rf /tmp/libepoxy && \
+    \
+    /usr/local/bin/check_llvm15.sh "post-libepoxy-source-build" || true && \
+    echo "=== LIBEPOXY BUILD COMPLETE ===" && \
+    if [ -f /lilyspark/opt/lib/sys/usr/lib/libepoxy.so ] && [ -f /lilyspark/opt/lib/sys/usr/include/epoxy/gl.h ]; then \
+        echo "✓ SUCCESS: libepoxy components installed"; \
+    else \
+        echo "⚠ WARNING: Some libepoxy components missing"; \
+    fi
 
 # ======================
 # BUILD GBM (from Mesa)
