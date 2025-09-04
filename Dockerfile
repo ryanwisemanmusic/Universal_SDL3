@@ -1461,7 +1461,7 @@ RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
         -Dglx=yes \
         -Degl=yes \
         -Dx11=true \
-        -Dwayland=false \
+        -Dwayland=true \
         -Dtests=false && \
     \
     echo "=== BUILDING LIBEPOXY ===" && \
