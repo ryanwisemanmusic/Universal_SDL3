@@ -729,24 +729,74 @@ RUN apk add --no-cache python3-dev && /usr/local/bin/check_llvm15.sh "after-pyth
 RUN apk add --no-cache py3-setuptools && /usr/local/bin/check_llvm15.sh "after-py3-setuptools" || true
 RUN apk add --no-cache py3-pip && /usr/local/bin/check_llvm15.sh "after-py3-pip" || true
 RUN apk add --no-cache mako && /usr/local/bin/check_llvm15.sh "after-mako" || true
+RUN apk add --no-cache py3-markupsafe && /usr/local/bin/check_llvm15.sh "after-markupsafe" || true
 
-    # Copy Libraries To Directory
-RUN echo "=== COPYING PYTHON LIBRARIES ===" && \
-    cp -a /usr/lib/python3* /lilyspark/usr/local/lib/python/ 2>/dev/null || true && \
-    cp -a /usr/bin/python3 /lilyspark/usr/local/lib/python/ 2>/dev/null || true && \
-    cp -a /usr/lib/python3*/site-packages/mako /lilyspark/usr/local/lib/python/ 2>/dev/null || true && \
-    cp -a /usr/lib/python3*/site-packages/setuptools /lilyspark/usr/local/lib/python/ 2>/dev/null || true && \
-    cp -a /usr/bin/pip3 /lilyspark/usr/local/lib/python/ 2>/dev/null || true && \
-    echo "--- PYTHON CHECK ---" && \
-    ls -la /lilyspark/usr/local/lib/python | head -10 || true
+# First verify the packages exist in the system
+RUN echo "=== VERIFYING SYSTEM PYTHON PACKAGES ===" && \
+    echo "Python version:" && python3 --version && \
+    echo "Python lib dirs:" && ls -la /usr/lib/python* 2>/dev/null || echo "No system Python dirs" && \
+    echo "Mako in system:" && find /usr/lib/python* -name "mako" -type d 2>/dev/null || echo "Mako not found in system" && \
+    echo "MarkupSafe in system:" && find /usr/lib/python* -name "*markup*safe*" -type d 2>/dev/null || echo "MarkupSafe not found in system"
 
-        # Sysroot Integration: Python Libraries
-RUN echo "=== INTEGRATING PYTHON LIBRARIES INTO SYSROOT ===" && \
-    # Link Python shared libraries and any extension modules (.so files)
-    find /lilyspark/usr/local/lib/python -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
-    echo "Python libraries integrated. Count:" && \
-    (ls -1 /lilyspark/usr/lib/libpython*.so* 2>/dev/null | wc -l || echo "No Python runtime libs found yet") && \
-    echo "=== PYTHON SYSROOT INTEGRATION COMPLETE ==="
+# Copy Python packages to your preferred directory structure
+RUN echo "=== COPYING PYTHON PACKAGES TO LILYPARK PREFERRED PATH ===" && \
+    # Copy the entire Python installation to maintain structure
+    mkdir -p /lilyspark/usr/local/lib/python && \
+    cp -a /usr/lib/python3* /lilyspark/usr/local/lib/python/ 2>/dev/null || echo "Warning: Could not copy python3*" && \
+    \
+    # Ensure site-packages exists and copy individual packages
+    mkdir -p /lilyspark/usr/local/lib/python/site-packages && \
+    \
+    # Copy mako with explicit verification
+    echo "Copying mako..." && \
+    mako_src=$(find /usr/lib/python3*/site-packages -maxdepth 1 -name "mako" -type d 2>/dev/null | head -1) && \
+    if [ -n "$mako_src" ] && [ -d "$mako_src" ]; then \
+        cp -a "$mako_src" /lilyspark/usr/local/lib/python/site-packages/ && \
+        echo "Copied mako from $mako_src"; \
+    else \
+        echo "ERROR: mako not found in system site-packages"; \
+        echo "Available packages:" && find /usr/lib/python3*/site-packages -maxdepth 1 -type d 2>/dev/null | head -10; \
+    fi && \
+    \
+    # Copy markupsafe
+    echo "Copying markupsafe..." && \
+    markupsafe_src=$(find /usr/lib/python3*/site-packages -maxdepth 1 -name "markupsafe" -type d 2>/dev/null | head -1) && \
+    if [ -n "$markupsafe_src" ] && [ -d "$markupsafe_src" ]; then \
+        cp -a "$markupsafe_src" /lilyspark/usr/local/lib/python/site-packages/ && \
+        echo "Copied markupsafe from $markupsafe_src"; \
+    else \
+        echo "MarkupSafe not found as 'markupsafe', trying 'MarkupSafe'..." && \
+        markupsafe_src=$(find /usr/lib/python3*/site-packages -maxdepth 1 -name "MarkupSafe" -type d 2>/dev/null | head -1) && \
+        if [ -n "$markupsafe_src" ] && [ -d "$markupsafe_src" ]; then \
+            cp -a "$markupsafe_src" /lilyspark/usr/local/lib/python/site-packages/markupsafe && \
+            echo "Copied MarkupSafe from $markupsafe_src as markupsafe"; \
+        else \
+            echo "ERROR: MarkupSafe not found in system site-packages"; \
+        fi; \
+    fi && \
+    \
+    # Copy setuptools
+    cp -a /usr/lib/python3*/site-packages/setuptools /lilyspark/usr/local/lib/python/site-packages/ 2>/dev/null || echo "Warning: Could not copy setuptools" && \
+    \
+    # Copy Python binaries
+    cp -a /usr/bin/python3 /lilyspark/usr/local/lib/python/ 2>/dev/null || echo "Warning: Could not copy python3" && \
+    cp -a /usr/bin/pip3 /lilyspark/usr/local/lib/python/ 2>/dev/null || echo "Warning: Could not copy pip3" && \
+    \
+    echo "--- VERIFICATION: PACKAGES IN PREFERRED PATH ---" && \
+    echo "Mako location:" && \
+    find /lilyspark/usr/local/lib/python -name "mako" -type d 2>/dev/null || echo "Mako not found in preferred path" && \
+    echo "MarkupSafe location:" && \
+    find /lilyspark/usr/local/lib/python -name "*markup*safe*" -type d 2>/dev/null || echo "MarkupSafe not found in preferred path" && \
+    echo "Site-packages content:" && \
+    ls -la /lilyspark/usr/local/lib/python/site-packages/ 2>/dev/null | head -10 || echo "Site-packages directory empty"
+
+# Sysroot Integration: Link from your preferred path to system locations within lilyspark
+RUN echo "=== INTEGRATING PYTHON FROM PREFERRED PATH TO LILYPARK SYSROOT ===" && \
+    # Link Python shared libraries from your preferred path to lilyspark system libs
+    find /lilyspark/usr/local/lib/python -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || echo "No .so files found to link" && \
+    # Link site-packages from your preferred path to system location within lilyspark
+    ln -sf /lilyspark/usr/local/lib/python/site-packages /lilyspark/usr/lib/python3*/site-packages 2>/dev/null || echo "Could not link site-packages" && \
+    echo "Python integration complete from preferred path"
 
 #
 #
@@ -1288,8 +1338,8 @@ RUN echo "=== BUILDING PlutoSVG FROM SOURCE ===" && \
     # Use pip to upgrade meson into /usr/local so it takes precedence over apk's meson.
     if command -v python3 >/dev/null 2>&1 && command -v pip3 >/dev/null 2>&1; then \
         echo "Upgrading pip tools and installing a modern meson via pip" && \
-        python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel || true && \
-        python3 -m pip install --no-cache-dir 'meson>=1.3.0' || echo "Warning: pip meson install failed - will attempt fallback patch"; \
+        python3 -m pip install --no-cache-dir --break-system-packages --upgrade pip setuptools wheel || true && \
+        python3 -m pip install --no-cache-dir --break-system-packages 'meson>=1.3.0' || echo "Warning: pip meson install failed - will attempt fallback patch"; \
     else \
         echo "python3/pip3 not available, will attempt fallback patch"; \
     fi && \
@@ -1499,19 +1549,38 @@ RUN echo "=== INSTALLING SDL3_IMAGE DEPENDENCIES ===" && \
     ls -la /lilyspark/opt/lib/sdl3/lib/libtiff* /lilyspark/opt/lib/sdl3/lib/libwebp* /lilyspark/opt/lib/sdl3/lib/libavif* || echo "Some SDL3 libraries not found"
 
 # ======================
-# SECTION: Python Dependencies
+# SECTION: Python Dependencies (FINAL COPY TO OPT)
 # ======================
 RUN echo "=== COPYING PYTHON PACKAGES TO CUSTOM FILESYSTEM ===" && \
     mkdir -p /lilyspark/opt/lib/python/site-packages && \
     for pkg in mesonbuild mako MarkupSafe; do \
-        # Find the package in the base sysroot or system Python site-packages
-        src_dir=$(find /usr/lib/python3.*/site-packages /usr/lib/python*/site-packages -type d -name "$pkg" | head -n1) && \
+        echo "Looking for $pkg..." && \
+        # Look in YOUR preferred lilyspark path
+        src_dir=$(find /lilyspark/usr/local/lib/python -type d -name "$pkg" 2>/dev/null | head -n1) && \
         if [ -n "$src_dir" ] && [ -d "$src_dir" ]; then \
             dst_dir="/lilyspark/opt/lib/python/site-packages/$pkg" && \
             cp -R "$src_dir" "$dst_dir" && \
             echo "Copied $pkg -> $dst_dir"; \
         else \
-            echo "Python package $pkg not found in system or base sysroot"; \
+            echo "Python package $pkg not found in preferred path, trying alternatives..." && \
+            # Handle case sensitivity
+            if [ "$pkg" = "MarkupSafe" ]; then \
+                alt_src_dir=$(find /lilyspark/usr/local/lib/python -type d -name "markupsafe" 2>/dev/null | head -n1) && \
+                if [ -n "$alt_src_dir" ] && [ -d "$alt_src_dir" ]; then \
+                    dst_dir="/lilyspark/opt/lib/python/site-packages/$pkg" && \
+                    cp -R "$alt_src_dir" "$dst_dir" && \
+                    echo "Copied markupsafe (lowercase) as $pkg -> $dst_dir"; \
+                else \
+                    echo "ERROR: $pkg not found in any form"; \
+                fi; \
+            elif [ "$pkg" = "mako" ]; then \
+                # Additional debug for mako
+                echo "DEBUG: Searching for mako in:" && \
+                find /lilyspark/usr/local/lib/python -name "*mako*" -type d 2>/dev/null || echo "No mako files found"; \
+                echo "ERROR: mako not found"; \
+            else \
+                echo "ERROR: $pkg not found"; \
+            fi; \
         fi; \
     done && \
     \
@@ -1521,7 +1590,7 @@ RUN echo "=== COPYING PYTHON PACKAGES TO CUSTOM FILESYSTEM ===" && \
             echo "$pkg successfully copied:"; \
             ls -la "/lilyspark/opt/lib/python/site-packages/$pkg" | head -5; \
         else \
-            echo "$pkg missing from /lilyspark/opt/lib/python/site-packages"; \
+            echo "$pkg MISSING from /lilyspark/opt/lib/python/site-packages"; \
         fi; \
     done
 
