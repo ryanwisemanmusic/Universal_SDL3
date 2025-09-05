@@ -1126,6 +1126,10 @@ RUN echo "=== ATTEMPTING ROBUST SYSROOT POPULATION FOR MESA ===" && \
     \
     # Copy pthread static library and create symlinks
     copy_and_verify "/usr/lib/libpthread.a" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
+    # Copy math library (libm)
+    copy_and_verify "/usr/lib/libm.a" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
+    copy_and_verify "/usr/lib/libm.so" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
+    \
     if [ -f "/lilyspark/opt/lib/driver/sys/lib/libc.musl-aarch64.so.1" ]; then \
         cd "/lilyspark/opt/lib/driver/sys/lib" && \
         ln -sf "libc.musl-aarch64.so.1" "libc.so" && \
@@ -1947,6 +1951,10 @@ RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
     copy_and_verify "/lib/libc.musl-*.so.1" "/lilyspark/lib/"; \
     copy_and_verify "/lib/ld-musl-*.so.1" "/lilyspark/lib/"; \
     copy_and_verify "/usr/lib/libpthread.a" "/lilyspark/usr/lib/"; \
+    # Copy math library (libm)
+    copy_and_verify "/usr/lib/libm.a" "/lilyspark/usr/lib/"; \
+    copy_and_verify "/usr/lib/libm.so" "/lilyspark/usr/lib/"; \
+    \
     if [ -f "/lilyspark/lib/libc.musl-aarch64.so.1" ]; then \
         cd /lilyspark/lib && \
         ln -sf "libc.musl-aarch64.so.1" "libc.so" && \
