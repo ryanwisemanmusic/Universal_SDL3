@@ -1197,6 +1197,25 @@ RUN echo "=== ATTEMPTING ROBUST SYSROOT POPULATION FOR MESA ===" && \
     \
     echo "=== ROBUST SYSROOT POPULATION FOR MESA COMPLETE ==="
 
+# ======================
+# SYSROOT POPULATION FOR libdrm
+# ======================
+RUN echo "=== SYSROOT POPULATION FOR libdrm ===" && \
+    \
+    # Copy LLVM runtime and headers
+    mkdir -p /lilyspark/opt/lib/sys/usr/lib/clang && \
+    cp -a /usr/lib/llvm-16/lib/clang/* /lilyspark/opt/lib/sys/usr/lib/clang/ 2>/dev/null || true; \
+    \
+    mkdir -p /lilyspark/opt/lib/sys/usr/include && \
+    cp -a /usr/include/* /lilyspark/opt/lib/sys/usr/include/ 2>/dev/null || true; \
+    \
+    # Copy system libraries
+    mkdir -p /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu && \
+    cp -a /usr/lib/x86_64-linux-gnu/* /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu/ 2>/dev/null || true; \
+    \
+    echo "✅ Sysroot populated for libdrm"
+
+
 # ===========================
 # Build From Source Libraries
 # ===========================
@@ -1519,6 +1538,28 @@ RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
     export DESTDIR="/lilyspark/opt/lib/graphics"; \
     export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/sys"; \
     export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+    \
+    # Force clang toolchain from Lilyspark compiler bin
+    if [ -x "/lilyspark/compiler/bin/clang-16" ]; then \
+        export CC="/lilyspark/compiler/bin/clang-16"; \
+    elif command -v clang >/dev/null 2>&1; then \
+        export CC="clang"; \
+    else \
+        echo "⚠ clang not found, falling back to cc"; \
+        export CC="cc"; \
+    fi; \
+    if [ -x "/lilyspark/compiler/bin/clang++-16" ]; then \
+        export CXX="/lilyspark/compiler/bin/clang++-16"; \
+    elif command -v clang++ >/dev/null 2>&1; then \
+        export CXX="clang++"; \
+    else \
+        echo "⚠ clang++ not found, falling back to c++"; \
+        export CXX="c++"; \
+    fi; \
+    \
+    export CFLAGS="${CFLAGS:-}"; \
+    export CXXFLAGS="${CXXFLAGS:-}"; \
+    export LDFLAGS="${LDFLAGS:-}"; \
     \
     # Build with isolated installation
     if meson setup builddir \
