@@ -1525,6 +1525,9 @@ RUN echo "=== BUILDING pciaccess FROM SOURCE WITH LLVM16 ===" && \
 ARG LIBDRM_VER=2.4.125
 ARG LIBDRM_URL="https://dri.freedesktop.org/libdrm/libdrm-${LIBDRM_VER}.tar.xz"
 
+# Set PKG_CONFIG_PATH globally so Meson and other builds can find libdrm
+ENV PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+
 RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-libdrm-source-build" || true; \
     /usr/local/bin/check_llvm15.sh "after-libdrm-deps" || true; \
@@ -1537,7 +1540,6 @@ RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
     # CRITICAL: Install to isolated location to avoid ABI conflicts
     export DESTDIR="/lilyspark/opt/lib/graphics"; \
     export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/sys"; \
-    export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
     \
     # Force clang toolchain from Lilyspark compiler bin
     if [ -x "/lilyspark/compiler/bin/clang-16" ]; then \
@@ -1585,6 +1587,8 @@ RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
     cd /; rm -rf /tmp/libdrm-src; \
     echo "=== libdrm BUILD finished ==="; \
     true
+
+
 
 # ======================
 # SECTION: SDL3 Image Dependencies
