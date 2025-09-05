@@ -1081,6 +1081,118 @@ RUN echo "=== ATTEMPTING ROBUST SYSROOT POPULATION ===" && \
     check_file "/lilyspark/opt/lib/sys/lib/libc.musl-aarch64.so.1"; \
     \
     echo "=== ROBUST SYSROOT POPULATION COMPLETE ==="
+
+# ======================
+# STEP: Robust Sysroot Population for Mesa (Must run BEFORE Mesa build)
+# ======================
+RUN echo "=== ATTEMPTING ROBUST SYSROOT POPULATION FOR MESA ===" && \
+    \
+    # STRATEGY 1: Ensure base directory structure exists
+    echo "Ensuring /lilyspark/opt/lib/driver/sys directory structure..." && \
+    mkdir -p /lilyspark/opt/lib/driver/sys/usr/lib && \
+    mkdir -p /lilyspark/opt/lib/driver/sys/usr/include && \
+    mkdir -p /lilyspark/opt/lib/driver/sys/lib && \
+    \
+    # STRATEGY 2: Methodical, verified copying with fallbacks
+    echo "Populating sysroot usr/lib..." && \
+    copy_and_verify() { \
+        src="$1"; dest="$2"; \
+        echo "Attempting to copy: $src"; \
+        if cp -a $src $dest 2>/dev/null; then \
+            echo "✓ Success: $(ls $dest 2>/dev/null | wc -l) files copied to $dest"; \
+        else \
+            echo "⚠ Partial/Failed: Could not copy $src to $dest"; \
+            if [ -z "$(ls -A $dest 2>/dev/null)" ]; then \
+                echo "Creating fallback structure in $dest"; \
+                mkdir -p $dest; \
+                touch $dest/.placeholder; \
+            fi; \
+        fi; \
+    }; \
+    \
+    # Copy critical runtime objects for Clang linking
+    copy_and_verify "/usr/lib/crt*.o" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
+    copy_and_verify "/usr/lib/gcc/*/*/crt*.o" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
+    \
+    # Copy compiler libraries (static + shared)
+    copy_and_verify "/usr/lib/libgcc*" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
+    copy_and_verify "/usr/lib/gcc/*/*/libgcc*" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
+    copy_and_verify "/usr/lib/gcc/*/*/*.a" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
+    copy_and_verify "/usr/lib/libssp*" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
+    \
+    # Copy C library and dynamic linker
+    copy_and_verify "/lib/libc.musl-*.so.1" "/lilyspark/opt/lib/driver/sys/lib/"; \
+    copy_and_verify "/lib/ld-musl-*.so.1" "/lilyspark/opt/lib/driver/sys/lib/"; \
+    \
+    # Copy pthread static library and create symlinks
+    copy_and_verify "/usr/lib/libpthread.a" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
+    if [ -f "/lilyspark/opt/lib/driver/sys/lib/libc.musl-aarch64.so.1" ]; then \
+        cd "/lilyspark/opt/lib/driver/sys/lib" && \
+        ln -sf "libc.musl-aarch64.so.1" "libc.so" && \
+        ln -sf "libc.musl-aarch64.so.1" "libpthread.so.0" && \
+        ln -sf "libpthread.so.0" "libpthread.so" && \
+        echo "✓ Created libc.so and libpthread.so symlinks in sysroot only"; \
+        cd - >/dev/null; \
+        echo "Verifying pthread symlinks are isolated to sysroot..." && \
+        ls -la /lilyspark/opt/lib/driver/sys/lib/libpthread* || true; \
+    else \
+        echo "⚠ Cannot create pthread symlinks, musl library missing"; \
+    fi; \
+    \
+    # Copy musl-dev static library if present
+    copy_and_verify "/usr/lib/libc.a" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
+    \
+    # Copy headers
+    echo "Populating sysroot usr/include..." && \
+    if [ -d "/usr/include" ] && [ -d "/lilyspark/opt/lib/driver/sys/usr/include" ]; then \
+        if cp -r /usr/include/* /lilyspark/opt/lib/driver/sys/usr/include/ 2>/dev/null; then \
+            echo "✓ Headers copied"; \
+        else \
+            echo "⚠ Header copy failed, creating minimal include structure"; \
+            mkdir -p /lilyspark/opt/lib/driver/sys/usr/include/linux; \
+            mkdir -p /lilyspark/opt/lib/driver/sys/usr/include/bits; \
+            touch /lilyspark/opt/lib/driver/sys/usr/include/stdio.h; \
+        fi; \
+    else \
+        echo "⚠ Source or destination for headers missing"; \
+    fi; \
+    \
+    # STRATEGY 3: Create critical symlinks if missing
+    echo "Creating essential symlinks..." && \
+    if [ -d "/lilyspark/opt/lib/driver/sys/usr/lib" ]; then \
+        cd "/lilyspark/opt/lib/driver/sys/usr/lib" && \
+        if [ ! -e "Scrt1.o" ] && [ -f "crt1.o" ]; then \
+            ln -sf "crt1.o" "Scrt1.o" && echo "✓ Created Scrt1.o symlink"; \
+        else \
+            echo "ℹ Scrt1.o symlink not needed or not possible"; \
+        fi; \
+        cd - >/dev/null; \
+    else \
+        echo "⚠ Cannot create symlinks, usr/lib directory missing"; \
+    fi; \
+    \
+    # STRATEGY 4: Final validation and inventory
+    echo "=== SYSROOT POPULATION VALIDATION ===" && \
+    echo "Checking /lilyspark/opt/lib/driver/sys structure..." && \
+    find /lilyspark/opt/lib/driver/sys -type d -name "lib" -o -name "include" | head -5 || echo "Base directories missing!"; \
+    \
+    echo "Critical file check:" && \
+    check_file() { \
+        if [ -e "$1" ]; then \
+            echo "✓ $1"; \
+        else \
+            echo "✗ $1 (MISSING)"; \
+        fi; \
+    }; \
+    \
+    check_file "/lilyspark/opt/lib/driver/sys/usr/lib/crt1.o"; \
+    check_file "/lilyspark/opt/lib/driver/sys/usr/lib/crti.o"; \
+    check_file "/lilyspark/opt/lib/driver/sys/usr/lib/libgcc_s.so"; \
+    check_file "/lilyspark/opt/lib/driver/sys/lib/ld-musl-aarch64.so.1"; \
+    check_file "/lilyspark/opt/lib/driver/sys/lib/libc.musl-aarch64.so.1"; \
+    \
+    echo "=== ROBUST SYSROOT POPULATION FOR MESA COMPLETE ==="
+
 # ===========================
 # Build From Source Libraries
 # ===========================
@@ -1798,7 +1910,9 @@ RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
     git clone --progress https://gitlab.freedesktop.org/mesa/mesa.git || (echo "⚠ mesa not cloned; skipping build commands" && exit 0); \
     if [ -d mesa ]; then cd mesa; else echo "⚠ mesa directory missing; skipping build"; exit 0; fi; \
     \
-    git checkout mesa-24.0.3 || true; \
+    # Avoid detached HEAD by creating a branch at the tag's commit
+    git fetch --tags; \
+    git checkout -b mesa-24.0.3-branch 67da5a8f08d11b929db3af8b70436065f093fcce || true; \
     /usr/local/bin/check_llvm15.sh "post-mesa-clone" || true; \
     \
     # Set up environment for proper sysroot build
@@ -1812,11 +1926,44 @@ RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
     export CXXFLAGS="$CFLAGS"; \
     export LDFLAGS="--sysroot=/lilyspark -L/lilyspark/usr/lib -L/lilyspark/compiler/lib -L/lilyspark/glibc/lib"; \
     \
-    # Run filesystem check
-    echo "=== FILESYSTEM DIAGNOSIS ==="; \
-    /usr/local/bin/check-filesystem.sh || true; \
+    # NEW: Populate Mesa sysroot and verify Clang can compile
+    echo "=== POPULATING /lilyspark SYSROOT FOR MESA ==="; \
+    mkdir -p /lilyspark/usr/lib /lilyspark/usr/include /lilyspark/lib; \
+    copy_and_verify() { src="$1"; dest="$2"; \
+        echo "Copying $src -> $dest"; \
+        if cp -a $src $dest 2>/dev/null; then \
+            echo "✓ Copied"; \
+        else \
+            echo "⚠ Missing: creating placeholder"; \
+            mkdir -p $dest; touch $dest/.placeholder; \
+        fi; \
+    }; \
+    copy_and_verify "/usr/lib/crt*.o" "/lilyspark/usr/lib/"; \
+    copy_and_verify "/usr/lib/gcc/*/*/crt*.o" "/lilyspark/usr/lib/"; \
+    copy_and_verify "/usr/lib/libgcc*" "/lilyspark/usr/lib/"; \
+    copy_and_verify "/usr/lib/gcc/*/*/libgcc*" "/lilyspark/usr/lib/"; \
+    copy_and_verify "/usr/lib/gcc/*/*/*.a" "/lilyspark/usr/lib/"; \
+    copy_and_verify "/usr/lib/libssp*" "/lilyspark/usr/lib/"; \
+    copy_and_verify "/lib/libc.musl-*.so.1" "/lilyspark/lib/"; \
+    copy_and_verify "/lib/ld-musl-*.so.1" "/lilyspark/lib/"; \
+    copy_and_verify "/usr/lib/libpthread.a" "/lilyspark/usr/lib/"; \
+    if [ -f "/lilyspark/lib/libc.musl-aarch64.so.1" ]; then \
+        cd /lilyspark/lib && \
+        ln -sf "libc.musl-aarch64.so.1" "libc.so" && \
+        ln -sf "libc.musl-aarch64.so.1" "libpthread.so.0" && \
+        ln -sf "libpthread.so.0" "libpthread.so"; \
+        cd - >/dev/null; \
+    fi; \
+    cp -r /usr/include/* /lilyspark/usr/include/ 2>/dev/null || true; \
+    if [ -f "/lilyspark/usr/lib/crt1.o" ] && [ ! -f "/lilyspark/usr/lib/Scrt1.o" ]; then \
+        ln -sf "crt1.o" "/lilyspark/usr/lib/Scrt1.o"; \
+    fi; \
+    echo 'int main() { return 0; }' > /tmp/test.c; \
+    /lilyspark/compiler/bin/clang-16 $CFLAGS --sysroot=/lilyspark /tmp/test.c -o /tmp/test.out && echo "✔ Clang test compiled successfully" || (echo "✗ Clang test failed — check sysroot and headers" && exit 1); \
+    rm -f /tmp/test.c /tmp/test.out; \
     \
-    echo "=== MESA BUILD CONFIGURATION (ARM64 + LLVM16) ===" && \
+    # Proceed with Meson setup
+    echo "=== MESA BUILD CONFIGURATION (ARM64 + LLVM16) ==="; \
     meson setup builddir/ \
         --prefix=/usr \
         -Dglx=disabled \
@@ -1832,6 +1979,10 @@ RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
         --fatal-meson-warnings \
         --wrap-mode=nodownload \
         -Dllvm=enabled || (echo "✗ meson setup failed (continuing)" && /usr/local/bin/dep_chain_visualizer.sh "mesa meson setup failed"); \
+    \
+    # Run filesystem check
+    echo "=== FILESYSTEM DIAGNOSIS ==="; \
+    /usr/local/bin/check-filesystem.sh || true; \
     \
     /usr/local/bin/check_llvm15.sh "post-mesa-configure" || true; \
     \
