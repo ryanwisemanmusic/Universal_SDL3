@@ -1215,6 +1215,16 @@ RUN echo "=== SYSROOT POPULATION FOR libdrm ===" && \
     \
     echo "✅ Sysroot populated for libdrm"
 
+RUN echo "=== SYSROOT POPULATION FOR libepoxy ===" && \
+    mkdir -p /lilyspark/opt/lib/sys/usr/lib/clang && \
+    cp -a /usr/lib/llvm-16/lib/clang/* /lilyspark/opt/lib/sys/usr/lib/clang/ 2>/dev/null || true && \
+    mkdir -p /lilyspark/opt/lib/sys/usr/include && \
+    cp -a /usr/include/* /lilyspark/opt/lib/sys/usr/include/ 2>/dev/null || true && \
+    mkdir -p /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu && \
+    cp -a /usr/lib/x86_64-linux-gnu/* /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu/ 2>/dev/null || true && \
+    echo "✅ Sysroot populated for libepoxy"
+
+
 
 # ===========================
 # Build From Source Libraries
@@ -2176,6 +2186,7 @@ RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
         echo "⚠ WARNING: Some libepoxy components missing"; \
     fi
 
+
 # ======================
 # BUILD GBM (from Mesa)
 # ======================
@@ -2758,6 +2769,36 @@ ARG BUILDKIT_INLINE_CACHE=0
 ARG CACHEBUST_DEBUG
 RUN echo "CACHEBUST_DEBUG=${CACHEBUST_DEBUG}" && echo "CACHE_DISABLED_FOR_DEBUG_STAGE"
 
+# ======================
+# SYSROOT POPULATION FOR libdrm in DEBUG
+# ======================
+RUN echo "=== SYSROOT POPULATION FOR libdrm (debug stage) ===" && \
+    \
+    # Copy LLVM runtime and headers
+    mkdir -p /lilyspark/opt/lib/sys/usr/lib/clang && \
+    if cp -a /usr/lib/llvm-16/lib/clang/* /lilyspark/opt/lib/sys/usr/lib/clang/ 2>/dev/null; then \
+        echo "✓ LLVM runtime copied successfully"; \
+    else \
+        echo "⚠ Warning: LLVM runtime not found or failed to copy"; \
+    fi; \
+    \
+    mkdir -p /lilyspark/opt/lib/sys/usr/include && \
+    if cp -a /usr/include/* /lilyspark/opt/lib/sys/usr/include/ 2>/dev/null; then \
+        echo "✓ System headers copied successfully"; \
+    else \
+        echo "⚠ Warning: System headers not found or failed to copy"; \
+    fi; \
+    \
+    # Copy system libraries for linking
+    mkdir -p /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu && \
+    if cp -a /usr/lib/x86_64-linux-gnu/* /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu/ 2>/dev/null; then \
+        echo "✓ System libraries copied successfully"; \
+    else \
+        echo "⚠ Warning: System libraries not found or failed to copy"; \
+    fi; \
+    \
+    echo "=== Sysroot population for libdrm completed ==="
+
 # Debug environment folders
 RUN mkdir -p /lilyspark/app/build \
              /lilyspark/var/log/debug && \
@@ -2795,13 +2836,19 @@ RUN if [ -f /lilyspark/app/build_files/CMakeLists.txt ]; then \
         echo "✗ ERROR: CMakeLists.txt missing in build_files!"; ls -la /lilyspark/app/build_files; \
     fi | tee /lilyspark/var/log/debug/cmake_path_check.log
 
-# Use system compiler
+# Use system compiler + sysroot-aware paths
 ENV SYSROOT=/lilyspark
 ENV PATH="/lilyspark/usr/bin:/lilyspark/compiler/bin:$PATH"
+ENV PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+ENV LD_LIBRARY_PATH="/lilyspark/opt/lib/graphics/usr/lib:${LD_LIBRARY_PATH:-}"
+
+# Optional: link Clang binaries to make them globally visible
+RUN ln -sf /lilyspark/compiler/bin/clang-16 /usr/local/bin/clang && \
+    ln -sf /lilyspark/compiler/bin/clang++-16 /usr/local/bin/clang++ && \
+    echo "✓ Clang wrappers linked into /usr/local/bin"
 
 # CMake configure & build
 WORKDIR /lilyspark/app/build/src
-# No complex environment setup needed for simple Hello World
 
 RUN cmake /lilyspark/app/build_files \
         -G Ninja \
@@ -2822,8 +2869,6 @@ RUN apk add --no-cache gdb strace ltrace perf lsof file binutils && \
         src="$(command -v $cmd 2>/dev/null || true)"; \
         [ -n "$src" ] && cp -p "$src" "$SYSROOT/usr/bin/"; \
     done
-
-
 
 # User setup
 RUN addgroup -g 1000 shs && adduser -u 1000 -G shs -D shs && \
