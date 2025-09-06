@@ -103,9 +103,18 @@ COPY setup-scripts/check_llvm15.sh /usr/local/bin/check_llvm15.sh
 COPY setup-scripts/check-filesystem.sh /usr/local/bin/check-filesystem.sh
 COPY setup-scripts/binlib_validator.sh /usr/local/bin/binlib_validator.sh
 COPY setup-scripts/dep_chain_visualizer.sh /usr/local/bin/dep_chain_visualizer.sh
+COPY setup-scripts/sgid_suid_scanner.sh /usr/local/bin/sgid_suid_scanner.sh
+COPY setup-scripts/dependency_checker.sh /usr/local/bin/dependency_checker.sh
+COPY setup-scripts/version_matrix.sh /usr/local/bin/version_matrix.sh
+COPY setup-scripts/cflag_audit.sh /usr/local/bin/cflag_audit.sh
 RUN chmod +x /usr/local/bin/check_llvm15.sh \
     /usr/local/bin/check-filesystem.sh \
-    /usr/local/bin/binlib_validator.sh
+    /usr/local/bin/binlib_validator.sh \
+    /usr/local/bin/dep_chain_visualizer.sh \
+    /usr/local/bin/sgid_suid_scanner.sh \
+    /usr/local/bin/dependency_checker.sh \
+    /usr/local/bin/version_matrix.sh \
+    /usr/local/bin/cflag_audit.sh
 
 # Remove any preinstalled LLVM/Clang
 RUN apk del --no-cache llvm clang || true
@@ -963,7 +972,16 @@ RUN --mount=type=cache,target=/tmp/nocache,sharing=private \
     rm -f /tmp/nocache/timestamp
 
 COPY setup-scripts/dep_chain_visualizer.sh /usr/local/bin/dep_chain_visualizer.sh
-RUN chmod +x /usr/local/bin/dep_chain_visualizer.sh
+COPY setup-scripts/sgid_suid_scanner.sh /usr/local/bin/sgid_suid_scanner.sh
+COPY setup-scripts/dependency_checker.sh /usr/local/bin/dependency_checker.sh
+COPY setup-scripts/version_matrix.sh /usr/local/bin/version_matrix.sh
+COPY setup-scripts/cflag_audit.sh /usr/local/bin/cflag_audit.sh
+RUN chmod +x /usr/local/bin/dep_chain_visualizer.sh \
+    /usr/local/bin/sgid_suid_scanner.sh \
+    /usr/local/bin/dependency_checker.sh \
+    /usr/local/bin/version_matrix.sh \
+    /usr/local/bin/cflag_audit.sh
+
 
 # ======================
 # STEP: Robust Sysroot Population with Fallbacks
