@@ -2373,10 +2373,6 @@ RUN echo "=== BUILDING SDL3 ===" && \
     git clone --depth=1 https://github.com/libsdl-org/SDL.git sdl && \
     cd sdl && \
     mkdir build && cd build && \
-    #\
-    #\echo "=== SETTING SDL3 SYSROOT ENVIRONMENT ===" && \
-    #export PKG_CONFIG_SYSROOT_DIR=/lilyspark/opt/lib/sdl3/usr/media && \
-    #export PKG_CONFIG_PATH=/lilyspark/opt/lib/sdl3/usr/media/lib/pkgconfig && \
     \
     echo "=== CONFIGURING SDL3 ===" && \
     cmake .. \
@@ -2397,7 +2393,8 @@ RUN echo "=== BUILDING SDL3 ===" && \
         -DSDL_AUDIO=ON \
         -DCMAKE_C_FLAGS="-march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
         -DCMAKE_CXX_FLAGS="-march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
-        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" && \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" \
+    2>&1 | grep -vE "fopen64|fseeko64|posix_spawn_file_actions_addchdir|itoa|_i64toa|_ltoa|strnstr|wcslcat|wcslcpy|sysctlbyname|elf_aux_info|sqr|LIBC_HAS_ISINFF|LIBC_HAS_ISNANF|ICONV_IN_LIBICONV|pthread_np.h|LIBC_HAS_WORKING_LIBUNWIND|LIBUNWIND_HAS_WORKINGLIBUNWIND|dbus-1|ibus-1.0|liburing-ffi|__GLIBC__" && \
     \
     echo "=== BUILDING SDL3 ===" && \
     make -j"$(nproc)" install 2>&1 | tee /tmp/sdl3-build.log && \
@@ -2513,7 +2510,8 @@ RUN echo "=== BUILDING SDL3_ttf ===" && \
         -DBUILD_SHARED_LIBS=OFF \
         -DCMAKE_C_FLAGS="-march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
         -DCMAKE_CXX_FLAGS="-march=armv8-a -I/lilyspark/compiler/include -I/lilyspark/glibc/include" \
-        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" && \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" \
+    2>&1 | grep -vE "fopen64|fseeko64|posix_spawn_file_actions_addchdir|itoa|_i64toa|_ltoa|strnstr|wcslcat|wcslcpy|sysctlbyname|elf_aux_info|sqr|LIBC_HAS_ISINFF|LIBC_HAS_ISNANF|ICONV_IN_LIBICONV|pthread_np.h|LIBC_HAS_WORKING_LIBUNWIND|LIBUNWIND_HAS_WORKINGLIBUNWIND|dbus-1|ibus-1.0|liburing-ffi|__GLIBC__" && \
     \
     echo "=== BUILDING SDL3_ttf ===" && \
     make -j"$(nproc)" install 2>&1 | tee /tmp/sdl3-ttf-build.log && \
@@ -2524,6 +2522,7 @@ RUN echo "=== BUILDING SDL3_ttf ===" && \
     cd ../../.. && rm -rf sdl_ttf && \
     /usr/local/bin/check_llvm15.sh "post-sdl3-ttf" || true && \
     echo "=== SDL3_ttf BUILD COMPLETED ==="
+
 
 # ======================
 # SECTION: Vulkan Components
