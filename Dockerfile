@@ -1851,10 +1851,9 @@ RUN echo "=== BUILDING libgbm FROM SOURCE ===" && \
     echo "=== LIBGBM BUILD COMPLETE ==="
 
 # ======================
-# SECTION: GStreamer Plugins Base Build
+# SECTION: gst-plugins-base + xorg-server Build
 # ======================
-RUN \
-    printf '%s\n' "=== BUILDING gst-plugins-base (defensive, POSIX) ==="; \
+RUN printf '%s\n' "=== BUILDING gst-plugins-base (defensive, POSIX) ==="; \
     CC_BIN=/lilyspark/compiler/bin/clang-16; \
     CXX_BIN=/lilyspark/compiler/bin/clang++-16; \
     LLVM_CONFIG_BIN=/lilyspark/compiler/bin/llvm-config; \
@@ -1865,27 +1864,32 @@ RUN \
     else \
         printf '%s\n' ">>> gst-plugins-base: fetching and extracting"; \
         wget -q https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-1.20.3.tar.xz && \
-            tar -xJf gst-plugins-base-1.20.3.tar.xz || { printf '%s\n' "✗ failed to fetch/extract gst-plugins-base"; true; } && \
+        tar -xJf gst-plugins-base-1.20.3.tar.xz || { printf '%s\n' "✗ failed to fetch/extract gst-plugins-base"; true; } && \
         if [ -d gst-plugins-base-1.20.3 ]; then \
             cd gst-plugins-base-1.20.3 || true; \
-            printf '%s\n' ">>> gst-plugins-base: configuring"; \
-            ./configure \
-              --prefix=/lilyspark/opt/lib/media \
-              --disable-static \
-              --enable-shared \
-              --disable-introspection \
-              --disable-examples \
-              --disable-gtk-doc \
-              CC="$CC_BIN" CXX="$CXX_BIN" \
-              LLVM_CONFIG="$LLVM_CONFIG_BIN" \
-              CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
-              CXXFLAGS="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
-              LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" \
-              PKG_CONFIG_PATH="/lilyspark/opt/lib/media/pkgconfig:/lilyspark/usr/x11/pkgconfig:/lilyspark/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}" || printf '%s\n' "⚠ configure returned non-zero (gst): see /tmp/gst-plugins-config.log"; \
-            printf '%s\n' ">>> gst-plugins-base: building"; \
-            (make -j"$NPROCS" 2>&1 | tee /tmp/gst-plugins-build.log) || printf '%s\n' "⚠ make returned non-zero (gst) — continuing"; \
-            printf '%s\n' ">>> gst-plugins-base: installing to /lilyspark"; \
-            (make install 2>&1 | tee /tmp/gst-plugins-install.log) || printf '%s\n' "⚠ make install returned non-zero (gst) — continuing"; \
+            printf '%s\n' ">>> gst-plugins-base: configuring/building (meson+ninja)"; \
+            if command -v meson >/dev/null 2>&1 && command -v ninja >/dev/null 2>&1; then \
+                printf '%s\n' ">>> meson and ninja found, running meson setup"; \
+                PKG_CONFIG_PATH="/lilyspark/opt/lib/media/pkgconfig:/lilyspark/usr/x11/pkgconfig:/lilyspark/compiler/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:" \
+                  CC="$CC_BIN" CXX="$CXX_BIN" \
+                  meson setup builddir \
+                    --prefix=/lilyspark/opt/lib/media \
+                    --buildtype=release \
+                    -Dexamples=disabled \
+                    -Dintrospection=disabled \
+                    -Dtests=disabled \
+                    -Dorc=disabled \
+                    -Ddefault_library=shared \
+                    -Dc_args="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
+                    -Dc_link_args="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" \
+                    2>&1 | grep -vE "Looking for __GLIBC__" | tee /tmp/gst-plugins-config.log || printf '%s\n' "⚠ meson setup returned non-zero (gst) — continuing"; \
+                printf '%s\n' ">>> gst-plugins-base: building with ninja"; \
+                (ninja -C builddir -j"$NPROCS" 2>&1 | grep -vE "Looking for __GLIBC__" | tee /tmp/gst-plugins-build.log) || printf '%s\n' "⚠ ninja build returned non-zero (gst) — continuing"; \
+                printf '%s\n' ">>> gst-plugins-base: installing with ninja"; \
+                (ninja -C builddir install 2>&1 | grep -vE "Looking for __GLIBC__" | tee /tmp/gst-plugins-install.log) || printf '%s\n' "⚠ ninja install returned non-zero (gst) — continuing"; \
+            else \
+                printf '%s\n' "⚠ meson or ninja not present in image — skipping gst-plugins-base build (install meson and ninja to enable)"; \
+            fi; \
             cd ..; rm -rf gst-plugins-base-* || true; \
             printf '%s\n' ">>> gst-plugins-base: creating soname symlinks (best-effort)"; \
             if [ -d /lilyspark/opt/lib/media/lib ]; then \
@@ -1901,7 +1905,6 @@ RUN \
             printf '%s\n' "⚠ gst-plugins-base source missing — skipping gst build"; \
         fi; \
     fi; \
-    \
     printf '%s\n' "=== BUILDING xorg-server (defensive, POSIX, sysroot-aware) ==="; \
     if [ -x /lilyspark/compiler/bin/clang-16 ]; then \
         export PATH="/lilyspark/compiler/bin:$PATH"; \
