@@ -1224,7 +1224,24 @@ RUN echo "=== SYSROOT POPULATION FOR libepoxy ===" && \
     cp -a /usr/lib/x86_64-linux-gnu/* /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu/ 2>/dev/null || true && \
     echo "✅ Sysroot populated for libepoxy"
 
-
+# ======================
+# SYSROOT POPULATION FOR SDL3 IMAGE LIBRARIES
+# ======================
+RUN echo "=== POPULATING SYSROOT WITH SDL3 IMAGE LIBRARIES ===" && \
+    mkdir -p /lilyspark/opt/lib/sys/usr/lib && \
+    mkdir -p /lilyspark/opt/lib/sys/usr/include && \
+    \
+    # Symlink shared libraries (.so*) into sysroot
+    find /lilyspark/usr/local/lib/image -type f -name "*.so*" \
+        -exec ln -sf {} /lilyspark/opt/lib/sys/usr/lib/ \; 2>/dev/null || true && \
+    \
+    # Copy headers into sysroot
+    find /lilyspark/usr/local/lib/image -maxdepth 1 -type d \
+        -exec cp -a {} /lilyspark/opt/lib/sys/usr/include/ \; 2>/dev/null || true && \
+    \
+    echo "✅ SDL3 image libraries and headers populated into sysroot" && \
+    echo "Library count:" && \
+    ls -1 /lilyspark/opt/lib/sys/usr/lib/lib{jpeg,png,tiff,avif,webp}*.so* 2>/dev/null | wc -l
 
 # ===========================
 # Build From Source Libraries
@@ -1603,24 +1620,15 @@ RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
 # ======================
 # SECTION: SDL3 Image Dependencies
 # ======================
-RUN echo "=== INSTALLING SDL3_IMAGE DEPENDENCIES ===" && \
-    apk add --no-cache libwebp-dev && \
-    /usr/local/bin/check_llvm15.sh "after-libwebp-dev" || true && \
-    \
-    apk add --no-cache libavif-dev && \
-    /usr/local/bin/check_llvm15.sh "after-libavif-dev" || true && \
-    \
-    echo "=== COPYING IMAGE LIBRARIES TO SDL3 DIRECTORY ===" && \
-    mkdir -p /lilyspark/opt/lib/sdl3/{lib,include} && \
-    cp -r /usr/lib/libtiff* /lilyspark/opt/lib/sdl3/lib/ 2>/dev/null || true && \
-    cp -r /usr/lib/libwebp* /lilyspark/opt/lib/sdl3/lib/ 2>/dev/null || true && \
-    cp -r /usr/lib/libavif* /lilyspark/opt/lib/sdl3/lib/ 2>/dev/null || true && \
-    cp -r /usr/include/tiff* /lilyspark/opt/lib/sdl3/include/ 2>/dev/null || true && \
-    cp -r /usr/include/webp /lilyspark/opt/lib/sdl3/include/ 2>/dev/null || true && \
-    cp -r /usr/include/avif /lilyspark/opt/lib/sdl3/include/ 2>/dev/null || true && \
-    \
+RUN echo "=== COPYING SDL3 IMAGE LIBRARIES TO SDL3 DIRECTORY ===" && \
+    mkdir -p /lilyspark/opt/lib/sdl3/lib && \
+    mkdir -p /lilyspark/opt/lib/sdl3/include && \
+    cp -a /lilyspark/usr/local/lib/image/*.so* /lilyspark/opt/lib/sdl3/lib/ 2>/dev/null || true && \
+    cp -a /lilyspark/usr/local/lib/image/*.h /lilyspark/opt/lib/sdl3/include/ 2>/dev/null || true && \
     echo "=== VERIFYING SDL3 IMAGE LIBRARIES ===" && \
-    ls -la /lilyspark/opt/lib/sdl3/lib/libtiff* /lilyspark/opt/lib/sdl3/lib/libwebp* /lilyspark/opt/lib/sdl3/lib/libavif* || echo "Some SDL3 libraries not found"
+    ls -la /lilyspark/opt/lib/sdl3/lib/ || echo "Some SDL3 libraries not found" && \
+    ls -la /lilyspark/opt/lib/sdl3/include/ || echo "Some SDL3 headers not found"
+
 
 # ======================
 # SECTION: Python Dependencies (FINAL COPY TO OPT)
@@ -2029,13 +2037,14 @@ RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
     echo "=== MESA BUILD CONFIGURATION (ARM64 + LLVM16) ==="; \
     meson setup builddir/ \
         --prefix=/usr \
-        -Dglx=disabled \
-        -Ddri3=disabled \
+        -Dopengl=true \
+        -Dglx=enabled \
         -Degl=enabled \
         -Dgbm=enabled \
-        -Dplatforms=wayland \
-        -Dglvnd=false \
         -Dosmesa=true \
+        -Ddri3=enabled \
+        -Dplatforms=x11,wayland \
+        -Dglvnd=true \
         -Dgallium-drivers=swrast,kmsro,zink \
         -Dvulkan-drivers=swrast \
         -Dbuildtype=debugoptimized \
@@ -2188,17 +2197,22 @@ RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
 
 
 # ======================
-# BUILD GBM (from Mesa)
+# BUILD GBM (from Mesa) for ARM64
 # ======================
-RUN echo "=== BUILDING GBM FROM MESA SOURCE ===" && \
+RUN echo "=== BUILDING GBM FROM MESA SOURCE (ARM64) ===" && \
     /usr/local/bin/check_llvm15.sh "pre-gbm-source-build" || true && \
     \
     git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa && \
     cd /tmp/mesa && \
     \
-    echo ">>> Configuring GBM <<<" && \
-    export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" && \
-    export PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig" && \
+    echo ">>> Configuring GBM for ARM64 <<<" && \
+    CC=/lilyspark/compiler/bin/clang-16 \
+    CXX=/lilyspark/compiler/bin/clang++-16 \
+    CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
+    CXXFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
+    LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/opt/lib/sys/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/opt/lib/sys/glibc/lib" \
+    PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" \
+    PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig" \
     meson setup builddir \
         --prefix=/usr \
         -Dgbm=enabled \
@@ -2207,7 +2221,9 @@ RUN echo "=== BUILDING GBM FROM MESA SOURCE ===" && \
         -Degl=disabled \
         -Dgles1=disabled \
         -Dgles2=disabled \
-        -Dopengl=disabled && \
+        -Dopengl=true \
+        --buildtype=release \
+        --wrap-mode=nodownload || (echo "✗ GBM meson setup failed" && exit 1) && \
     \
     ninja -C builddir -v && \
     DESTDIR="/lilyspark/opt/lib/driver" ninja -C builddir install && \
@@ -2218,34 +2234,45 @@ RUN echo "=== BUILDING GBM FROM MESA SOURCE ===" && \
     \
     cd / && rm -rf /tmp/mesa
 
+
 # ======================
-# BUILD EGL (from Mesa)
+# BUILD GBM (from Mesa) for ARM64
 # ======================
-RUN echo "=== BUILDING EGL FROM MESA SOURCE ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-egl-source-build" || true && \
+RUN echo "=== BUILDING GBM FROM MESA SOURCE (ARM64) ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-gbm-source-build" || true && \
     \
     git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa && \
     cd /tmp/mesa && \
     \
-    echo ">>> Configuring EGL <<<" && \
-    export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" && \
-    export PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig" && \
+    echo ">>> Configuring GBM for ARM64 <<<" && \
+    CC=/lilyspark/compiler/bin/clang-16 \
+    CXX=/lilyspark/compiler/bin/clang++-16 \
+    CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
+    CXXFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
+    LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/opt/lib/sys/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/opt/lib/sys/glibc/lib" \
+    PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" \
+    PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig" \
     meson setup builddir \
         --prefix=/usr \
-        -Dgbm=disabled \
-        -Degl=enabled \
+        -Dgbm=enabled \
+        -Ddri-drivers= \
+        -Dgallium-drivers= \
+        -Degl=disabled \
         -Dgles1=disabled \
         -Dgles2=disabled \
-        -Dopengl=disabled && \
+        -Dopengl=true \
+        --buildtype=release \
+        --wrap-mode=nodownload || (echo "✗ GBM meson setup failed" && exit 1) && \
     \
     ninja -C builddir -v && \
     DESTDIR="/lilyspark/opt/lib/driver" ninja -C builddir install && \
     \
-    echo "=== VERIFYING EGL INSTALLATION ===" && \
-    find /lilyspark/opt/lib/driver -name "*EGL*" -type f | tee /tmp/egl_install.log && \
-    /usr/local/bin/check_llvm15.sh "post-egl-install" || true && \
+    echo "=== VERIFYING GBM INSTALLATION ===" && \
+    find /lilyspark/opt/lib/driver -name "*gbm*" -type f | tee /tmp/gbm_install.log && \
+    /usr/local/bin/check_llvm15.sh "post-gbm-install" || true && \
     \
     cd / && rm -rf /tmp/mesa
+
 
 # ======================
 # BUILD GLES (from Mesa)
@@ -2265,7 +2292,7 @@ RUN echo "=== BUILDING GLES FROM MESA SOURCE ===" && \
         -Degl=disabled \
         -Dgles1=enabled \
         -Dgles2=enabled \
-        -Dopengl=disabled && \
+        -Dopengl=true && \
     \
     ninja -C builddir -v && \
     DESTDIR="/lilyspark/opt/lib/driver" ninja -C builddir install && \
@@ -2276,6 +2303,67 @@ RUN echo "=== BUILDING GLES FROM MESA SOURCE ===" && \
     \
     cd / && rm -rf /tmp/mesa
 
+
+# ======================
+# SDL3-SPECIFIC SYSROOT POPULATION FOR GBM + EGL (ARM64 COMPLIANT)
+# ======================
+RUN echo "=== POPULATING SDL3 SYSROOT WITH GBM AND EGL (ARM64 DETECTION) ===" && \
+    \
+    # ARM64 platform detection and validation
+    DETECTED_ARCH=$(uname -m) && \
+    echo "Detected architecture: $DETECTED_ARCH" && \
+    if [ "$DETECTED_ARCH" = "aarch64" ] || [ "$DETECTED_ARCH" = "arm64" ]; then \
+        echo "✓ ARM64 platform confirmed for SDL3 sysroot population"; \
+        ARM64_CONFIRMED="yes"; \
+    else \
+        echo "⚠ Non-ARM64 platform detected: $DETECTED_ARCH - proceeding with generic paths"; \
+        ARM64_CONFIRMED="no"; \
+    fi && \
+    \
+    # Ensure SDL3 lib and include paths exist
+    mkdir -p /lilyspark/opt/lib/sdl3/usr/media/lib && \
+    mkdir -p /lilyspark/opt/lib/sdl3/usr/media/include && \
+    mkdir -p /lilyspark/opt/lib/sdl3/usr/media/lib/pkgconfig && \
+    \
+    # Copy GBM libraries, headers, pkg-config (defensive)
+    echo "Copying GBM components..." && \
+    cp -a /lilyspark/opt/lib/driver/usr/lib/libgbm* /lilyspark/opt/lib/sdl3/usr/media/lib/ 2>/dev/null || echo "GBM libs not found"; \
+    cp -a /lilyspark/opt/lib/driver/usr/include/gbm* /lilyspark/opt/lib/sdl3/usr/media/include/ 2>/dev/null || echo "GBM headers not found"; \
+    cp -a /lilyspark/opt/lib/driver/usr/lib/pkgconfig/gbm.pc /lilyspark/opt/lib/sdl3/usr/media/lib/pkgconfig/ 2>/dev/null || echo "GBM pkgconfig not found"; \
+    \
+    # Copy EGL libraries, headers, pkg-config (defensive)
+    echo "Copying EGL components..." && \
+    cp -a /lilyspark/opt/lib/driver/usr/lib/libEGL* /lilyspark/opt/lib/sdl3/usr/media/lib/ 2>/dev/null || echo "EGL libs not found"; \
+    cp -a /lilyspark/opt/lib/driver/usr/include/EGL /lilyspark/opt/lib/sdl3/usr/media/include/ 2>/dev/null || echo "EGL headers not found"; \
+    cp -a /lilyspark/opt/lib/driver/usr/lib/pkgconfig/EGL.pc /lilyspark/opt/lib/sdl3/usr/media/lib/pkgconfig/ 2>/dev/null || echo "EGL pkgconfig not found"; \
+    \
+    # Create symlinks for runtime libraries (ARM64-aware)
+    if [ "$ARM64_CONFIRMED" = "yes" ]; then \
+        echo "Creating ARM64-optimized library symlinks..." && \
+        cd /lilyspark/opt/lib/sdl3/usr/media/lib && \
+        for lib in libgbm*.so* libEGL*.so*; do \
+            [ -f "$lib" ] || continue; \
+            soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
+            basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
+            ln -sf "$lib" "$soname" 2>/dev/null || echo "Failed to create soname symlink for $lib"; \
+            ln -sf "$soname" "$basename" 2>/dev/null || echo "Failed to create basename symlink for $lib"; \
+            echo "✓ Created ARM64 symlinks for $lib"; \
+        done; \
+    else \
+        echo "Creating generic library symlinks..." && \
+        cd /lilyspark/opt/lib/sdl3/usr/media/lib && \
+        for lib in libgbm*.so* libEGL*.so*; do \
+            [ -f "$lib" ] || continue; \
+            soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
+            basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
+            ln -sf "$lib" "$soname" 2>/dev/null || true; \
+            ln -sf "$soname" "$basename" 2>/dev/null || true; \
+            echo "Created generic symlinks for $lib"; \
+        done; \
+    fi && \
+    \
+    echo "✅ SDL3 sysroot populated with GBM + EGL (ARM64: $ARM64_CONFIRMED)"
+
 # ======================
 # SECTION: SDL3 Build
 # ======================
@@ -2285,6 +2373,10 @@ RUN echo "=== BUILDING SDL3 ===" && \
     git clone --depth=1 https://github.com/libsdl-org/SDL.git sdl && \
     cd sdl && \
     mkdir build && cd build && \
+    #\
+    #\echo "=== SETTING SDL3 SYSROOT ENVIRONMENT ===" && \
+    #export PKG_CONFIG_SYSROOT_DIR=/lilyspark/opt/lib/sdl3/usr/media && \
+    #export PKG_CONFIG_PATH=/lilyspark/opt/lib/sdl3/usr/media/lib/pkgconfig && \
     \
     echo "=== CONFIGURING SDL3 ===" && \
     cmake .. \
