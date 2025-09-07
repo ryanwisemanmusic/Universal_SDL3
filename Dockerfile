@@ -1261,6 +1261,37 @@ RUN echo "=== POPULATING SYSROOT WITH SDL3 IMAGE LIBRARIES ===" && \
     echo "Library count:" && \
     ls -1 /lilyspark/opt/lib/sys/usr/lib/lib{jpeg,png,tiff,avif,webp}*.so* 2>/dev/null | wc -l
 
+# ======================
+# SYSROOT POPULATION (ARM64-safe)
+# ======================
+RUN echo "=== SYSROOT POPULATION FOR GST/XORG ==="; \
+    ARCH="$(uname -m)"; \
+    SYSROOT_BASE="/lilyspark/opt/lib/sys"; \
+    mkdir -p "$SYSROOT_BASE/usr/lib/clang" "$SYSROOT_BASE/usr/include" "$SYSROOT_BASE/usr/lib/aarch64-linux-gnu"; \
+    \
+    # Copy LLVM runtime & headers
+    if [ -d /usr/lib/llvm16/lib/clang ]; then \
+        cp -a /usr/lib/llvm16/lib/clang/* "$SYSROOT_BASE/usr/lib/clang/" 2>/dev/null || true; \
+    fi; \
+    if [ -d /usr/include ]; then \
+        cp -a /usr/include/* "$SYSROOT_BASE/usr/include/" 2>/dev/null || true; \
+    fi; \
+    \
+    # Copy ARM64 system libraries if detected
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        if [ -d /usr/lib/aarch64-linux-gnu ]; then \
+            cp -a /usr/lib/aarch64-linux-gnu/* "$SYSROOT_BASE/usr/lib/aarch64-linux-gnu/" 2>/dev/null || true; \
+        fi; \
+        echo "✅ ARM64 sysroot populated at $SYSROOT_BASE"; \
+    else \
+        echo "⚠ Non-ARM64 architecture ($ARCH) detected — sysroot populated as best-effort"; \
+    fi; \
+    \
+    # Optional: populate common x86_64 libraries if cross-compiling x86_64 binaries
+    if [ -d /usr/lib/x86_64-linux-gnu ]; then \
+        cp -a /usr/lib/x86_64-linux-gnu/* "$SYSROOT_BASE/usr/lib/x86_64-linux-gnu/" 2>/dev/null || true; \
+    fi
+
 # ===========================
 # Build From Source Libraries
 # ===========================
@@ -1851,13 +1882,124 @@ RUN echo "=== BUILDING libgbm FROM SOURCE ===" && \
     echo "=== LIBGBM BUILD COMPLETE ==="
 
 # ======================
-# SECTION: gst-plugins-base + xorg-server Build
+# SECTION: GStreamer Core Build
+# ======================
+RUN \
+    printf '%s\n' "=== BUILDING gstreamer core (defensive, POSIX) ==="; \
+    wget -q https://gstreamer.freedesktop.org/src/gstreamer/gstreamer-1.20.3.tar.xz && \
+    tar -xJf gstreamer-1.20.3.tar.xz && \
+    if [ -d gstreamer-1.20.3 ]; then \
+        cd gstreamer-1.20.3; \
+        meson setup builddir \
+            --prefix=/lilyspark/opt/lib/media \
+            --buildtype=release \
+            -Dexamples=disabled \
+            -Dintrospection=disabled \
+            -Dtests=disabled \
+            -Ddefault_library=shared \
+            -Dc_args="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
+            -Dc_link_args="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib"; \
+        ninja -C builddir -j"$(nproc)" && ninja -C builddir install; \
+        cd ..; rm -rf gstreamer-*; \
+    else \
+        printf '%s\n' "⚠ gstreamer source missing — skipping"; \
+    fi
+
+# ======================
+# Install glib-mkenums (from GLib)
+# ======================
+RUN set -eux; \
+    GLIB_VERSION="2.76.0"; \
+    GLIB_MAJOR_MINOR="${GLIB_VERSION%.*}"; \
+    echo ">>> Fetching GLib $GLIB_VERSION from GNOME sources"; \
+    if ! wget -q https://download.gnome.org/sources/glib/${GLIB_MAJOR_MINOR}/glib-$GLIB_VERSION.tar.xz; then \
+        echo "⚠ GLib $GLIB_VERSION not found — skipping glib-mkenums build"; \
+    else \
+        tar -xJf glib-$GLIB_VERSION.tar.xz; \
+        cd glib-$GLIB_VERSION; \
+        mkdir -p build && cd build; \
+        echo ">>> Running Meson setup for glib-mkenums (ARM64 flags applied)"; \
+        export CC=/lilyspark/compiler/bin/clang-16; \
+        export CXX=/lilyspark/compiler/bin/clang++-16; \
+        export CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a"; \
+        export CXXFLAGS="$CFLAGS"; \
+        export LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib"; \
+        export PKG_CONFIG_SYSROOT_DIR="/lilyspark"; \
+        export PKG_CONFIG_PATH="/lilyspark/opt/lib/media/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig:/lilyspark/glibc/lib/pkgconfig"; \
+        if ! meson setup --prefix=/lilyspark/opt/lib/media .. -Dtests=false -Dtools=true -Dman=false -Dgtk_doc=false; then \
+            echo "⚠ Meson setup failed — continuing"; \
+        else \
+            echo ">>> Building glib-mkenums"; \
+            if ! ninja -C . glib-mkenums; then \
+                echo "⚠ Ninja build failed — continuing"; \
+            else \
+                mkdir -p /lilyspark/opt/lib/media/bin; \
+                cp glib-mkenums /lilyspark/opt/lib/media/bin/; \
+                echo "✓ glib-mkenums installed at /lilyspark/opt/lib/media/bin"; \
+            fi; \
+        fi; \
+        cd / && rm -rf glib-$GLIB_VERSION*; \
+    fi
+
+# ======================
+# Safety check: ensure glib-mkenums exists for ARM64
+# ======================
+RUN set -eux; \
+    ARCH="$(uname -m)"; \
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        GLIB_MKENUMS_PATH="/lilyspark/opt/lib/media/bin/glib-mkenums"; \
+        if [ ! -x "$GLIB_MKENUMS_PATH" ]; then \
+            echo "⚠ glib-mkenums not found at $GLIB_MKENUMS_PATH — attempting fallback build"; \
+            if command -v meson >/dev/null 2>&1 && command -v ninja >/dev/null 2>&1 && [ -x /lilyspark/compiler/bin/clang-16 ]; then \
+                echo ">>> Fallback: building glib-mkenums"; \
+                GLIB_VERSION="2.76.0"; \
+                GLIB_MAJOR_MINOR="${GLIB_VERSION%.*}"; \
+                if ! wget -q https://download.gnome.org/sources/glib/${GLIB_MAJOR_MINOR}/glib-$GLIB_VERSION.tar.xz; then \
+                    echo "⚠ GLib tarball not found — skipping fallback"; \
+                else \
+                    tar -xJf glib-$GLIB_VERSION.tar.xz; \
+                    cd glib-$GLIB_VERSION && mkdir -p build && cd build; \
+                    export CC=/lilyspark/compiler/bin/clang-16; \
+                    export CXX=/lilyspark/compiler/bin/clang++-16; \
+                    export CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a"; \
+                    export CXXFLAGS="$CFLAGS"; \
+                    export LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib"; \
+                    export PKG_CONFIG_SYSROOT_DIR="/lilyspark"; \
+                    export PKG_CONFIG_PATH="/lilyspark/opt/lib/media/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig:/lilyspark/glibc/lib/pkgconfig"; \
+                    if ! meson setup --prefix=/lilyspark/opt/lib/media .. -Dtests=false -Dtools=true -Dman=false -Dgtk_doc=false; then \
+                        echo "⚠ Meson setup failed — skipping fallback"; \
+                    else \
+                        if ! ninja -C . glib-mkenums; then \
+                            echo "⚠ Ninja fallback build failed"; \
+                        else \
+                            mkdir -p /lilyspark/opt/lib/media/bin; \
+                            cp glib-mkenums /lilyspark/opt/lib/media/bin/; \
+                            echo "✓ Fallback glib-mkenums installed"; \
+                        fi; \
+                    fi; \
+                    cd / && rm -rf glib-$GLIB_VERSION*; \
+                fi; \
+            else \
+                echo "⚠ Meson/Ninja or compiler missing — cannot build fallback"; \
+            fi; \
+        fi; \
+        if [ -x "$GLIB_MKENUMS_PATH" ]; then \
+            echo "✓ glib-mkenums verified at $GLIB_MKENUMS_PATH"; \
+            if ! "$GLIB_MKENUMS_PATH" --help >/dev/null 2>&1; then \
+                echo "⚠ glib-mkenums exists but failed --help check"; \
+            fi; \
+        fi; \
+    else \
+        echo "Non-ARM64 architecture detected ($ARCH) — skipping glib-mkenums safety check"; \
+    fi
+
+
+# ======================
+# SECTION: gst-plugins-base + xorg-server Build (custom GStreamer + glib-mkenums override)
 # ======================
 RUN printf '%s\n' "=== BUILDING gst-plugins-base (defensive, POSIX) ==="; \
     CC_BIN=/lilyspark/compiler/bin/clang-16; \
     CXX_BIN=/lilyspark/compiler/bin/clang++-16; \
-    LLVM_CONFIG_BIN=/lilyspark/compiler/bin/llvm-config; \
-    PKGCONFIG=/usr/bin/pkg-config; \
     NPROCS="$(nproc 2>/dev/null || echo 1)"; \
     if [ ! -x "$CC_BIN" ] || [ ! -x "$CXX_BIN" ]; then \
         printf '%s\n' "⚠ Compiler(s) not found at $CC_BIN or $CXX_BIN — skipping gst and xorg builds"; \
@@ -1870,9 +2012,19 @@ RUN printf '%s\n' "=== BUILDING gst-plugins-base (defensive, POSIX) ==="; \
             printf '%s\n' ">>> gst-plugins-base: configuring/building (meson+ninja)"; \
             if command -v meson >/dev/null 2>&1 && command -v ninja >/dev/null 2>&1; then \
                 printf '%s\n' ">>> meson and ninja found, running meson setup"; \
-                PKG_CONFIG_PATH="/lilyspark/opt/lib/media/pkgconfig:/lilyspark/usr/x11/pkgconfig:/lilyspark/compiler/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:" \
-                  CC="$CC_BIN" CXX="$CXX_BIN" \
-                  meson setup builddir \
+                \
+                # --- 1️⃣ Set PKG_CONFIG_PATH globally for Meson --- \
+                export PKG_CONFIG_SYSROOT_DIR="/lilyspark"; \
+                export PKG_CONFIG_PATH="/lilyspark/opt/lib/media/lib/pkgconfig:/lilyspark/usr/x11/pkgconfig:/lilyspark/compiler/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig"; \
+                \
+                # --- 2️⃣ Override glib_mkenums explicitly --- \
+                GLIB_MKENUMS_OVERRIDE="/lilyspark/opt/lib/media/bin/glib-mkenums"; \
+                if [ ! -x "$GLIB_MKENUMS_OVERRIDE" ]; then \
+                    printf '%s\n' "⚠ glib-mkenums not found at $GLIB_MKENUMS_OVERRIDE, Meson may fail"; \
+                fi; \
+                \
+                CC="$CC_BIN" CXX="$CXX_BIN" \
+                meson setup builddir \
                     --prefix=/lilyspark/opt/lib/media \
                     --buildtype=release \
                     -Dexamples=disabled \
@@ -1880,31 +2032,30 @@ RUN printf '%s\n' "=== BUILDING gst-plugins-base (defensive, POSIX) ==="; \
                     -Dtests=disabled \
                     -Dorc=disabled \
                     -Ddefault_library=shared \
+                    -Dglib_mkenums="$GLIB_MKENUMS_OVERRIDE" \
                     -Dc_args="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
                     -Dc_link_args="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" \
                     2>&1 | grep -vE "Looking for __GLIBC__" | tee /tmp/gst-plugins-config.log || printf '%s\n' "⚠ meson setup returned non-zero (gst) — continuing"; \
+                \
+                # --- 3️⃣ Optional fallback: patch glib-2.0.pc if Meson still fails --- \
+                GLIB_PC="/lilyspark/opt/lib/media/lib/pkgconfig/glib-2.0.pc"; \
+                if [ -f "$GLIB_PC" ]; then \
+                    sed -i "s|/lilyspark/usr/bin/glib-mkenums|$GLIB_MKENUMS_OVERRIDE|" "$GLIB_PC" || true; \
+                fi; \
+                \
                 printf '%s\n' ">>> gst-plugins-base: building with ninja"; \
-                (ninja -C builddir -j"$NPROCS" 2>&1 | grep -vE "Looking for __GLIBC__" | tee /tmp/gst-plugins-build.log) || printf '%s\n' "⚠ ninja build returned non-zero (gst) — continuing"; \
+                ninja -C builddir -j"$NPROCS" 2>&1 | grep -vE "Looking for __GLIBC__" | tee /tmp/gst-plugins-build.log || printf '%s\n' "⚠ ninja build returned non-zero (gst) — continuing"; \
                 printf '%s\n' ">>> gst-plugins-base: installing with ninja"; \
-                (ninja -C builddir install 2>&1 | grep -vE "Looking for __GLIBC__" | tee /tmp/gst-plugins-install.log) || printf '%s\n' "⚠ ninja install returned non-zero (gst) — continuing"; \
+                ninja -C builddir install 2>&1 | grep -vE "Looking for __GLIBC__" | tee /tmp/gst-plugins-install.log || printf '%s\n' "⚠ ninja install returned non-zero (gst) — continuing"; \
             else \
-                printf '%s\n' "⚠ meson or ninja not present in image — skipping gst-plugins-base build (install meson and ninja to enable)"; \
+                printf '%s\n' "⚠ meson or ninja not present in image — skipping gst-plugins-base build"; \
             fi; \
             cd ..; rm -rf gst-plugins-base-* || true; \
-            printf '%s\n' ">>> gst-plugins-base: creating soname symlinks (best-effort)"; \
-            if [ -d /lilyspark/opt/lib/media/lib ]; then \
-                cd /lilyspark/opt/lib/media/lib || true; \
-                for lib in $(ls libgst*.so.* 2>/dev/null || true); do \
-                    soname=`printf '%s\n' "$lib" | sed 's/\(.*\.so\.[0-9][^.]*\).*/\1/'` || true; \
-                    basename=`printf '%s\n' "$lib" | sed 's/\(.*\.so\).*/\1/'` || true; \
-                    [ -n "$soname" ] && ln -sf "$lib" "$soname" || true; \
-                    [ -n "$basename" ] && ln -sf "${soname:-$lib}" "$basename" || true; \
-                done; \
-            fi; \
         else \
             printf '%s\n' "⚠ gst-plugins-base source missing — skipping gst build"; \
         fi; \
     fi; \
+    \
     printf '%s\n' "=== BUILDING xorg-server (defensive, POSIX, sysroot-aware) ==="; \
     if [ -x /lilyspark/compiler/bin/clang-16 ]; then \
         export PATH="/lilyspark/compiler/bin:$PATH"; \
@@ -1984,6 +2135,7 @@ RUN printf '%s\n' "=== BUILDING gst-plugins-base (defensive, POSIX) ==="; \
         printf '%s\n' "⚠ xorg-server source directory not present; skipped build"; \
     fi; \
     true
+
 
 # ======================
 # SECTION: Mesa Build (sysroot-focused, non-fatal) — FINAL
