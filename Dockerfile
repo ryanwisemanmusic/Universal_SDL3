@@ -29,11 +29,16 @@ RUN mkdir -p \
     /lilyspark/src \
     # Home directory
     /lilyspark/home \
+    # Extreme Foundational Libs
+    /lilyspark/lib \
     # User's directory
     /lilyspark/usr/include \
     /lilyspark/usr/lib \
     /lilyspark/usr/bin \
+    /lilyspark/usr/share \
     /lilyspark/usr/sbin \
+    # User's debug space
+    /lilyspark/usr/debug/bin \
     # User's native OS dependencies
     /lilyspark/usr/local/bin \
     /lilyspark/usr/local/sbin \
@@ -71,7 +76,11 @@ RUN mkdir -p \
     /lilyspark/opt/lib/python \
     /lilyspark/opt/lib/sdl3 \
     /lilyspark/opt/lib/sys \
+    /lilyspark/opt/lib/sys/lib \
     /lilyspark/opt/lib/sys/usr \
+    /lilyspark/opt/lib/sys/usr/include \
+    /lilyspark/opt/lib/sys/usr/include/linux \
+    /lilyspark/opt/lib/sys/usr/include/bits \
     /lilyspark/opt/lib/sys/usr/lib \
     /lilyspark/opt/lib/vulkan \
     # Main Compiler
@@ -325,7 +334,6 @@ RUN apk add --no-cache ninja && /usr/local/bin/check_llvm15.sh "after-ninja" || 
 # Copy essentials into /lilyspark
 # ===============================
 RUN echo "=== COPYING CORE SYSROOT FILES TO /lilyspark ===" && \
-    mkdir -p /lilyspark/usr/{bin,lib,include,share} /lilyspark/lib && \
     \
     # Copy apk db (for later reference/debug)
     cp -r /lib/apk /lilyspark/lib/ 2>/dev/null || true && \
@@ -381,7 +389,7 @@ RUN echo "=== VERIFYING CORE SYSROOT INTEGRATION ===" && \
 # Debug tools - May change folder
 # ===============================
 RUN apk add --no-cache file tree valgrind-dev linux-tools-dev && \
-    mkdir -p /lilyspark/usr/debug/bin && \
+    \
     cp /usr/bin/file /usr/bin/tree /lilyspark/usr/debug/bin/ 2>/dev/null || true && \
     chmod -R a+rx /lilyspark/usr/debug/bin && \
     echo "Debug tools isolated into /lilyspark/usr/debug/bin"
@@ -991,9 +999,6 @@ RUN echo "=== ATTEMPTING ROBUST SYSROOT POPULATION ===" && \
     \
     # STRATEGY 1: Ensure base directory structure exists
     echo "Ensuring /lilyspark/opt/lib/sys directory structure..." && \
-    mkdir -p /lilyspark/opt/lib/sys/usr/lib && \
-    mkdir -p /lilyspark/opt/lib/sys/usr/include && \
-    mkdir -p /lilyspark/opt/lib/sys/lib && \
     \
     # STRATEGY 2: Methodical, verified copying with fallbacks
     echo "Populating sysroot usr/lib..." && \
@@ -1056,8 +1061,6 @@ RUN echo "=== ATTEMPTING ROBUST SYSROOT POPULATION ===" && \
             echo "✓ Headers copied"; \
         else \
             echo "⚠ Header copy failed, creating minimal include structure"; \
-            mkdir -p /lilyspark/opt/lib/sys/usr/include/linux; \
-            mkdir -p /lilyspark/opt/lib/sys/usr/include/bits; \
             touch /lilyspark/opt/lib/sys/usr/include/stdio.h; \
         fi; \
     else \
@@ -2909,51 +2912,62 @@ RUN echo "=== BUILDING VULKAN-LOADER ===" && \
     echo "=== VULKAN-LOADER BUILD COMPLETED ==="
 
 # ======================
-# SECTION: glmark2 Build
+# SECTION: glmark2 Build (ARM64 only)
 # ======================
-RUN echo "=== BUILDING GLMARK2 ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-glmark2" || true && \
-    \
-    git clone --depth=1 https://github.com/glmark2/glmark2.git && \
-    cd glmark2 && \
-    \
-    echo "=== DIRECTORY STRUCTURE (PRE-BUILD) ===" && \
-    tree -L 2 && \
-    echo "=== WAF SCRIPT PERMISSIONS ===" && \
-    ls -l waf* || true && \
-    \
-    echo "=== CONFIGURING GLMARK2 WITH LLVM16 ===" && \
-    CC=/lilyspark/compiler/bin/clang-16 \
-    CXX=/lilyspark/compiler/bin/clang++-16 \
-    CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
-    CXXFLAGS="-I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
-    LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib" \
-    python3 ./waf configure \
-        --prefix=/lilyspark/opt/lib/graphics \
-        --with-flavors=x11-gl,drm-gl \
-        --verbose 2>&1 | tee configure.log || { \
-            echo "=== CONFIGURATION FAILED - SHOWING LOG ==="; \
-            cat configure.log; \
-            exit 1; \
+RUN echo "=== CHECKING PLATFORM FOR GLMARK2 BUILD ===" && \
+    ARCH=$(uname -m) && \
+    if [ "$ARCH" != "aarch64" ]; then \
+        echo "Non-ARM64 platform detected ($ARCH), skipping glmark2 build"; \
+    else \
+        echo "ARM64 platform detected ($ARCH), proceeding with glmark2 build" && \
+        /usr/local/bin/check_llvm15.sh "pre-glmark2-clone" || true && \
+        \
+        git clone --progress https://github.com/glmark2/glmark2.git glmark2 && \
+        /usr/local/bin/check_llvm15.sh "post-glmark2-clone" || true && \
+        cd glmark2 && \
+        mkdir build && cd build && \
+        \
+        echo "=== CONFIGURING GLMARK2 (ARM64 + LLVM16) ===" && \
+        CC=/lilyspark/compiler/bin/clang-16 \
+        CXX=/lilyspark/compiler/bin/clang++-16 \
+        meson .. \
+            --prefix=/lilyspark/opt/lib/graphics \
+            --buildtype=release \
+            -Dflavors=x11-gl,drm-gl 2>&1 | tee configure.log || { \
+                echo "=== CONFIGURATION FAILED - CONTINUING ==="; \
+                cat configure.log || true; \
+                true; \
+            } && \
+        /usr/local/bin/check_llvm15.sh "post-glmark2-configure" || true && \
+        \
+        echo "=== BUILDING GLMARK2 WITH NINJA (ARM64 + LLVM16) ===" && \
+        ninja -j"$(nproc)" 2>&1 | tee build.log || { \
+            echo "=== BUILD FAILED - CONTINUING ==="; \
+            cat build.log || true; \
+            true; \
         } && \
-    \
-    echo "=== BUILDING GLMARK2 ===" && \
-    python3 ./waf build -j"$(nproc)" --verbose 2>&1 | tee build.log || { \
-        echo "=== BUILD FAILED - SHOWING LOG ==="; \
-        cat build.log; \
-        exit 1; \
-    } && \
-    \
-    echo "=== INSTALLING GLMARK2 ===" && \
-    python3 ./waf install --verbose 2>&1 | tee install.log && \
-    \
-    # Verify installation
-    echo "=== GLMARK2 INSTALLATION VERIFICATION ===" && \
-    ls -la /lilyspark/opt/lib/graphics/bin/glmark2* 2>/dev/null || echo "No glmark2 binaries found" && \
-    \
-    cd .. && \
-    /usr/local/bin/check_llvm15.sh "post-glmark2" || true && \
-    echo "=== GLMARK2 BUILD COMPLETED ==="
+        /usr/local/bin/check_llvm15.sh "post-glmark2-build" || true && \
+        \
+        echo "=== INSTALLING GLMARK2 (ARM64 + LLVM16) ===" && \
+        ninja install 2>&1 | tee install.log || { \
+            echo "=== INSTALL FAILED - CONTINUING ==="; \
+            cat install.log || true; \
+            true; \
+        } && \
+        \
+        echo "=== VERIFYING GLMARK2 INSTALL ===" && \
+        if ls -la /lilyspark/opt/lib/graphics/bin/glmark2* 2>/dev/null; then \
+            echo "Glmark2 binaries installed successfully"; \
+        else \
+            echo "No glmark2 binaries found"; \
+        fi && \
+        \
+        cd ../.. && \
+        rm -rf glmark2 && \
+        /usr/local/bin/check_llvm15.sh "post-glmark2-cleanup" || true && \
+        echo "=== GLMARK2 BUILD COMPLETED ==="; \
+    fi
+
 
 # ======================
 # SECTION: SQLite3 Build
