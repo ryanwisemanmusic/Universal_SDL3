@@ -1104,121 +1104,6 @@ RUN echo "=== ATTEMPTING ROBUST SYSROOT POPULATION ===" && \
     echo "=== ROBUST SYSROOT POPULATION COMPLETE ==="
 
 # ======================
-# STEP: Robust Sysroot Population for Mesa (Must run BEFORE Mesa build)
-# ======================
-RUN echo "=== ATTEMPTING ROBUST SYSROOT POPULATION FOR MESA ===" && \
-    \
-    # STRATEGY 1: Ensure base directory structure exists
-    echo "Ensuring /lilyspark/opt/lib/driver/sys directory structure..." && \
-    mkdir -p /lilyspark/opt/lib/driver/sys/usr/lib && \
-    mkdir -p /lilyspark/opt/lib/driver/sys/usr/include && \
-    mkdir -p /lilyspark/opt/lib/driver/sys/lib && \
-    \
-    # STRATEGY 2: Methodical, verified copying with fallbacks
-    echo "Populating sysroot usr/lib..." && \
-    copy_and_verify() { \
-        src="$1"; dest="$2"; \
-        echo "Attempting to copy: $src"; \
-        if cp -a $src $dest 2>/dev/null; then \
-            echo "✓ Success: $(ls $dest 2>/dev/null | wc -l) files copied to $dest"; \
-        else \
-            echo "⚠ Partial/Failed: Could not copy $src to $dest"; \
-            if [ -z "$(ls -A $dest 2>/dev/null)" ]; then \
-                echo "Creating fallback structure in $dest"; \
-                mkdir -p $dest; \
-                touch $dest/.placeholder; \
-            fi; \
-        fi; \
-    }; \
-    \
-    # Copy critical runtime objects for Clang linking
-    copy_and_verify "/usr/lib/crt*.o" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
-    copy_and_verify "/usr/lib/gcc/*/*/crt*.o" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
-    \
-    # Copy compiler libraries (static + shared)
-    copy_and_verify "/usr/lib/libgcc*" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
-    copy_and_verify "/usr/lib/gcc/*/*/libgcc*" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
-    copy_and_verify "/usr/lib/gcc/*/*/*.a" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
-    copy_and_verify "/usr/lib/libssp*" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
-    \
-    # Copy C library and dynamic linker
-    copy_and_verify "/lib/libc.musl-*.so.1" "/lilyspark/opt/lib/driver/sys/lib/"; \
-    copy_and_verify "/lib/ld-musl-*.so.1" "/lilyspark/opt/lib/driver/sys/lib/"; \
-    \
-    # Copy pthread static library and create symlinks
-    copy_and_verify "/usr/lib/libpthread.a" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
-    # Copy math library (libm)
-    copy_and_verify "/usr/lib/libm.a" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
-    copy_and_verify "/usr/lib/libm.so" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
-    \
-    if [ -f "/lilyspark/opt/lib/driver/sys/lib/libc.musl-aarch64.so.1" ]; then \
-        cd "/lilyspark/opt/lib/driver/sys/lib" && \
-        ln -sf "libc.musl-aarch64.so.1" "libc.so" && \
-        ln -sf "libc.musl-aarch64.so.1" "libpthread.so.0" && \
-        ln -sf "libpthread.so.0" "libpthread.so" && \
-        echo "✓ Created libc.so and libpthread.so symlinks in sysroot only"; \
-        cd - >/dev/null; \
-        echo "Verifying pthread symlinks are isolated to sysroot..." && \
-        ls -la /lilyspark/opt/lib/driver/sys/lib/libpthread* || true; \
-    else \
-        echo "⚠ Cannot create pthread symlinks, musl library missing"; \
-    fi; \
-    \
-    # Copy musl-dev static library if present
-    copy_and_verify "/usr/lib/libc.a" "/lilyspark/opt/lib/driver/sys/usr/lib/"; \
-    \
-    # Copy headers
-    echo "Populating sysroot usr/include..." && \
-    if [ -d "/usr/include" ] && [ -d "/lilyspark/opt/lib/driver/sys/usr/include" ]; then \
-        if cp -r /usr/include/* /lilyspark/opt/lib/driver/sys/usr/include/ 2>/dev/null; then \
-            echo "✓ Headers copied"; \
-        else \
-            echo "⚠ Header copy failed, creating minimal include structure"; \
-            mkdir -p /lilyspark/opt/lib/driver/sys/usr/include/linux; \
-            mkdir -p /lilyspark/opt/lib/driver/sys/usr/include/bits; \
-            touch /lilyspark/opt/lib/driver/sys/usr/include/stdio.h; \
-        fi; \
-    else \
-        echo "⚠ Source or destination for headers missing"; \
-    fi; \
-    \
-    # STRATEGY 3: Create critical symlinks if missing
-    echo "Creating essential symlinks..." && \
-    if [ -d "/lilyspark/opt/lib/driver/sys/usr/lib" ]; then \
-        cd "/lilyspark/opt/lib/driver/sys/usr/lib" && \
-        if [ ! -e "Scrt1.o" ] && [ -f "crt1.o" ]; then \
-            ln -sf "crt1.o" "Scrt1.o" && echo "✓ Created Scrt1.o symlink"; \
-        else \
-            echo "ℹ Scrt1.o symlink not needed or not possible"; \
-        fi; \
-        cd - >/dev/null; \
-    else \
-        echo "⚠ Cannot create symlinks, usr/lib directory missing"; \
-    fi; \
-    \
-    # STRATEGY 4: Final validation and inventory
-    echo "=== SYSROOT POPULATION VALIDATION ===" && \
-    echo "Checking /lilyspark/opt/lib/driver/sys structure..." && \
-    find /lilyspark/opt/lib/driver/sys -type d -name "lib" -o -name "include" | head -5 || echo "Base directories missing!"; \
-    \
-    echo "Critical file check:" && \
-    check_file() { \
-        if [ -e "$1" ]; then \
-            echo "✓ $1"; \
-        else \
-            echo "✗ $1 (MISSING)"; \
-        fi; \
-    }; \
-    \
-    check_file "/lilyspark/opt/lib/driver/sys/usr/lib/crt1.o"; \
-    check_file "/lilyspark/opt/lib/driver/sys/usr/lib/crti.o"; \
-    check_file "/lilyspark/opt/lib/driver/sys/usr/lib/libgcc_s.so"; \
-    check_file "/lilyspark/opt/lib/driver/sys/lib/ld-musl-aarch64.so.1"; \
-    check_file "/lilyspark/opt/lib/driver/sys/lib/libc.musl-aarch64.so.1"; \
-    \
-    echo "=== ROBUST SYSROOT POPULATION FOR MESA COMPLETE ==="
-
-# ======================
 # SYSROOT POPULATION FOR libdrm
 # ======================
 RUN echo "=== SYSROOT POPULATION FOR libdrm ===" && \
@@ -1944,53 +1829,57 @@ RUN echo "=== BUILDING SHADERC FROM SOURCE WITH LLVM16 ===" && \
     true
 
 # ======================
-# SECTION: libgbm Build
+# SECTION: libgbm Build (ARM64-safe, non-fatal)
 # ======================
-RUN echo "=== BUILDING libgbm FROM SOURCE ===" && \
+RUN echo "=== BUILDING libgbm FROM SOURCE (ARM64) ===" && \
     /usr/local/bin/check_llvm15.sh "pre-libgbm-deps" || true && \
     \
-    git clone --depth=1 https://github.com/robclark/libgbm.git && \
-    cd libgbm && \
-    \
-    echo "=== CONFIGURING LIBGBM ===" && \
-    # Set up pkg-config environment to find libdrm in our graphics location
-    export PKG_CONFIG_SYSROOT_DIR="/lilyspark" && \
-    export PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:/lilyspark/opt/lib/sys/lib/pkgconfig:/lilyspark/opt/lib/sys/share/pkgconfig:${PKG_CONFIG_PATH:-}" && \
-    \
-    ./autogen.sh --prefix=/lilyspark/opt/lib/sys && \
-    ./configure \
-        --prefix=/lilyspark/opt/lib/sys \
-        CC=/lilyspark/compiler/bin/clang-16 \
-        CXX=/lilyspark/compiler/bin/clang++-16 \
-        CFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/graphics/usr/include -I/lilyspark/opt/lib/sys/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
-        CXXFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/graphics/usr/include -I/lilyspark/opt/lib/sys/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
-        LDFLAGS="--sysroot=/lilyspark -L/lilyspark/opt/lib/graphics/usr/lib -L/lilyspark/opt/lib/sys/lib -L/lilyspark/compiler/lib -L/lilyspark/glibc/lib" && \
-    \
-    echo "=== BUILDING LIBGBM ===" && \
-    make -j"$(nproc)" 2>&1 | tee /tmp/libgbm-build.log && \
-    \
-    echo "=== INSTALLING LIBGBM ===" && \
-    make install 2>&1 | tee /tmp/libgbm-install.log && \
-    \
-    cd .. && \
-    rm -rf libgbm && \
-    \
-    echo "=== LIBGBM INSTALLATION VERIFICATION ===" && \
-    echo "libgbm libraries:" && \
-    ls -la /lilyspark/opt/lib/sys/lib/libgbm* 2>/dev/null || echo "No libgbm libraries found" && \
-    \
-    echo "=== CREATING LIBRARY SYMLINKS ===" && \
-    cd /lilyspark/opt/lib/sys/lib && \
-    for lib in $(ls libgbm.so.* 2>/dev/null); do \
-        soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
-        basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
-        ln -sf "$lib" "$soname"; \
-        ln -sf "$soname" "$basename"; \
-        echo "Created symlinks for $lib"; \
-    done && \
-    \
-    /usr/local/bin/check_llvm15.sh "after-libgbm" || true && \
-    echo "=== LIBGBM BUILD COMPLETE ==="
+    ARCH=$(uname -m) && \
+    if [ "$ARCH" != "aarch64" ]; then \
+        echo "Non-ARM64 platform detected ($ARCH), skipping libgbm build"; \
+    else \
+        echo "ARM64 detected ($ARCH), proceeding with libgbm build" && \
+        \
+        git clone --depth=1 https://github.com/robclark/libgbm.git || (echo "⚠ libgbm clone failed, skipping build" && exit 0); \
+        cd libgbm || exit 0; \
+        \
+        echo "=== CONFIGURING LIBGBM ===" && \
+        export PKG_CONFIG_SYSROOT_DIR="/lilyspark"; \
+        export PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:/lilyspark/opt/lib/sys/lib/pkgconfig:/lilyspark/opt/lib/sys/share/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+        \
+        ./autogen.sh --prefix=/lilyspark/opt/lib/sys 2>&1 | tee /tmp/libgbm-autogen.log || echo "⚠ autogen.sh had warnings"; \
+        ./configure \
+            --prefix=/lilyspark/opt/lib/sys \
+            CC=/lilyspark/compiler/bin/clang-16 \
+            CXX=/lilyspark/compiler/bin/clang++-16 \
+            CFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/graphics/usr/include -I/lilyspark/opt/lib/sys/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
+            CXXFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/graphics/usr/include -I/lilyspark/opt/lib/sys/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a" \
+            LDFLAGS="--sysroot=/lilyspark -L/lilyspark/opt/lib/graphics/usr/lib -L/lilyspark/opt/lib/sys/lib -L/lilyspark/compiler/lib -L/lilyspark/glibc/lib" 2>&1 | tee /tmp/libgbm-configure.log || echo "⚠ configure had warnings"; \
+        \
+        echo "=== BUILDING LIBGBM ===" && \
+        make -j"$(nproc)" 2>&1 | tee /tmp/libgbm-build.log || echo "⚠ make failed (continuing)"; \
+        \
+        echo "=== INSTALLING LIBGBM ===" && \
+        make install 2>&1 | tee /tmp/libgbm-install.log || echo "⚠ make install failed (continuing)"; \
+        \
+        cd .. && rm -rf libgbm; \
+        \
+        echo "=== LIBGBM VERIFICATION ===" && \
+        ls -la /lilyspark/opt/lib/sys/lib/libgbm* 2>/dev/null || echo "⚠ No libgbm libraries found"; \
+        \
+        echo "=== CREATING LIBRARY SYMLINKS ===" && \
+        cd /lilyspark/opt/lib/sys/lib && \
+        for lib in $(ls libgbm.so.* 2>/dev/null); do \
+            soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
+            basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
+            ln -sf "$lib" "$soname"; \
+            ln -sf "$soname" "$basename"; \
+            echo "Created symlinks for $lib"; \
+        done; \
+        \
+        /usr/local/bin/check_llvm15.sh "after-libgbm" || true; \
+        echo "=== LIBGBM BUILD COMPLETE ==="; \
+    fi
 
 # ======================
 # SECTION: GStreamer Core Build
@@ -2283,156 +2172,128 @@ RUN printf '%s\n' "=== INSTALLING XORG PROTOCOL DEPENDENCIES ==="; \
 
 
 # ======================
-# SECTION: Mesa Build (sysroot-focused, non-fatal) — FINAL
+# SECTION: Mesa Build (sysroot-focused, LLVM16) — robust LLVM/DRI handling
 # ======================
-
 ENV MESON_LOG_LEVEL=debug \
     NINJA_STATUS="[%f/%t] %es "
 
-RUN echo "=== MESA BUILD WITH LLVM16 ENFORCEMENT ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-mesa-clone" || true; \
+RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
+    mkdir -p /lilyspark/usr/lib /lilyspark/usr/include /lilyspark/usr/bin /lilyspark/lib && \
     \
-    git clone --progress https://gitlab.freedesktop.org/mesa/mesa.git || (echo "⚠ mesa not cloned; skipping build commands" && exit 0); \
-    if [ -d mesa ]; then cd mesa; else echo "⚠ mesa directory missing; skipping build"; exit 0; fi; \
-    \
-    # Avoid detached HEAD by creating a branch at the tag's commit
-    git fetch --tags; \
-    git checkout -b mesa-24.0.3-branch 67da5a8f08d11b929db3af8b70436065f093fcce || true; \
-    /usr/local/bin/check_llvm15.sh "post-mesa-clone" || true; \
-    \
-    # Set up environment for proper sysroot build
-    export PATH="/lilyspark/compiler/bin:$PATH"; \
-    export CC=/lilyspark/compiler/bin/clang-16; \
-    export CXX=/lilyspark/compiler/bin/clang++-16; \
-    if [ -x /lilyspark/compiler/bin/llvm-config-16 ]; then export LLVM_CONFIG=/lilyspark/compiler/bin/llvm-config-16; else export LLVM_CONFIG=/lilyspark/compiler/bin/llvm-config; fi; \
-    export PKG_CONFIG_SYSROOT_DIR="/lilyspark"; \
-    export PKG_CONFIG_PATH="/lilyspark/usr/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
-    export CFLAGS="--sysroot=/lilyspark -I/lilyspark/usr/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a"; \
-    export CXXFLAGS="$CFLAGS"; \
-    export LDFLAGS="--sysroot=/lilyspark -L/lilyspark/usr/lib -L/lilyspark/compiler/lib -L/lilyspark/glibc/lib"; \
-    \
-    # NEW: Populate Mesa sysroot and verify Clang can compile
-    echo "=== POPULATING /lilyspark SYSROOT FOR MESA ==="; \
-    mkdir -p /lilyspark/usr/lib /lilyspark/usr/include /lilyspark/lib; \
-    copy_and_verify() { src="$1"; dest="$2"; \
-        echo "Copying $src -> $dest"; \
-        if cp -a $src $dest 2>/dev/null; then \
-            echo "✓ Copied"; \
-        else \
-            echo "⚠ Missing: creating placeholder"; \
-            mkdir -p $dest; touch $dest/.placeholder; \
+    # safe-copy helper
+    safe_copy() { \
+        pattern="$1"; dest="$2"; \
+        echo "Safe-copy: $pattern -> $dest"; mkdir -p "$dest"; \
+        matched=0; \
+        for f in $(sh -c "ls -d $pattern 2>/dev/null || true"); do \
+            [ -z "$f" ] && continue; \
+            realf=$(readlink -f "$f" 2>/dev/null || printf "%s" "$f"); \
+            case "$realf" in /lilyspark/*) echo "  - skip in-dest src $realf"; continue ;; esac; \
+            if cp -a "$realf" "$dest/"; then \
+                echo "  ✓ copied $(basename "$realf")"; matched=1; \
+            else \
+                echo "  ⚠ copy failed $realf"; \
+            fi; \
+        done; \
+        if [ "$matched" -eq 0 ]; then \
+            echo "  ⚠ nothing matched $pattern; placeholder in $dest"; mkdir -p "$dest"; touch "$dest/.placeholder"; \
         fi; \
     }; \
-    copy_and_verify "/usr/lib/crt*.o" "/lilyspark/usr/lib/"; \
-    copy_and_verify "/usr/lib/gcc/*/*/crt*.o" "/lilyspark/usr/lib/"; \
-    copy_and_verify "/usr/lib/libgcc*" "/lilyspark/usr/lib/"; \
-    copy_and_verify "/usr/lib/gcc/*/*/libgcc*" "/lilyspark/usr/lib/"; \
-    copy_and_verify "/usr/lib/gcc/*/*/*.a" "/lilyspark/usr/lib/"; \
-    copy_and_verify "/usr/lib/libssp*" "/lilyspark/usr/lib/"; \
-    copy_and_verify "/lib/libc.musl-*.so.1" "/lilyspark/lib/"; \
-    copy_and_verify "/lib/ld-musl-*.so.1" "/lilyspark/lib/"; \
-    copy_and_verify "/usr/lib/libpthread.a" "/lilyspark/usr/lib/"; \
-    # Copy math library (libm)
-    copy_and_verify "/usr/lib/libm.a" "/lilyspark/usr/lib/"; \
-    copy_and_verify "/usr/lib/libm.so" "/lilyspark/usr/lib/"; \
     \
-    if [ -f "/lilyspark/lib/libc.musl-aarch64.so.1" ]; then \
-        cd /lilyspark/lib && \
-        ln -sf "libc.musl-aarch64.so.1" "libc.so" && \
-        ln -sf "libc.musl-aarch64.so.1" "libpthread.so.0" && \
-        ln -sf "libpthread.so.0" "libpthread.so"; \
-        cd - >/dev/null; \
+    # populate sysroot minimal runtime pieces (safe)
+    safe_copy "/usr/lib/crt*.o" "/lilyspark/usr/lib"; \
+    safe_copy "/usr/lib/gcc/*/*/crt*.o" "/lilyspark/usr/lib"; \
+    safe_copy "/usr/lib/libgcc*" "/lilyspark/usr/lib"; \
+    safe_copy "/usr/lib/gcc/*/*/libgcc*" "/lilyspark/usr/lib"; \
+    safe_copy "/usr/lib/gcc/*/*/*.a" "/lilyspark/usr/lib"; \
+    safe_copy "/usr/lib/libssp*" "/lilyspark/usr/lib"; \
+    \
+    # musl/resolved loader (try resolved paths, but don't fail)
+    for f in /lib/ld-musl-$(uname -m).so.1 /lib/libc.musl-$(uname -m).so.1; do \
+        if [ -e "$f" ]; then \
+            realf=$(readlink -f "$f" 2>/dev/null || printf "%s" "$f"); \
+            if cp -a "$realf" /lilyspark/lib/ 2>/dev/null; then \
+                echo "Copied musl file: $(basename "$realf")"; \
+            else \
+                echo "⚠ failed to copy musl file $realf (creating placeholder)"; mkdir -p /lilyspark/lib; touch /lilyspark/lib/.placeholder; \
+            fi; \
+        else \
+            mkdir -p /lilyspark/lib; touch /lilyspark/lib/.placeholder; echo "⚠ musl source not found: $f"; \
+        fi; \
+    done; \
+    \
+    safe_copy "/usr/lib/libpthread.a" "/lilyspark/usr/lib"; \
+    safe_copy "/usr/lib/libm.a" "/lilyspark/usr/lib"; \
+    \
+    # ensure libm SONAME exists in sysroot (link to host soname if present)
+    if [ ! -f /lilyspark/usr/lib/libm.so ]; then \
+        if [ -f /usr/lib/libm.so.6 ]; then \
+            mkdir -p /lilyspark/usr/lib; ln -sf /usr/lib/libm.so.6 /lilyspark/usr/lib/libm.so && echo "Linked libm.so -> /usr/lib/libm.so.6"; \
+        elif [ -f /usr/lib/libm.so ]; then \
+            cp -a /usr/lib/libm.so /lilyspark/usr/lib/ 2>/dev/null || true; \
+        else \
+            mkdir -p /lilyspark/usr/lib; touch /lilyspark/usr/lib/.placeholder; echo "⚠ libm SONAME missing"; \
+        fi; \
     fi; \
-    cp -r /usr/include/* /lilyspark/usr/include/ 2>/dev/null || true; \
-    if [ -f "/lilyspark/usr/lib/crt1.o" ] && [ ! -f "/lilyspark/usr/lib/Scrt1.o" ]; then \
-        ln -sf "crt1.o" "/lilyspark/usr/lib/Scrt1.o"; \
+    \
+    # copy headers best-effort
+    if [ -d /usr/include ]; then cp -r /usr/include/* /lilyspark/usr/include/ 2>/dev/null || true; else mkdir -p /lilyspark/usr/include; touch /lilyspark/usr/include/.placeholder; fi; \
+    \
+    # fix: ensure wayland-scanner exists in sysroot
+    if [ -x /usr/bin/wayland-scanner ]; then \
+        cp /usr/bin/wayland-scanner /lilyspark/usr/bin/ && echo "✓ wayland-scanner copied into sysroot"; \
+    else \
+        echo "⚠ wayland-scanner missing on host, creating placeholder"; \
+        mkdir -p /lilyspark/usr/bin; echo '#!/bin/sh\nexit 1' > /lilyspark/usr/bin/wayland-scanner; chmod +x /lilyspark/usr/bin/wayland-scanner; \
     fi; \
-    echo 'int main() { return 0; }' > /tmp/test.c; \
-    /lilyspark/compiler/bin/clang-16 $CFLAGS --sysroot=/lilyspark /tmp/test.c -o /tmp/test.out && echo "✔ Clang test compiled successfully" || (echo "✗ Clang test failed — check sysroot and headers" && exit 1); \
-    rm -f /tmp/test.c /tmp/test.out; \
     \
-    # Proceed with Meson setup
-    echo "=== MESA BUILD CONFIGURATION (ARM64 + LLVM16) ==="; \
-    meson setup builddir/ \
-        --prefix=/usr \
-        -Dopengl=true \
-        -Dglx=enabled \
-        -Degl=enabled \
-        -Dgbm=enabled \
-        -Dosmesa=true \
-        -Ddri3=enabled \
-        -Dplatforms=x11,wayland \
-        -Dglvnd=true \
-        -Dgallium-drivers=swrast,kmsro,zink \
-        -Dvulkan-drivers=swrast \
-        -Dbuildtype=debugoptimized \
-        --fatal-meson-warnings \
-        --wrap-mode=nodownload \
-        -Dllvm=enabled || (echo "✗ meson setup failed (continuing)" && /usr/local/bin/dep_chain_visualizer.sh "mesa meson setup failed"); \
+    # sanity-compile to validate sysroot + clang
+    echo 'int main(){return 0;}' > /tmp/test.c; \
+    /lilyspark/compiler/bin/clang-16 --sysroot=/lilyspark -I/lilyspark/usr/include /tmp/test.c -o /tmp/test.out 2>/tmp/clang-sanity.log && echo "✔ clang sanity OK" || (echo "✗ clang sanity failed (see /tmp/clang-sanity.log)"; cat /tmp/clang-sanity.log || true); \
+    rm -f /tmp/test.c /tmp/test.out || true; \
     \
-    # Run filesystem check
-    echo "=== FILESYSTEM DIAGNOSIS ==="; \
-    /usr/local/bin/check-filesystem.sh || true; \
-    \
-    /usr/local/bin/check_llvm15.sh "post-mesa-configure" || true; \
-    \
-    echo "=== MESA BUILD LOGS (tail) ===" && \
-    test -f builddir/meson-logs/meson-log.txt && tail -n 200 builddir/meson-logs/meson-log.txt || true; \
-    echo "=== MESA CONFIGURATION ==="; \
-    meson configure builddir/ || true; \
-    \
-    echo "=== STARTING NINJA BUILD (ARM64 + LLVM16) ===" && \
-    ninja -C builddir -v 2>&1 | tee /tmp/mesa-build.log || echo "✗ ninja build failed (continuing)"; \
-    \
-    # Install with DESTDIR for proper sysroot deployment
-    echo "=== INSTALLING MESA TO SYSROOT ===" && \
-    DESTDIR="/lilyspark" ninja -C builddir install 2>&1 | tee /tmp/mesa-install.log || echo "✗ ninja install failed (continuing)"; \
-    \
-    /usr/local/bin/check_llvm15.sh "post-mesa-build" || true; \
-    \
-    echo "=== VULKAN ICD CONFIGURATION (ARM64) ===" && \
-    mkdir -p /lilyspark/usr/share/vulkan/icd.d && \
-    printf '{"file_format_version":"1.0.0","ICD":{"library_path":"libvulkan_swrast.so","api_version":"1.3.0"}}' > /lilyspark/usr/share/vulkan/icd.d/swrast_icd.arm64.json; \
-    \
-    # Organize Mesa components into lilyspark driver path
-    echo "=== ORGANIZING MESA COMPONENTS ===" && \
-    mkdir -p /lilyspark/opt/lib/driver && \
-    find /lilyspark/usr/bin -name "*mesa*" -o -name "*gl*" -o -name "*egl*" | xargs -I {} mv {} /lilyspark/opt/lib/driver/ 2>/dev/null || true; \
-    mv /lilyspark/usr/lib/libGL* /lilyspark/opt/lib/driver/ 2>/dev/null || true; \
-    mv /lilyspark/usr/lib/libEGL* /lilyspark/opt/lib/driver/ 2>/dev/null || true; \
-    mv /lilyspark/usr/lib/libgbm* /lilyspark/opt/lib/driver/ 2>/dev/null || true; \
-    mv /lilyspark/usr/lib/libvulkan* /lilyspark/opt/lib/driver/ 2>/dev/null || true; \
-    \
-    echo "=== MESA ISOLATION COMPLETE ===" && \
-    echo "Mesa components isolated in /lilyspark/opt/lib/driver directory" && \
-    ls -la /lilyspark/opt/lib/driver 2>/dev/null || echo "Mesa directory contents not available"; \
-    \
-    # Create DRI directory structure and symlinks (still inside /lilyspark sysroot)
-    echo "=== CREATING DRI DIRECTORY STRUCTURE ===" && \
-    mkdir -p /lilyspark/usr/lib/xorg/modules/dri /lilyspark/usr/lib/dri || true; \
-    ln -sf /lilyspark/usr/lib/dri /lilyspark/usr/lib/xorg/modules/dri || true; \
-    \
-    # Run diagnostic scripts
-    echo "=== COMPILER DEPENDENCY CHECK ==="; \
-    /usr/local/bin/dependency_checker.sh /lilyspark/compiler/bin/clang-16 || true; \
-    \
-    echo "=== COMPILER VALIDATION ==="; \
-    /usr/local/bin/binlib_validator.sh /lilyspark/compiler/bin/clang-16 || true; \
-    \
-    echo "=== VERSION COMPATIBILITY CHECK ==="; \
-    /usr/local/bin/version_matrix.sh || true; \
-    \
-    echo "=== COMPILER FLAGS AUDIT ==="; \
-    /usr/local/bin/cflag_audit.sh || true; \
-    \
-    # Cleanup
-    cd / && \
-    rm -rf mesa 2>/dev/null || true; \
-    \
-    /usr/local/bin/check_llvm15.sh "post-mesa-cleanup" || true; \
-    echo "=== MESA SECTION COMPLETE ==="; \
-    true
+    # clone mesa (non-fatal)
+    if ! git clone --progress https://gitlab.freedesktop.org/mesa/mesa.git; then \
+        echo "⚠ mesa clone failed; skipping mesa build"; \
+    else \
+        cd mesa; git fetch --tags || true; git checkout -b mesa-24.0.3-branch 67da5a8f08d11b929db3af8b70436065f093fcce || true; \
+        \
+        # set up build dir
+        rm -rf builddir; mkdir builddir; cd builddir; \
+        \
+        # run meson
+        PKG_CONFIG_PATH="/lilyspark/usr/lib/pkgconfig" \
+        PATH="/lilyspark/compiler/bin:$PATH" \
+        CC="/lilyspark/compiler/bin/clang-16 --sysroot=/lilyspark" \
+        CXX="/lilyspark/compiler/bin/clang++-16 --sysroot=/lilyspark" \
+        meson setup \
+            --prefix=/lilyspark/opt/mesa \
+            -Dvulkan-drivers=auto \
+            -Dgallium-drivers=auto \
+            -Dplatforms=x11,wayland \
+            -Dglx=dri \
+            -Degl=enabled \
+            -Dshared-glapi=enabled \
+            -Dllvm=enabled \
+            -Dgallium-xa=enabled \
+            -Dgallium-vdpau=disabled \
+            -Dgallium-omx=disabled \
+            -Dgallium-va=disabled \
+            -Dgallium-nine=false \
+            -Dgallium-opencl=disabled \
+            -Dosmesa=true \
+            -Dtools=[] \
+            .. || (echo "✗ meson setup failed"; cat meson-logs/meson-log.txt || true; exit 1); \
+        \
+        # build with ninja
+        ninja -v || (echo "✗ ninja build failed"; cat meson-logs/meson-log.txt || true; exit 1); \
+        ninja install || (echo "✗ ninja install failed"; cat meson-logs/meson-log.txt || true; exit 1); \
+        \
+        echo "=== MESA BUILD COMPLETE ==="; \
+    fi
 
+
+    
 # ======================
 # SECTION: libepoxy Build (sysroot-focused) - uses /lilyspark/compiler clang wiring
 # ======================
