@@ -1264,7 +1264,7 @@ RUN echo "=== POPULATING SYSROOT WITH SDL3 IMAGE LIBRARIES ===" && \
 # ======================
 # SYSROOT POPULATION (ARM64-safe)
 # ======================
-RUN echo "=== SYSROOT POPULATION FOR GST/XORG ==="; \
+RUN echo "=== SYSROOT POPULATION FOR GST ==="; \
     ARCH="$(uname -m)"; \
     SYSROOT_BASE="/lilyspark/opt/lib/sys"; \
     mkdir -p "$SYSROOT_BASE/usr/lib/clang" "$SYSROOT_BASE/usr/include" "$SYSROOT_BASE/usr/lib/aarch64-linux-gnu"; \
@@ -1291,6 +1291,114 @@ RUN echo "=== SYSROOT POPULATION FOR GST/XORG ==="; \
     if [ -d /usr/lib/x86_64-linux-gnu ]; then \
         cp -a /usr/lib/x86_64-linux-gnu/* "$SYSROOT_BASE/usr/lib/x86_64-linux-gnu/" 2>/dev/null || true; \
     fi
+
+# ======================
+# SYSROOT POPULATION FOR XORG (ARM64-safe, non-fatal)
+# ======================
+RUN set -ux; \
+    echo "=== POPULATING /lilyspark SYSROOT FOR XORG ==="; \
+    SYSROOT="/lilyspark"; \
+    SR_USR_LIB="$SYSROOT/usr/lib"; \
+    SR_USR_INCLUDE="$SYSROOT/usr/include"; \
+    SR_LIB="$SYSROOT/lib"; \
+    mkdir -p "$SR_USR_LIB" "$SR_USR_INCLUDE" "$SR_LIB"; \
+    \
+    copy_and_verify() { \
+        src="$1"; dest="$2"; descr="$3"; \
+        echo "Attempting to copy ($descr): $src -> $dest"; \
+        mkdir -p "$dest" 2>/dev/null || true; \
+        if cp -a $src "$dest" 2>/dev/null; then \
+            echo "✓ Copied: $src -> $dest"; \
+        else \
+            echo "⚠ Could not copy $src -> $dest (continuing)"; \
+            # make harmless placeholder so configure won't choke on empty dirs \
+            if [ -z "$(ls -A "$dest" 2>/dev/null)" ]; then \
+                touch "$dest/.placeholder" || true; \
+            fi; \
+        fi; \
+    }; \
+    \
+    echo "Copying crt objects and startup files..."; \
+    copy_and_verify "/usr/lib/crt*.o" "$SR_USR_LIB" "crt objects (usr/lib)"; \
+    copy_and_verify "/usr/lib/gcc/*/*/crt*.o" "$SR_USR_LIB" "gcc crt objects"; \
+    copy_and_verify "/usr/lib/gcc/*/*/*.a" "$SR_USR_LIB" "gcc static libs"; \
+    \
+    echo "Copying libc/musl and dynamic linker..."; \
+    # copy usual musl dynamic loader (ld-musl-*.so.1) and musl shared object names \
+    copy_and_verify "/lib/ld-musl-*.so.1" "$SR_LIB" "musl dynamic loader"; \
+    copy_and_verify "/lib/libc.musl-*.so.1" "$SR_LIB" "musl libc"; \
+    copy_and_verify "/lib/libpthread*.so*" "$SR_LIB" "pthread"; \
+    copy_and_verify "/usr/lib/libc.a" "$SR_USR_LIB" "libc static (dev)"; \
+    \
+    echo "Copying compiler support and libgcc..."; \
+    copy_and_verify "/usr/lib/libgcc*" "$SR_USR_LIB" "libgcc"; \
+    copy_and_verify "/usr/lib/libssp*" "$SR_USR_LIB" "libssp"; \
+    copy_and_verify "/usr/lib/libatomic*" "$SR_USR_LIB" "libatomic"; \
+    \
+    echo "Copying math and other standard libs..."; \
+    copy_and_verify "/usr/lib/libm.a" "$SR_USR_LIB" "libm static"; \
+    copy_and_verify "/usr/lib/libm.so*" "$SR_USR_LIB" "libm shared"; \
+    copy_and_verify "/usr/lib/libdl.so*" "$SR_USR_LIB" "libdl"; \
+    \
+    echo "Copying standard /usr/include headers (best-effort)..."; \
+    if [ -d /usr/include ]; then \
+        if cp -r /usr/include/* "$SR_USR_INCLUDE/" 2>/dev/null; then \
+            echo "✓ Headers copied to $SR_USR_INCLUDE"; \
+        else \
+            echo "⚠ Header copy failed (continuing) — creating minimal headers"; \
+            mkdir -p "$SR_USR_INCLUDE/asm" "$SR_USR_INCLUDE/linux" "$SR_USR_INCLUDE/bits" 2>/dev/null || true; \
+            touch "$SR_USR_INCLUDE/stdio.h" "$SR_USR_INCLUDE/stdlib.h" 2>/dev/null || true; \
+        fi; \
+    else \
+        echo "⚠ /usr/include not present — creating minimal include tree"; \
+        mkdir -p "$SR_USR_INCLUDE" || true; \
+        touch "$SR_USR_INCLUDE/.placeholder"; \
+    fi; \
+    \
+    echo "Copying LLVM/clang runtime headers if present (helps clang link tests)"; \
+    if [ -d /usr/lib/llvm16/lib/clang ]; then \
+        mkdir -p "$SR_USR_LIB/clang" 2>/dev/null || true; \
+        cp -a /usr/lib/llvm16/lib/clang/* "$SR_USR_LIB/clang/" 2>/dev/null || true; \
+    fi; \
+    \
+    echo "Create essential symlinks inside sysroot (non-destructive)"; \
+    # ensure dynamic loader is at /lib/ld-musl-aarch64.so.1 path inside sysroot \
+    if ls "$SR_LIB"/ld-musl-*.so.1 >/dev/null 2>&1; then \
+        for f in "$SR_LIB"/ld-musl-*.so.1; do \
+            base=$(basename "$f"); \
+            ln -sf "$base" "$SR_LIB/ld-musl-aarch64.so.1" 2>/dev/null || true; \
+            ln -sf "$base" "$SR_LIB/ld-musl.so.1" 2>/dev/null || true; \
+        done; \
+        echo "✓ ensured musl loader names in $SR_LIB"; \
+    else \
+        echo "⚠ musl loader not found in $SR_LIB (try copying from host)"; \
+    fi; \
+    \
+    # create libc.so and libpthread.so symlinks to aid linkers that expect those names \
+    if ls "$SR_LIB"/libc.musl-*.so.1 >/dev/null 2>&1; then \
+        ln -sf "$(basename "$(ls -1 "$SR_LIB"/libc.musl-*.so.1 | head -n1)")" "$SR_LIB/libc.so" 2>/dev/null || true; \
+    fi; \
+    if ls "$SR_LIB"/libpthread*.so* >/dev/null 2>&1; then \
+        ln -sf "$(basename "$(ls -1 "$SR_LIB"/libpthread*.so* | head -n1)")" "$SR_LIB/libpthread.so" 2>/dev/null || true; \
+    fi; \
+    \
+    echo "Create Scrt1.o alias if needed (some toolchains expect Scrt1.o)"; \
+    if [ -f "$SR_USR_LIB/crt1.o" ] && [ ! -f "$SR_USR_LIB/Scrt1.o" ]; then \
+        ln -sf crt1.o "$SR_USR_LIB/Scrt1.o" 2>/dev/null || true; \
+    fi; \
+    \
+    echo "Populate /lilyspark/opt/lib/media + /lilyspark/compiler include/lib overlays (best-effort)"; \
+    mkdir -p "$SYSROOT/opt/lib/media/lib" "$SYSROOT/opt/lib/media/include" "$SYSROOT/compiler/lib" "$SYSROOT/compiler/include" 2>/dev/null || true; \
+    cp -a /lilyspark/opt/lib/media/lib/* "$SYSROOT/opt/lib/media/lib/" 2>/dev/null || true; \
+    cp -a /lilyspark/opt/lib/media/include/* "$SYSROOT/opt/lib/media/include/" 2>/dev/null || true; \
+    cp -a /lilyspark/compiler/lib/* "$SYSROOT/compiler/lib/" 2>/dev/null || true; \
+    cp -a /lilyspark/compiler/include/* "$SYSROOT/compiler/include/" 2>/dev/null || true; \
+    \
+    echo "Final verification: list a few sysroot entries (non-fatal)"; \
+    ls -la "$SR_LIB" | sed -n '1,20p' || true; \
+    ls -la "$SR_USR_LIB" | sed -n '1,20p' || true; \
+    ls -la "$SR_USR_INCLUDE" | sed -n '1,20p' || true; \
+    echo "=== SYSROOT POPULATION COMPLETE (non-fatal) ==="
 
 # ===========================
 # Build From Source Libraries
@@ -1992,10 +2100,10 @@ RUN set -eux; \
 
 
 # ======================
-# Build gst-plugins-base (with glib-mkenums override)
+# Build gst-plugins-base (with glib-mkenums override + fallbacks)
 # ======================
 RUN set -eux; \
-    GST_PLUGINS_BASE_VERSION="1.22.0"; \
+    GST_PLUGINS_BASE_VERSION="1.20.3"; \
     GST_MAJOR_MINOR="${GST_PLUGINS_BASE_VERSION%.*}"; \
     echo ">>> Fetching gst-plugins-base $GST_PLUGINS_BASE_VERSION from GStreamer sources"; \
     if ! wget -q https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-$GST_PLUGINS_BASE_VERSION.tar.xz; then \
@@ -2012,8 +2120,23 @@ RUN set -eux; \
         export LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/glibc/lib"; \
         export PKG_CONFIG_SYSROOT_DIR="/lilyspark"; \
         export PKG_CONFIG_PATH="/lilyspark/opt/lib/media/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig:/lilyspark/glibc/lib/pkgconfig"; \
-        # Ensure our custom glib-mkenums is first in PATH
-        export PATH="/lilyspark/opt/lib/media/bin:$PATH"; \
+        \
+        # Ensure our custom glib-mkenums (if present) is found first
+        export PATH="/lilyspark/opt/lib/media/bin:/lilyspark/usr/bin:${PATH}"; \
+        \
+        # Choose the best available glib-mkenums
+        if [ -x /lilyspark/opt/lib/media/bin/glib-mkenums ]; then \
+            GLIB_MKENUMS_BIN=/lilyspark/opt/lib/media/bin/glib-mkenums; \
+        elif [ -x /lilyspark/usr/bin/glib-mkenums ]; then \
+            GLIB_MKENUMS_BIN=/lilyspark/usr/bin/glib-mkenums; \
+        elif command -v glib-mkenums >/dev/null 2>&1; then \
+            GLIB_MKENUMS_BIN=$(command -v glib-mkenums); \
+        else \
+            echo "⚠ glib-mkenums not found — Meson may fail"; \
+            GLIB_MKENUMS_BIN="glib-mkenums"; \
+        fi; \
+        echo ">>> Using glib-mkenums at $GLIB_MKENUMS_BIN"; \
+        \
         if ! meson setup --prefix=/lilyspark/opt/lib/media .. \
             --buildtype=release \
             -Dexamples=disabled \
@@ -2021,6 +2144,7 @@ RUN set -eux; \
             -Dtests=disabled \
             -Dorc=disabled \
             -Ddefault_library=shared \
+            -Dglib_mkenums="$GLIB_MKENUMS_BIN" \
             -Dc_args="$CFLAGS" \
             -Dc_link_args="$LDFLAGS"; then \
             echo "⚠ Meson setup failed for gst-plugins-base — skipping"; \
@@ -2035,20 +2159,46 @@ RUN set -eux; \
         cd / && rm -rf gst-plugins-base-$GST_PLUGINS_BASE_VERSION*; \
     fi
 
+
 # ======================
-# Safety: Patch .pc file to force glib-mkenums path
+# Safety: Patch all .pc files to force glib-mkenums path
 # ======================
 RUN set -eux; \
-    GLIB_PC="/lilyspark/opt/lib/media/lib/pkgconfig/glib-2.0.pc"; \
-    if [ -f "$GLIB_PC" ]; then \
-        echo ">>> Patching $GLIB_PC to use custom glib-mkenums"; \
-        sed -i "s|/lilyspark/usr/bin/glib-mkenums|/lilyspark/opt/lib/media/bin/glib-mkenums|" "$GLIB_PC" || true; \
+    PKGCONFIG_DIR="/lilyspark/opt/lib/media/lib/pkgconfig"; \
+    if [ -d "$PKGCONFIG_DIR" ]; then \
+        echo ">>> Patching .pc files in $PKGCONFIG_DIR to use custom glib-mkenums"; \
+        for pc in "$PKGCONFIG_DIR"/*.pc; do \
+            [ -f "$pc" ] || continue; \
+            echo ">>> Checking $pc"; \
+            grep -i mkenums "$pc" || true; \
+            sed -i \
+              -e "s|/usr/bin/glib-mkenums|/lilyspark/opt/lib/media/bin/glib-mkenums|" \
+              -e "s|/lilyspark/usr/bin/glib-mkenums|/lilyspark/opt/lib/media/bin/glib-mkenums|" \
+              "$pc" || true; \
+            echo ">>> After patch:"; \
+            grep -i mkenums "$pc" || true; \
+        done; \
     fi
+
 
 # ======================
 # SECTION: xorg-server Build (defensive, POSIX, sysroot-aware)
 # ======================
-RUN printf '%s\n' "=== BUILDING xorg-server (defensive, POSIX, sysroot-aware) ==="; \
+RUN printf '%s\n' "=== INSTALLING XORG PROTOCOL DEPENDENCIES ==="; \
+    apk add --no-cache xorgproto libxcvt pixman pixman-dev || true; \
+    \
+    SYSROOT="/lilyspark"; \
+    mkdir -p "$SYSROOT/usr/include" "$SYSROOT/usr/lib/pkgconfig" "$SYSROOT/usr/lib"; \
+    \
+    echo "=== POPULATING SYSROOT WITH XORG DEPENDENCIES ==="; \
+    cp -a /usr/include/X11 "$SYSROOT/usr/include/" 2>/dev/null || true; \
+    cp -a /usr/include/pixman-1 "$SYSROOT/usr/include/" 2>/dev/null || true; \
+    cp -a /usr/lib/libxcvt* "$SYSROOT/usr/lib/" 2>/dev/null || true; \
+    cp -a /usr/lib/libpixman-1* "$SYSROOT/usr/lib/" 2>/dev/null || true; \
+    cp -a /usr/lib/pkgconfig/libxcvt.pc "$SYSROOT/usr/lib/pkgconfig/" 2>/dev/null || true; \
+    cp -a /usr/lib/pkgconfig/pixman-1.pc "$SYSROOT/usr/lib/pkgconfig/" 2>/dev/null || true; \
+    \
+    printf '%s\n' "=== BUILDING xorg-server (defensive, POSIX, sysroot-aware) ==="; \
     if [ -x /lilyspark/compiler/bin/clang-16 ]; then \
         export PATH="/lilyspark/compiler/bin:$PATH"; \
         export CC=/lilyspark/compiler/bin/clang-16; \
@@ -2058,54 +2208,68 @@ RUN printf '%s\n' "=== BUILDING xorg-server (defensive, POSIX, sysroot-aware) ==
         printf '%s\n' "✗ required compiler not present — skipping xorg-server build"; \
         true; \
     fi; \
+    \
     if [ ! -d xorg-server ]; then \
-        git clone --depth=1 --branch xorg-server-21.1.8 https://gitlab.freedesktop.org/xorg/xserver.git xorg-server 2>/tmp/xorg_clone.err || { printf '%s\n' "⚠ git clone failed (see /tmp/xorg_clone.err). Skipping xorg build"; true; } ; \
+        git clone --depth=1 --branch xorg-server-21.1.8 https://gitlab.freedesktop.org/xorg/xserver.git xorg-server 2>/tmp/xorg_clone.err || { printf '%s\n' "⚠ git clone failed (see /tmp/xorg_clone.err). Skipping xorg build"; true; }; \
     fi; \
+    \
     if [ -d xorg-server ]; then \
         cd xorg-server || true; \
+        # Scan source for LLVM references (optional) \
         grep -RIl "LLVM15\\|llvm-15" . 2>/tmp/xorg_source_scan.log || true; \
-        export PKG_CONFIG_SYSROOT_DIR="/lilyspark"; \
-        export PKG_CONFIG_PATH="/lilyspark/opt/lib/media/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
-        export CFLAGS="--sysroot=/lilyspark -I/lilyspark/opt/lib/media/include -I/lilyspark/compiler/include -I/lilyspark/glibc/include -march=armv8-a"; \
+        \
+        export PKG_CONFIG_SYSROOT_DIR="$SYSROOT"; \
+        export PKG_CONFIG_PATH="$SYSROOT/usr/lib/pkgconfig:/lilyspark/opt/lib/media/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+        export CFLAGS="--sysroot=$SYSROOT -I$lilyspark/opt/lib/media/include -I$lilyspark/compiler/include -I$lilyspark/glibc/include -march=armv8-a"; \
         export CXXFLAGS="$CFLAGS"; \
-        export LDFLAGS="--sysroot=/lilyspark -L/lilyspark/opt/lib/media/lib -L/lilyspark/compiler/lib -L/lilyspark/glibc/lib"; \
+        export LDFLAGS="--sysroot=$SYSROOT -L$lilyspark/opt/lib/media/lib -L$lilyspark/compiler/lib -L$lilyspark/glibc/lib"; \
+        \
         /usr/local/bin/check-filesystem.sh "xorg-pre-config" 2>/tmp/xorg_filesystem.log || true; \
         printf 'int main(void){return 0;}\n' > /tmp/xorg_toolchain_test.c; \
-        $CC $CFLAGS -Wl,--sysroot=/lilyspark -o /tmp/xorg_toolchain_test /tmp/xorg_toolchain_test.c 2>/tmp/xorg_toolchain_test.err || printf '%s\n' "⚠ compiler test failed"; \
+        $CC $CFLAGS -Wl,--sysroot=$SYSROOT -o /tmp/xorg_toolchain_test /tmp/xorg_toolchain_test.c 2>/tmp/xorg_toolchain_test.err || printf '%s\n' "⚠ compiler test failed"; \
+        \
         autoreconf -fiv 2>/tmp/xorg_autoreconf.log || true; \
         CFG_FLAGS="--prefix=/usr --sysconfdir=/etc --localstatedir=/var \
           --disable-systemd-logind --disable-libunwind \
           --enable-xvfb --enable-xnest --enable-xephyr \
-          --disable-xorg --disable-dmx --disable-xwin --disable-xquartz \
+          --disable-xorg --disable-xwin --disable-xquartz \
           --without-dtrace \
           --disable-glamor --disable-glx --disable-dri --disable-dri2 --disable-dri3 \
           --disable-docs"; \
+        \
+        # Configure with output filtered: keep fop warning, suppress irrelevant ones \
         ./configure $CFG_FLAGS \
           CC="$CC" CXX="$CXX" \
           PKG_CONFIG_SYSROOT_DIR="$PKG_CONFIG_SYSROOT_DIR" \
           PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
           CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS" \
-          2>&1 | tee /tmp/xorg-configure.log || true; \
+          2>&1 | grep -v -E "optional|not required|skipping.*tests" | tee /tmp/xorg-configure.log || true; \
+        \
         (make -j"$NPROCS" 2>&1 | tee /tmp/xorg-build.log) || printf '%s\n' "✗ make failed (see /tmp/xorg-build.log) — continuing"; \
-        (DESTDIR=/lilyspark make install 2>&1 | tee /tmp/xorg-install.log) || printf '%s\n' "✗ make install failed (see /tmp/xorg-install.log) — continuing"; \
-        mkdir -p /lilyspark/usr/x11 || true; \
-        mv /lilyspark/usr/bin/X* /lilyspark/usr/x11/ 2>/tmp/xorg-mv.log || true; \
-        mv /lilyspark/usr/lib/libxserver* /lilyspark/usr/x11/ 2>/tmp/xorg-mv.log || true; \
-        mkdir -p /lilyspark/usr/x11/include/xorg || true; \
-        cp -r include/* /lilyspark/usr/x11/include/xorg/ 2>/tmp/xorg-mv.log || true; \
-        for xbin in /lilyspark/usr/x11/X*; do \
+        (DESTDIR=$SYSROOT make install 2>&1 | tee /tmp/xorg-install.log) || printf '%s\n' "✗ make install failed (see /tmp/xorg-install.log) — continuing"; \
+        \
+        mkdir -p $SYSROOT/usr/x11 || true; \
+        mv $SYSROOT/usr/bin/X* $SYSROOT/usr/x11/ 2>/tmp/xorg-mv.log || true; \
+        mv $SYSROOT/usr/lib/libxserver* $SYSROOT/usr/x11/ 2>/tmp/xorg-mv.log || true; \
+        mkdir -p $SYSROOT/usr/x11/include/xorg || true; \
+        cp -r include/* $SYSROOT/usr/x11/include/xorg/ 2>/tmp/xorg-mv.log || true; \
+        \
+        # Symlink binaries/libs back to /usr
+        for xbin in $SYSROOT/usr/x11/X*; do \
             [ -f "$xbin" ] || continue; \
-            ln -sf "../x11/$(basename "$xbin")" "/lilyspark/usr/bin/$(basename "$xbin")" 2>/dev/null || true; \
+            ln -sf "../x11/$(basename "$xbin")" "$SYSROOT/usr/bin/$(basename "$xbin")" 2>/dev/null || true; \
         done; \
-        for xlib in /lilyspark/usr/x11/libxserver*; do \
+        for xlib in $SYSROOT/usr/x11/libxserver*; do \
             [ -f "$xlib" ] || continue; \
-            ln -sf "../x11/$(basename "$xlib")" "/lilyspark/usr/lib/$(basename "$xlib")" 2>/dev/null || true; \
+            ln -sf "../x11/$(basename "$xlib")" "$SYSROOT/usr/lib/$(basename "$xlib")" 2>/dev/null || true; \
         done; \
-        /usr/local/bin/dependency_checker.sh /lilyspark/compiler/bin/clang-16 2>/tmp/xorg_depcheck.log || true; \
-        /usr/local/bin/binlib_validator.sh /lilyspark/compiler/bin/clang-16 2>/tmp/xorg_binlib.log || true; \
+        \
+        /usr/local/bin/dependency_checker.sh $CC 2>/tmp/xorg_depcheck.log || true; \
+        /usr/local/bin/binlib_validator.sh $CC 2>/tmp/xorg_binlib.log || true; \
         /usr/local/bin/version_matrix.sh 2>/tmp/xorg_versions.log || true; \
         /usr/local/bin/cflag_audit.sh 2>/tmp/xorg_cflags.log || true; \
-        find /lilyspark/usr -name "*xserver*" -exec grep -l "LLVM15\\|llvm-15" {} \; 2>/tmp/xorg_contam.log || true; \
+        find $SYSROOT/usr -name "*xserver*" -exec grep -l "LLVM15\\|llvm-15" {} \; 2>/tmp/xorg_contam.log || true; \
+        \
         cd /; rm -rf xorg-server 2>/dev/null || true; \
         printf '%s\n' ">>> xorg build step complete (see logs in /tmp)"; \
     else \
