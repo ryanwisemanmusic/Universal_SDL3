@@ -1,6 +1,7 @@
 #include "main.hpp"
 #include <iostream>
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 
 using namespace std;
 
@@ -15,6 +16,9 @@ int main(int argc, char* argv[])
         640,
         480,
         0
+        //Other valid flags:
+        //SDL_WINDOW_VULKAN
+        //SDL_WINDOW_OPENGL
     );
 
     if (window == NULL) 
