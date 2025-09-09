@@ -1,9 +1,6 @@
-EVERYHINT THAT NEEDS TO BE FIXED PRIOR TO DEBUG STAGE!!!!!! (Debug stage is not evidence of build success)
-So, we need to ensure that libepoxy, Shaderc, libgbm, Xorg, 
-gstreamer, MESA, GBM, EGL, SDL3_mixer, glmark2; all do not have 
-any fucky-wucky problems via Docker. These all have their own issues with being
-recognized.
-
+- Mkdir cleanup
+- New Sysroot Section (double check foundational stuff, and preload into the tricky stuff that has foundational problems)
+- Link MESA with SDL3
 
 
 
