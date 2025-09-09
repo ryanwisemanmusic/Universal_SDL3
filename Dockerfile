@@ -59,6 +59,7 @@ RUN mkdir -p \
     /lilyspark/usr/local/lib/math \
     /lilyspark/usr/local/lib/networking \
     /lilyspark/usr/local/lib/python \
+    /lilyspark/usr/local/lib/python/site-packages \
     /lilyspark/usr/local/lib/security \
     /lilyspark/usr/local/lib/system \
     /lilyspark/usr/local/lib/testing \
@@ -82,6 +83,8 @@ RUN mkdir -p \
     /lilyspark/opt/lib/sys/usr/include/linux \
     /lilyspark/opt/lib/sys/usr/include/bits \
     /lilyspark/opt/lib/sys/usr/lib \
+    /lilyspark/opt/lib/sys/usr/lib/clang \
+    /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu \
     /lilyspark/opt/lib/vulkan \
     # Main Compiler
     /lilyspark/compiler/bin \
@@ -756,7 +759,7 @@ RUN echo "=== VERIFYING PYTHON PACKAGES AFTER INSTALL ===" && \
 
 # COPY PACKAGES TO LILYPARK PREFERRED PATH
 RUN echo "=== COPYING PYTHON PACKAGES TO PREFERRED PATH ===" && \
-    mkdir -p /lilyspark/usr/local/lib/python/site-packages && \
+    \
     for pkg in mako markupsafe mesonbuild; do \
         src=$(find /usr -type d -name "$pkg" 2>/dev/null | head -1); \
         # Try alternative spelling for markupsafe
@@ -1104,38 +1107,25 @@ RUN echo "=== ATTEMPTING ROBUST SYSROOT POPULATION ===" && \
     echo "=== ROBUST SYSROOT POPULATION COMPLETE ==="
 
 # ======================
-# SYSROOT POPULATION FOR libdrm
+# SYSROOT POPULATION (for libdrm, libepoxy, etc.)
 # ======================
-RUN echo "=== SYSROOT POPULATION FOR libdrm ===" && \
+RUN echo "=== POPULATING SYSROOT (shared for multiple dependencies) ===" && \
     \
-    # Copy LLVM runtime and headers
-    mkdir -p /lilyspark/opt/lib/sys/usr/lib/clang && \
-    cp -a /usr/lib/llvm-16/lib/clang/* /lilyspark/opt/lib/sys/usr/lib/clang/ 2>/dev/null || true; \
-    \
-    mkdir -p /lilyspark/opt/lib/sys/usr/include && \
-    cp -a /usr/include/* /lilyspark/opt/lib/sys/usr/include/ 2>/dev/null || true; \
-    \
-    # Copy system libraries
-    mkdir -p /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu && \
-    cp -a /usr/lib/x86_64-linux-gnu/* /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu/ 2>/dev/null || true; \
-    \
-    echo "✅ Sysroot populated for libdrm"
-
-RUN echo "=== SYSROOT POPULATION FOR libepoxy ===" && \
-    mkdir -p /lilyspark/opt/lib/sys/usr/lib/clang && \
+    # Copy LLVM runtime and headers (directories already exist from initial setup)
     cp -a /usr/lib/llvm-16/lib/clang/* /lilyspark/opt/lib/sys/usr/lib/clang/ 2>/dev/null || true && \
-    mkdir -p /lilyspark/opt/lib/sys/usr/include && \
+    \
+    # Copy system headers (directories already exist from initial setup)
     cp -a /usr/include/* /lilyspark/opt/lib/sys/usr/include/ 2>/dev/null || true && \
-    mkdir -p /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu && \
+    \
+    # Copy system libraries (directories already exist from initial setup)
     cp -a /usr/lib/x86_64-linux-gnu/* /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu/ 2>/dev/null || true && \
-    echo "✅ Sysroot populated for libepoxy"
+    \
+    echo "✅ Sysroot populated for libdrm, libepoxy, and other dependencies"
 
 # ======================
 # SYSROOT POPULATION FOR SDL3 IMAGE LIBRARIES
 # ======================
 RUN echo "=== POPULATING SYSROOT WITH SDL3 IMAGE LIBRARIES ===" && \
-    mkdir -p /lilyspark/opt/lib/sys/usr/lib && \
-    mkdir -p /lilyspark/opt/lib/sys/usr/include && \
     \
     # Symlink shared libraries (.so*) into sysroot
     find /lilyspark/usr/local/lib/image -type f -name "*.so*" \
@@ -2261,8 +2251,8 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
         # set up build dir
         rm -rf builddir; mkdir builddir; cd builddir; \
         \
-        # run meson
-        PKG_CONFIG_PATH="/lilyspark/usr/lib/pkgconfig" \
+        # run meson (stderr filtered to drop mtls-dialect=gnu2 + cxx_args noise)
+        PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:/lilyspark/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}" \
         PATH="/lilyspark/compiler/bin:$PATH" \
         CC="/lilyspark/compiler/bin/clang-16 --sysroot=/lilyspark" \
         CXX="/lilyspark/compiler/bin/clang++-16 --sysroot=/lilyspark" \
@@ -2283,11 +2273,24 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
             -Dgallium-opencl=disabled \
             -Dosmesa=true \
             -Dtools=[] \
-            .. || (echo "✗ meson setup failed"; cat meson-logs/meson-log.txt || true; exit 1); \
+            -Dc_args="-ftls-model=initial-exec" \
+            -Dc_link_args="-ftls-model=initial-exec" \
+            .. 2> >(grep -v "mtls-dialect=gnu2" | grep -v "cxx_args") || \
+            (echo "✗ meson setup failed"; \
+            cat meson-logs/meson-log.txt || true; \
+            grep -R "tls-model" meson-logs/meson-log.txt || true; \
+            grep -R "libdrm" meson-logs/meson-log.txt || true; \
+            exit 1); \
         \
         # build with ninja
-        ninja -v || (echo "✗ ninja build failed"; cat meson-logs/meson-log.txt || true; exit 1); \
-        ninja install || (echo "✗ ninja install failed"; cat meson-logs/meson-log.txt || true; exit 1); \
+        ninja -v || (echo "✗ ninja build failed"; \
+                     cat meson-logs/meson-log.txt || true; \
+                     grep -R "tls-model" meson-logs/meson-log.txt || true; \
+                     exit 1); \
+        ninja install || (echo "✗ ninja install failed"; \
+                           cat meson-logs/meson-log.txt || true; \
+                           grep -R "tls-model" meson-logs/meson-log.txt || true; \
+                           exit 1); \
         \
         echo "=== MESA BUILD COMPLETE ==="; \
     fi
