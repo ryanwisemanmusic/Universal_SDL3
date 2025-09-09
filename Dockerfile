@@ -69,13 +69,25 @@ RUN mkdir -p \
     # Third-party libraries
     /lilyspark/opt \
     /lilyspark/opt/lib/audio \
+    /lilyspark/opt/lib/audio/jack2/ \
+    /lilyspark/opt/lib/audio/jack2/bin \
+    /lilyspark/opt/lib/audio/jack2/metadata \
     /lilyspark/opt/lib/database \
     /lilyspark/opt/lib/driver \
     /lilyspark/opt/lib/graphics \
     /lilyspark/opt/lib/java \
+    /lilyspark/opt/lib/java/fop/bin \
+    /lilyspark/opt/lib/java/fop/docs \
+    /lilyspark/opt/lib/java/fop/launchers \
+    /lilyspark/opt/lib/java/fop/lib \
+    /lilyspark/opt/lib/java/fop/metadata \
     /lilyspark/opt/lib/media \
+    /lilyspark/opt/lib/media/bin \
     /lilyspark/opt/lib/python \
+    /lilyspark/opt/lib/python/site-packages \
     /lilyspark/opt/lib/sdl3 \
+    /lilyspark/opt/lib/sdl3/include \
+    /lilyspark/opt/lib/sdl3/lib \
     /lilyspark/opt/lib/sys \
     /lilyspark/opt/lib/sys/lib \
     /lilyspark/opt/lib/sys/usr \
@@ -1290,12 +1302,6 @@ RUN echo "=== INSTALLING Apache FOP 2.11 (isolated, safe) ===" && \
     wget -O /tmp/fop/fop-bin.tar.gz https://dlcdn.apache.org/xmlgraphics/fop/binaries/fop-2.11-bin.tar.gz && \
     tar -xzf /tmp/fop/fop-bin.tar.gz -C /tmp/fop --strip-components=1 && \
     \
-    # Prepare isolated target dirs
-    mkdir -p /lilyspark/opt/lib/java/fop/bin \
-             /lilyspark/opt/lib/java/fop/lib \
-             /lilyspark/opt/lib/java/fop/docs \
-             /lilyspark/opt/lib/java/fop/launchers && \
-    \
     # Locate and copy launcher file (or entire bin directory)
     launcher="$(find /tmp/fop -type f \( -name fop -o -name 'fop.sh' -o -name 'fop.bat' \) -print | head -n 1 || true)" && \
     if [ -n "$launcher" ]; then \
@@ -1328,7 +1334,6 @@ RUN echo "=== INSTALLING Apache FOP 2.11 (isolated, safe) ===" && \
     \
     # === CREATE FOP MANIFEST FILE FOR CMAKE ===
     echo "Creating FOP manifest for CMake detection..." && \
-    mkdir -p /lilyspark/opt/lib/java/fop/metadata && \
     # Get JAR files list
     FOP_JARS=$(find /lilyspark/opt/lib/java/fop/lib -name "*.jar" 2>/dev/null | tr '\n' ':' | sed 's/:$//' || echo "") && \
     # Get launcher path - FIXED: Check for both Unix and created wrapper
@@ -1433,7 +1438,6 @@ RUN echo "=== BUILDING JACK2 FROM SOURCE ===" && \
         echo "JACK2 tag: $JACK2_TAG" && \
         echo "JACK2 version: $JACK2_VERSION" && \
         # Store comprehensive version info for dependencies tracking
-        mkdir -p /lilyspark/opt/lib/audio/jack2/metadata && \
         echo "{" > /lilyspark/opt/lib/audio/jack2/metadata/version.json && \
         echo "  \"git\": \"https://github.com/jackaudio/jack2.git\"," >> /lilyspark/opt/lib/audio/jack2/metadata/version.json && \
         echo "  \"commit\": \"$JACK2_COMMIT\"," >> /lilyspark/opt/lib/audio/jack2/metadata/version.json && \
@@ -1468,7 +1472,6 @@ RUN echo "=== BUILDING JACK2 FROM SOURCE ===" && \
     fi && \
     \
     echo "=== RELOCATING JACK2 BINARIES ===" && \
-    mkdir -p /lilyspark/opt/lib/audio/jack2/bin && \
     # Move executables to jack-specific bin directory
     if [ -d /lilyspark/opt/lib/audio/jack2/usr/bin ]; then \
         find /lilyspark/opt/lib/audio/jack2/usr/bin -maxdepth 1 -type f -name "jack*" -exec mv -v {} /lilyspark/opt/lib/audio/jack2/bin/ \; || true; \
@@ -1656,8 +1659,6 @@ RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
 # SECTION: SDL3 Image Dependencies
 # ======================
 RUN echo "=== COPYING SDL3 IMAGE LIBRARIES TO SDL3 DIRECTORY ===" && \
-    mkdir -p /lilyspark/opt/lib/sdl3/lib && \
-    mkdir -p /lilyspark/opt/lib/sdl3/include && \
     cp -a /lilyspark/usr/local/lib/image/*.so* /lilyspark/opt/lib/sdl3/lib/ 2>/dev/null || true && \
     cp -a /lilyspark/usr/local/lib/image/*.h /lilyspark/opt/lib/sdl3/include/ 2>/dev/null || true && \
     echo "=== VERIFYING SDL3 IMAGE LIBRARIES ===" && \
@@ -1673,7 +1674,6 @@ RUN echo "=== COPYING SDL3 IMAGE LIBRARIES TO SDL3 DIRECTORY ===" && \
 RUN pip3 install meson && /usr/local/bin/check_llvm15.sh "after-pip-meson" || true
 
 RUN echo "=== COPYING PYTHON PACKAGES TO CUSTOM FILESYSTEM ===" && \
-    mkdir -p /lilyspark/opt/lib/python/site-packages && \
     for pkg in mesonbuild mako MarkupSafe; do \
         echo "Looking for $pkg..." && \
         # Look in YOUR preferred lilyspark path
@@ -1919,7 +1919,6 @@ RUN set -eux; \
             echo "⚠ Meson setup failed — continuing"; \
         else \
             echo ">>> Installing glib-mkenums"; \
-            mkdir -p /lilyspark/opt/lib/media/bin; \
             cp gobject/glib-mkenums /lilyspark/opt/lib/media/bin/; \
             echo "✓ glib-mkenums installed at /lilyspark/opt/lib/media/bin"; \
         fi; \
