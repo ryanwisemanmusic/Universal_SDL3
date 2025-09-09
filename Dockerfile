@@ -34,6 +34,7 @@ RUN mkdir -p \
     # User's directory
     /lilyspark/usr/include \
     /lilyspark/usr/lib \
+    /lilyspark/usr/lib/runtime \
     /lilyspark/usr/bin \
     /lilyspark/usr/share \
     /lilyspark/usr/sbin \
@@ -88,6 +89,9 @@ RUN mkdir -p \
     /lilyspark/opt/lib/sdl3 \
     /lilyspark/opt/lib/sdl3/include \
     /lilyspark/opt/lib/sdl3/lib \
+    /lilyspark/opt/lib/sdl3/usr/media/include \
+    /lilyspark/opt/lib/sdl3/usr/media/lib \
+    /lilyspark/opt/lib/sdl3/usr/media/lib/pkgconfig \
     /lilyspark/opt/lib/sys \
     /lilyspark/opt/lib/sys/lib \
     /lilyspark/opt/lib/sys/usr \
@@ -110,10 +114,18 @@ RUN mkdir -p \
     # Distribution
     /lilyspark/dist \
     # App
+    /lilyspark/app/build \
     /lilyspark/app/build_files \
+    /lilyspark/app/src \
+    # Snapshots
+    /lilyspark/snapshots \
+    # Debugger
+    /lilyspark/log \
     # MISC
     /lilyspark/etc \
     /lilyspark/var \
+    /lilyspark/var/log \
+    /lilyspark/var/log/debug \
     /lilyspark/tmp && \
     echo "=== DIRECTORY CREATION VERIFICATION ===" && \
     echo "Checking /lilyspark/usr/bin:" && ls -la /lilyspark/usr/bin && \
@@ -1955,7 +1967,6 @@ RUN set -eux; \
                         echo "⚠ Meson setup failed — skipping fallback"; \
                     else \
                         if [ -f gobject/glib-mkenums ]; then \
-                            mkdir -p /lilyspark/opt/lib/media/bin; \
                             cp gobject/glib-mkenums /lilyspark/opt/lib/media/bin/; \
                             echo "✓ Fallback glib-mkenums installed"; \
                         else \
@@ -2167,7 +2178,6 @@ ENV MESON_LOG_LEVEL=debug \
     NINJA_STATUS="[%f/%t] %es "
 
 RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
-    mkdir -p /lilyspark/usr/lib /lilyspark/usr/include /lilyspark/usr/bin /lilyspark/lib && \
     \
     # safe-copy helper
     safe_copy() { \
@@ -2204,7 +2214,7 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
             if cp -a "$realf" /lilyspark/lib/ 2>/dev/null; then \
                 echo "Copied musl file: $(basename "$realf")"; \
             else \
-                echo "⚠ failed to copy musl file $realf (creating placeholder)"; mkdir -p /lilyspark/lib; touch /lilyspark/lib/.placeholder; \
+                echo "⚠ failed to copy musl file $realf (creating placeholder)"; touch /lilyspark/lib/.placeholder; \
             fi; \
         else \
             mkdir -p /lilyspark/lib; touch /lilyspark/lib/.placeholder; echo "⚠ musl source not found: $f"; \
@@ -2217,11 +2227,11 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
     # ensure libm SONAME exists in sysroot (link to host soname if present)
     if [ ! -f /lilyspark/usr/lib/libm.so ]; then \
         if [ -f /usr/lib/libm.so.6 ]; then \
-            mkdir -p /lilyspark/usr/lib; ln -sf /usr/lib/libm.so.6 /lilyspark/usr/lib/libm.so && echo "Linked libm.so -> /usr/lib/libm.so.6"; \
+            ln -sf /usr/lib/libm.so.6 /lilyspark/usr/lib/libm.so && echo "Linked libm.so -> /usr/lib/libm.so.6"; \
         elif [ -f /usr/lib/libm.so ]; then \
             cp -a /usr/lib/libm.so /lilyspark/usr/lib/ 2>/dev/null || true; \
         else \
-            mkdir -p /lilyspark/usr/lib; touch /lilyspark/usr/lib/.placeholder; echo "⚠ libm SONAME missing"; \
+            touch /lilyspark/usr/lib/.placeholder; echo "⚠ libm SONAME missing"; \
         fi; \
     fi; \
     \
@@ -2233,7 +2243,7 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
         cp /usr/bin/wayland-scanner /lilyspark/usr/bin/ && echo "✓ wayland-scanner copied into sysroot"; \
     else \
         echo "⚠ wayland-scanner missing on host, creating placeholder"; \
-        mkdir -p /lilyspark/usr/bin; echo '#!/bin/sh\nexit 1' > /lilyspark/usr/bin/wayland-scanner; chmod +x /lilyspark/usr/bin/wayland-scanner; \
+        echo '#!/bin/sh\nexit 1' > /lilyspark/usr/bin/wayland-scanner; chmod +x /lilyspark/usr/bin/wayland-scanner; \
     fi; \
     \
     # sanity-compile to validate sysroot + clang
@@ -2500,11 +2510,6 @@ RUN echo "=== POPULATING SDL3 SYSROOT WITH GBM AND EGL (ARM64 DETECTION) ===" &&
         echo "⚠ Non-ARM64 platform detected: $DETECTED_ARCH - proceeding with generic paths"; \
         ARM64_CONFIRMED="no"; \
     fi && \
-    \
-    # Ensure SDL3 lib and include paths exist
-    mkdir -p /lilyspark/opt/lib/sdl3/usr/media/lib && \
-    mkdir -p /lilyspark/opt/lib/sdl3/usr/media/include && \
-    mkdir -p /lilyspark/opt/lib/sdl3/usr/media/lib/pkgconfig && \
     \
     # Copy GBM libraries, headers, pkg-config (defensive)
     echo "Copying GBM components..." && \
@@ -2955,7 +2960,6 @@ CMD ["tail", "-f", "/dev/null"]
 # ======================
 RUN echo "=== INITIALIZING APPLICATION BUILD ENVIRONMENT ===" && \
     echo "Creating all necessary directories..." && \
-    mkdir -p /lilyspark/app/src /lilyspark/app/build /lilyspark/snapshots && \
     echo "Filesystem initialized with binary target directory confirmed"
 
 # Set working directory for app build
@@ -3058,14 +3062,12 @@ RUN echo "CACHEBUST_DEBUG=${CACHEBUST_DEBUG}" && echo "CACHE_DISABLED_FOR_DEBUG_
 RUN echo "=== SYSROOT POPULATION FOR libdrm (debug stage) ===" && \
     \
     # Copy LLVM runtime and headers
-    mkdir -p /lilyspark/opt/lib/sys/usr/lib/clang && \
     if cp -a /usr/lib/llvm-16/lib/clang/* /lilyspark/opt/lib/sys/usr/lib/clang/ 2>/dev/null; then \
         echo "✓ LLVM runtime copied successfully"; \
     else \
         echo "⚠ Warning: LLVM runtime not found or failed to copy"; \
     fi; \
     \
-    mkdir -p /lilyspark/opt/lib/sys/usr/include && \
     if cp -a /usr/include/* /lilyspark/opt/lib/sys/usr/include/ 2>/dev/null; then \
         echo "✓ System headers copied successfully"; \
     else \
@@ -3073,7 +3075,6 @@ RUN echo "=== SYSROOT POPULATION FOR libdrm (debug stage) ===" && \
     fi; \
     \
     # Copy system libraries for linking
-    mkdir -p /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu && \
     if cp -a /usr/lib/x86_64-linux-gnu/* /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu/ 2>/dev/null; then \
         echo "✓ System libraries copied successfully"; \
     else \
@@ -3165,7 +3166,6 @@ CMD ["/lilyspark/usr/bin/simplehttpserver"]
 FROM debug AS runtime
 # Create necessary directories
 USER root
-RUN mkdir -p /lilyspark/usr/lib/runtime
 
 # Copy application binary from app-build stage
 COPY --from=app-build /lilyspark/app/build/simplehttpserver /lilyspark/usr/bin/
