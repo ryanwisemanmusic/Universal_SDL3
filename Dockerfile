@@ -729,19 +729,32 @@ RUN echo "=== INTEGRATING JAVA LIBRARIES INTO SYSROOT ===" && \
 
 # Math Libraries - /lilyspark/usr/local/lib/math
 RUN apk add --no-cache eigen-dev && /usr/local/bin/check_llvm15.sh "after-eigen-dev" || true
+RUN apk add --no-cache gmp && /usr/local/bin/check_llvm15.sh "after-gmp" || true
+RUN apk add --no-cache gsl && /usr/local/bin/check_llvm15.sh "after-gsl" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING MATH LIBRARIES ===" && \
+    # Eigen (headers only)
     cp -a /usr/include/eigen3 /lilyspark/usr/local/lib/math/ 2>/dev/null || true && \
+    # GMP (headers + libs)
+    cp -a /usr/include/gmp* /lilyspark/usr/local/lib/math/ 2>/dev/null || true && \
+    cp -a /usr/lib/libgmp*.so* /lilyspark/usr/local/lib/math/ 2>/dev/null || true && \
+    # GSL (headers + libs)
+    cp -a /usr/include/gsl /lilyspark/usr/local/lib/math/ 2>/dev/null || true && \
+    cp -a /usr/lib/libgsl*.so* /lilyspark/usr/local/lib/math/ 2>/dev/null || true && \
+    \
     echo "--- MATH CHECK ---" && \
-    ls -la /lilyspark/usr/local/lib/math | head -10 || true
+    ls -la /lilyspark/usr/local/lib/math | head -30 || true
 
 # Sysroot Integration: Math Libraries
 RUN echo "=== INTEGRATING MATH LIBRARIES INTO SYSROOT ===" && \
-    # Link any shared libraries from math directory (Eigen is header-only but check anyway)
+    # Link any shared libraries from math directory
     find /lilyspark/usr/local/lib/math -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
-    echo "Math libraries integrated. Count:" && \
-    (ls -1 /lilyspark/usr/lib/lib{eigen}*.so* 2>/dev/null | wc -l || echo "No math libs found (Eigen is header-only)") && \
+    echo "Math libraries integrated. Counts:" && \
+    echo "Eigen headers present:" $(test -d /lilyspark/usr/local/lib/math/eigen3 && echo yes || echo no) && \
+    echo "GMP libs count:" $(ls -1 /lilyspark/usr/lib/libgmp*.so* 2>/dev/null | wc -l || echo 0) && \
+    echo "GSL libs count:" $(ls -1 /lilyspark/usr/lib/libgsl*.so* 2>/dev/null | wc -l || echo 0) && \
+    echo "gslcblas libs count:" $(ls -1 /lilyspark/usr/lib/libgslcblas*.so* 2>/dev/null | wc -l || echo 0) && \
     echo "=== MATH SYSROOT INTEGRATION COMPLETE ==="
 
 #
@@ -862,6 +875,7 @@ RUN apk add --no-cache e2fsprogs-dev && /usr/local/bin/check_llvm15.sh "after-e2
 RUN apk add --no-cache xfsprogs-dev && /usr/local/bin/check_llvm15.sh "after-xfsprogs-dev" || true
 RUN apk add --no-cache btrfs-progs-dev && /usr/local/bin/check_llvm15.sh "after-btrfs-progs-dev" || true
 RUN apk add --no-cache libexecinfo-dev && /usr/local/bin/check_llvm15.sh "after-libexecinfo-dev" || true
+RUN apk add --no-cache libdw && /usr/local/bin/check_llvm15.sh "after-libdw" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING SYSTEM LIBRARIES ===" && \
@@ -873,6 +887,9 @@ RUN echo "=== COPYING SYSTEM LIBRARIES ===" && \
     cp -a /usr/lib/libatomic_ops* /lilyspark/usr/local/lib/system/ 2>/dev/null || true && \
     cp -a /usr/include/e2fsprogs /usr/include/xfs /usr/include/btrfs /lilyspark/usr/local/lib/system/ 2>/dev/null || true && \
     cp -a /usr/lib/libext2fs* /usr/lib/libxfs* /usr/lib/libbtrfs* /lilyspark/usr/local/lib/system/ 2>/dev/null || true && \
+    # libdw (headers + lib)
+    cp -a /usr/include/dwarf.h /usr/include/elfutils /lilyspark/usr/local/lib/system/ 2>/dev/null || true && \
+    cp -a /usr/lib/libdw* /lilyspark/usr/local/lib/system/ 2>/dev/null || true && \
     echo "--- SYSTEM CHECK ---" && \
     ls -la /lilyspark/usr/local/lib/system | head -10 || true
 
@@ -880,8 +897,9 @@ RUN echo "=== COPYING SYSTEM LIBRARIES ===" && \
 RUN echo "=== INTEGRATING SYSTEM LIBRARIES INTO SYSROOT ===" && \
     find /lilyspark/usr/local/lib/system -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
     echo "System libraries integrated. Count:" && \
-    (ls -1 /lilyspark/usr/lib/lib{uring,cap,atomic_ops,ext2fs,xfs,btrfs}*.so* 2>/dev/null | wc -l || echo "No system libs found yet") && \
+    (ls -1 /lilyspark/usr/lib/lib{uring,cap,atomic_ops,ext2fs,xfs,btrfs,dw}*.so* 2>/dev/null | wc -l || echo "No system libs found yet") && \
     echo "=== SYSTEM SYSROOT INTEGRATION COMPLETE ==="
+
 
 #
 #
@@ -1140,18 +1158,37 @@ RUN echo "=== ATTEMPTING ROBUST SYSROOT POPULATION ===" && \
 # ======================
 # SYSROOT POPULATION (for libdrm, libepoxy, etc.)
 # ======================
-RUN echo "=== POPULATING SYSROOT (shared for multiple dependencies) ===" && \
+RUN echo "=== POPULATING SYSROOT (shared for multiple dependencies, ARM64-aware) ===" && \
+    ARCH="$(uname -m)" && echo "Detected architecture: $ARCH"; \
     \
-    # Copy LLVM runtime and headers (directories already exist from initial setup)
-    cp -a /usr/lib/llvm-16/lib/clang/* /lilyspark/opt/lib/sys/usr/lib/clang/ 2>/dev/null || true && \
+    # LLVM runtime & headers
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        echo "Copying LLVM runtime & headers for ARM64..."; \
+        cp -av /usr/lib/llvm-16/lib/clang/* /lilyspark/opt/lib/sys/usr/lib/clang/ 2>/dev/null || echo "⚠ LLVM headers copy failed"; \
+    else \
+        echo "Copying LLVM runtime & headers for x86_64 fallback..."; \
+        cp -av /usr/lib/llvm-16/lib/clang/* /lilyspark/opt/lib/sys/usr/lib/clang/ 2>/dev/null || echo "⚠ LLVM headers copy failed"; \
+    fi; \
     \
-    # Copy system headers (directories already exist from initial setup)
-    cp -a /usr/include/* /lilyspark/opt/lib/sys/usr/include/ 2>/dev/null || true && \
+    # System headers
+    echo "Copying system headers..."; \
+    cp -av /usr/include/* /lilyspark/opt/lib/sys/usr/include/ 2>/dev/null || echo "⚠ System headers copy failed"; \
     \
-    # Copy system libraries (directories already exist from initial setup)
-    cp -a /usr/lib/x86_64-linux-gnu/* /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu/ 2>/dev/null || true && \
+    # System libraries
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        echo "Copying ARM64 libraries..."; \
+        cp -av /usr/lib/aarch64-linux-gnu/* /lilyspark/opt/lib/sys/usr/lib/ 2>/dev/null || echo "⚠ ARM64 libraries copy failed"; \
+    else \
+        echo "Copying x86_64 libraries fallback..."; \
+        cp -av /usr/lib/x86_64-linux-gnu/* /lilyspark/opt/lib/sys/usr/lib/x86_64-linux-gnu/ 2>/dev/null || echo "⚠ x86_64 libraries copy failed"; \
+    fi; \
     \
-    echo "✅ Sysroot populated for libdrm, libepoxy, and other dependencies"
+    echo "--- Verification ---"; \
+    echo "Include:"; ls -la /lilyspark/opt/lib/sys/usr/include | head -20; \
+    echo "Lib:"; ls -la /lilyspark/opt/lib/sys/usr/lib | head -20; \
+    echo "Pkgconfig:"; ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig | head -20; \
+    echo "✅ Sysroot population complete"
+
 
 # ======================
 # SYSROOT POPULATION FOR SDL3 IMAGE LIBRARIES
@@ -1618,72 +1655,93 @@ RUN echo "=== BUILDING pciaccess FROM SOURCE WITH LLVM16 ===" && \
     cd / && rm -rf /tmp/libpciaccess
 
 # ======================
-# SECTION: libdrm Build (sysroot-focused, non-fatal)
+# libdrm Build (ARM64-safe, fully logged)
 # ======================
 ARG LIBDRM_VER=2.4.125
 ARG LIBDRM_URL="https://dri.freedesktop.org/libdrm/libdrm-${LIBDRM_VER}.tar.xz"
 
-# Set PKG_CONFIG_PATH globally so Meson and other builds can find libdrm
 ENV PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+ENV PATH="/lilyspark/compiler/bin:${PATH}"
 
-RUN echo "=== BUILDING libdrm ${LIBDRM_VER} FROM SOURCE WITH LLVM16 ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-libdrm-source-build" || true; \
-    /usr/local/bin/check_llvm15.sh "after-libdrm-deps" || true; \
+RUN echo "=== START: BUILDING libdrm ${LIBDRM_VER} ===" && \
+    ARCH="$(uname -m)" && echo "Detected architecture: $ARCH"; \
     \
     mkdir -p /tmp/libdrm-src && cd /tmp/libdrm-src; \
     echo "Fetching libdrm tarball: ${LIBDRM_URL}"; \
     curl -L "${LIBDRM_URL}" -o libdrm.tar.xz || (echo "⚠ Failed to fetch libdrm tarball"; exit 0); \
-    tar -xf libdrm.tar.xz --strip-components=1 || true; \
+    tar -xf libdrm.tar.xz --strip-components=1 || echo "⚠ Tar extraction failed"; \
     \
-    # CRITICAL: Install to isolated location to avoid ABI conflicts
-    export DESTDIR="/lilyspark/opt/lib/graphics"; \
-    export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/sys"; \
+    # ----------------------
+    # 1️⃣ Compiler detection & native file
+    # ----------------------
+    echo "=== Compiler detection ==="; \
+    CC_FALLBACK="cc"; CXX_FALLBACK="c++"; \
+    CC="$(command -v /lilyspark/compiler/bin/clang-16 || command -v clang || echo $CC_FALLBACK)"; \
+    CXX="$(command -v /lilyspark/compiler/bin/clang++-16 || command -v clang++ || echo $CXX_FALLBACK)"; \
+    echo "Using CC=$CC, CXX=$CXX"; command -v $CC || echo "⚠ $CC not in PATH"; command -v $CXX || echo "⚠ $CXX not in PATH"; \
     \
-    # Force clang toolchain from Lilyspark compiler bin
-    if [ -x "/lilyspark/compiler/bin/clang-16" ]; then \
-        export CC="/lilyspark/compiler/bin/clang-16"; \
-    elif command -v clang >/dev/null 2>&1; then \
-        export CC="clang"; \
-    else \
-        echo "⚠ clang not found, falling back to cc"; \
-        export CC="cc"; \
-    fi; \
-    if [ -x "/lilyspark/compiler/bin/clang++-16" ]; then \
-        export CXX="/lilyspark/compiler/bin/clang++-16"; \
-    elif command -v clang++ >/dev/null 2>&1; then \
-        export CXX="clang++"; \
-    else \
-        echo "⚠ clang++ not found, falling back to c++"; \
-        export CXX="c++"; \
-    fi; \
+    echo "Creating Meson native file..."; \
+    echo "[binaries]" > native-file.ini; \
+    echo "c = '$CC'" >> native-file.ini; \
+    echo "cpp = '$CXX'" >> native-file.ini; \
+    echo "ar = 'ar'" >> native-file.ini; \
+    echo "strip = 'strip'" >> native-file.ini; \
+    echo "pkg-config = 'pkg-config'" >> native-file.ini; \
+    echo "[host_machine]" >> native-file.ini; \
+    echo "system = 'linux'" >> native-file.ini; \
+    echo "cpu_family = '$ARCH'" >> native-file.ini; \
+    echo "cpu = '$ARCH'" >> native-file.ini; \
+    echo "endian = 'little'" >> native-file.ini; \
+    cat native-file.ini; \
     \
-    export CFLAGS="${CFLAGS:-}"; \
-    export CXXFLAGS="${CXXFLAGS:-}"; \
-    export LDFLAGS="${LDFLAGS:-}"; \
-    \
-    # Build with isolated installation
-    if meson setup builddir \
+    # ----------------------
+    # 2️⃣ Meson setup, build, install
+    # ----------------------
+    echo "=== Meson setup ==="; \
+    meson setup builddir \
         --prefix=/usr \
         --libdir=lib \
         --buildtype=release \
         -Dtests=false \
         -Dudev=false \
         -Dvalgrind=disabled \
-        -Dc_args="$CFLAGS" \
-        -Dc_link_args="$LDFLAGS" \
-        -Dpkg_config_path="$PKG_CONFIG_PATH" 2>&1; then \
-        \
-        if meson compile -C builddir -j$(nproc) 2>&1; then \
-            # CRITICAL: Install to isolated graphics location, NOT sysroot
-            if meson install -C builddir --destdir "/lilyspark/opt/lib/graphics" --no-rebuild 2>&1; then \
-                echo "✓ libdrm built and installed to isolated location"; \
-            fi; \
-        fi; \
-    fi; \
+        --native-file native-file.ini \
+        -Dpkg_config_path="$PKG_CONFIG_PATH" 2>&1 | tee /tmp/libdrm-meson-setup.log; \
     \
-    # Cleanup
-    cd /; rm -rf /tmp/libdrm-src; \
-    echo "=== libdrm BUILD finished ==="; \
+    echo "=== Meson compile ==="; \
+    meson compile -C builddir -j$(nproc) 2>&1 | tee /tmp/libdrm-meson-compile.log; \
+    \
+    echo "=== Meson install ==="; \
+    meson install -C builddir --destdir /lilyspark/opt/lib/graphics --no-rebuild 2>&1 | tee /tmp/libdrm-meson-install.log; \
+    \
+    # ----------------------
+    # 3️⃣ Populate sysroot after install
+    # ----------------------
+    echo "=== Populating sysroot AFTER installation ==="; \
+    SYSROOT="/lilyspark/opt/lib/sys"; \
+    mkdir -p $SYSROOT/usr/{include,lib,lib/pkgconfig}; \
+    cp -av /lilyspark/opt/lib/graphics/usr/include/* $SYSROOT/usr/include/ 2>/dev/null || echo "⚠ include copy failed"; \
+    cp -av /lilyspark/opt/lib/graphics/usr/lib/* $SYSROOT/usr/lib/ 2>/dev/null || echo "⚠ lib copy failed"; \
+    cp -av /lilyspark/opt/lib/graphics/usr/lib/pkgconfig/* $SYSROOT/usr/lib/pkgconfig/ 2>/dev/null || echo "⚠ pkgconfig copy failed"; \
+    ls -la $SYSROOT/usr/include | head -20; \
+    ls -la $SYSROOT/usr/lib | head -20; \
+    ls -la $SYSROOT/usr/lib/pkgconfig | head -20; \
+    \
+    # ----------------------
+    # 4️⃣ Verify pkg-config can see it
+    # ----------------------
+    echo "=== Verifying pkg-config can see libdrm ==="; \
+    export PKG_CONFIG_PATH="$SYSROOT/usr/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:$PKG_CONFIG_PATH"; \
+    pkg-config --modversion libdrm || echo "⚠ libdrm still not detected"; \
+    pkg-config --cflags libdrm; pkg-config --libs libdrm; \
+    \
+    # ----------------------
+    # 5️⃣ Post-install verification
+    # ----------------------
+    echo "=== Post-install verification ==="; \
+    ls -R /lilyspark/opt/lib/graphics | head -50; \
+    cd /; rm -rf /tmp/libdrm-src native-file.ini; \
+    echo "=== libdrm BUILD complete ==="; \
     true
 
 
