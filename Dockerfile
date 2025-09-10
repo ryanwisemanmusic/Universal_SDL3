@@ -2278,6 +2278,16 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
         fi; \
     }; \
     \
+    # normalize .pc prefix helper (force prefix=/usr so Meson resolves sysroot correctly)
+    normalize_pc_prefix() { \
+        pcfile="$1"; \
+        if [ -f "$pcfile" ]; then \
+            echo "Normalizing prefix to /usr in $pcfile"; \
+            # preserve file if sed fails; do in-place replace
+            sed -i 's|^prefix=.*|prefix=/usr|' "$pcfile" 2>/dev/null || echo "⚠ failed to normalize $pcfile"; \
+        fi; \
+    }; \
+    \
     # populate sysroot minimal runtime pieces (safe)
     safe_copy "/usr/lib/crt*.o" "/lilyspark/usr/lib"; \
     safe_copy "/usr/lib/gcc/*/*/crt*.o" "/lilyspark/usr/lib"; \
@@ -2424,11 +2434,17 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
         # set up build dir
         rm -rf builddir; mkdir builddir; cd builddir; \
         \
-        # ----- ADDED: pkg-config preflight / ensure pkgconfig paths include sys & graphics -----
+        # ----- ADDED: pkg-config preflight / ensure pkgconfig paths include sys & graphics + ARCH/GCC fallbacks -----
         echo "=== pkg-config preflight for Mesa ==="; \
-        export PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+        ARCH="$(uname -m)"; \
+        # include common pkgconfig locations for host + arch-specific Debian-style dirs + local fallbacks
+        export PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/usr/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib/pkgconfig:/usr/lib/${ARCH}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"; \
         echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"; \
-        echo "--- pkgconfig dirs ---"; ls -la /lilyspark/opt/lib/graphics/usr/lib/pkgconfig || echo "no graphics pkgconfig dir"; ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig || echo "no sys pkgconfig dir"; ls -la /lilyspark/usr/lib/pkgconfig || echo "no /lilyspark/usr/lib/pkgconfig"; \
+        echo "--- pkgconfig dirs ---"; \
+        ls -la /lilyspark/opt/lib/graphics/usr/lib/pkgconfig || echo "no graphics pkgconfig dir"; \
+        ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig || echo "no sys pkgconfig dir"; \
+        ls -la /lilyspark/usr/lib/pkgconfig || echo "no /lilyspark/usr/lib/pkgconfig"; \
+        ls -la /usr/lib/${ARCH}-linux-gnu/pkgconfig 2>/dev/null || echo "no arch-specific pkgconfig dir"; \
         echo "--- pkgconfig files (graphics) ---"; ls -la /lilyspark/opt/lib/graphics/usr/lib/pkgconfig 2>/dev/null || true; \
         echo "--- pkgconfig files (sys) ---"; ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig 2>/dev/null || true; \
         echo "Checking libdrm via pkg-config:"; \
@@ -2440,7 +2456,10 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
         echo "--- Listing libdrm .pc files and contents ---"; \
         for d in /lilyspark/opt/lib/graphics/usr/lib/pkgconfig /lilyspark/opt/lib/sys/usr/lib/pkgconfig /lilyspark/usr/lib/pkgconfig; do \
             echo "DIR: $d"; ls -la "$d" 2>/dev/null || echo " (missing)"; \
-            if [ -f "$d/libdrm.pc" ]; then echo "---- $d/libdrm.pc ----"; sed -n '1,120p' "$d/libdrm.pc" || true; fi; \
+            if [ -f "$d/libdrm.pc" ]; then \
+                normalize_pc_prefix "$d/libdrm.pc"; \
+                echo "---- $d/libdrm.pc ----"; sed -n '1,120p' "$d/libdrm.pc" || true; \
+            fi; \
         done; \
         echo "--- Checking for libdrm shared objects ---"; \
         ls -la /lilyspark/opt/lib/graphics/usr/lib/libdrm* /lilyspark/opt/lib/sys/usr/lib/libdrm* /lilyspark/usr/lib/libdrm* 2>/dev/null || echo "No libdrm .so found in expected locations"; \
@@ -2497,7 +2516,7 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
         # ==== STAGE 3: PRE-NINJA BUILDDIR INSPECTION ==== \
         echo "=== STAGE 3: BUILDDIR INSPECTION BEFORE NINJA ==="; \
         echo "Listing builddir top-level:"; ls -la builddir || true; \
-        echo "Finding references to libdrm inside builddir:"; grep -R --line-number -i "libdrm" builddir || true; \
+        echo "Finding references to libdrm inside builddir:"; grep -R -n -i "libdrm" builddir || true; \
         echo "Checking meson-info and compile commands if present:"; ls -la builddir/meson-info || true; sed -n '1,200p' builddir/meson-info/intro.json 2>/dev/null || true; \
         \
         # build with ninja
@@ -2519,8 +2538,10 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
         cp -av /lilyspark/opt/lib/graphics/usr/lib/pkgconfig/libdrm*.pc /lilyspark/opt/lib/sys/usr/lib/pkgconfig/ 2>/dev/null || echo "⚠ copy of libdrm*.pc to sys failed"; \
         cp -av /lilyspark/opt/lib/graphics/usr/lib/libdrm* /lilyspark/opt/lib/sys/usr/lib/ 2>/dev/null || echo "⚠ copy of libdrm libs to sys failed"; \
         ls -la /lilyspark/opt/lib/sys/usr/lib | head -40 || true; \
+        echo "Normalizing any copied .pc files to prefix=/usr (post-install)"; \
+        for f in /lilyspark/opt/lib/sys/usr/lib/pkgconfig/libdrm*.pc /lilyspark/opt/lib/graphics/usr/lib/pkgconfig/libdrm*.pc; do [ -f "$f" ] && sed -i 's|^prefix=.*|prefix=/usr|' "$f" 2>/dev/null || true; done; \
         echo "Recompute PKG_CONFIG_PATH and test pkg-config"; \
-        export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:/lilyspark/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+        export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:/lilyspark/usr/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib/pkgconfig:/usr/lib/$(uname -m)-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"; \
         echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"; \
         pkg-config --modversion libdrm || echo "⚠ libdrm not found by pkg-config after install/sync"; \
         pkg-config --cflags libdrm || true; pkg-config --libs libdrm || true; \
@@ -2530,98 +2551,83 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
     fi
 
 
-    
 # ======================
-# SECTION: libepoxy Build (sysroot-focused) - uses /lilyspark/compiler clang wiring
+# BUILD GBM (from Mesa) for ARM64 with libdrm verification
 # ======================
-RUN echo "=== BUILDING LIBEPOXY FROM SOURCE TO AVOID LLVM15 ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-libepoxy-source-build" || true && \
+RUN echo "=== START: BUILDING GBM FROM MESA SOURCE (ARM64) ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-gbm-source-build" || true && \
     \
-    echo "=== INSTALLING BUILD DEPENDENCIES ===" && \
-    /usr/local/bin/check_llvm15.sh "after-libepoxy-deps-install" || true && \
-    \
-    echo "=== CLONING LIBEPOXY SOURCE ===" && \
-    git clone --depth=1 https://github.com/anholt/libepoxy.git /tmp/libepoxy && \
-    cd /tmp/libepoxy && \
-    git checkout c84bc9459357a40e46e2fec0408d04fbdde2c973 -b libepoxy-1.5.10 && \
-    \
-    echo "=== SOURCE CONTAMINATION SCAN ===" && \
-    grep -RIn "LLVM15\|llvm-15" . 2>/dev/null | tee /tmp/libepoxy_source_scan.log || true && \
-    \
-    echo "=== VERIFY /lilyspark/compiler clang-16 presence ===" && \
-    if [ -x /lilyspark/compiler/bin/clang-16 ] && [ -x /lilyspark/compiler/bin/clang++-16 ] && [ -x /lilyspark/compiler/bin/llvm-config ]; then \
-        echo "Found clang-16 toolchain in /lilyspark/compiler/bin"; \
+    echo ">>> Verifying libdrm installation <<<" && \
+    if pkg-config --exists libdrm; then \
+        echo "✔ libdrm found: $(pkg-config --modversion libdrm)"; \
     else \
-        echo "WARNING: clang-16 (or clang++-16 / llvm-config) NOT FOUND at /lilyspark/compiler/bin - libepoxy build may fail"; \
-        echo "Available compilers under /lilyspark/compiler/bin:"; ls -la /lilyspark/compiler/bin || true; \
+        echo "⚠ libdrm not found! GBM build may fail"; \
     fi && \
     \
-    echo "=== CONFIGURING LIBEPOXY WITH /lilyspark/compiler clang/llvm paths ===" && \
+    mkdir -p /tmp/mesa-gbm && cd /tmp/mesa-gbm && \
+    echo "Cloning Mesa source for GBM..." && \
+    git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git . || (echo "⚠ Git clone failed" && exit 1) && \
+    git checkout $(git rev-list --tags --max-count=1) || echo "⚠ Git checkout failed, using HEAD" && \
+    \
+    echo ">>> Configuring GBM build <<<" && \
     CC=/lilyspark/compiler/bin/clang-16 \
     CXX=/lilyspark/compiler/bin/clang++-16 \
-    LLVM_CONFIG=/lilyspark/compiler/bin/llvm-config \
     CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
     CXXFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
     LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/opt/lib/sys/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/opt/lib/sys/glibc/lib" \
-    PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig" \
+    PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" \
+    PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig" \
     meson setup builddir \
-        --prefix=/lilyspark/opt/lib/sys/usr \
-        --libdir=/lilyspark/opt/lib/sys/usr/lib \
-        --includedir=/lilyspark/opt/lib/sys/usr/include \
+        --prefix=/usr \
+        -Dgbm=enabled \
+        -Ddri-drivers= \
+        -Dgallium-drivers= \
+        -Degl=disabled \
+        -Dgles1=disabled \
+        -Dgles2=disabled \
+        -Dopengl=true \
         --buildtype=release \
-        -Dglx=yes \
-        -Degl=yes \
-        -Dx11=true \
-        -Dtests=false || (cat /libepoxy/builddir/meson-logs/meson-log.txt 2>/dev/null || true) && \
+        --wrap-mode=nodownload 2>&1 | tee /tmp/gbm-meson-setup.log || (echo "✗ GBM meson setup failed" && tail -50 /tmp/gbm-meson-setup.log && exit 1) && \
     \
-    echo "=== BUILDING LIBEPOXY ===" && \
-    ninja -C builddir -v && \
+    echo "=== Compiling GBM ===" && \
+    ninja -C builddir -v 2>&1 | tee /tmp/gbm-meson-compile.log || (echo "✗ GBM compilation failed" && tail -50 /tmp/gbm-meson-compile.log && exit 1) && \
     \
-    echo "=== INSTALLING LIBEPOXY INTO SYSROOT ===" && \
-    DESTDIR="/lilyspark/opt/lib/sys" ninja -C builddir install && \
+    echo "=== Installing GBM ===" && \
+    DESTDIR="/lilyspark/opt/lib/driver" ninja -C builddir install 2>&1 | tee /tmp/gbm-meson-install.log || (echo "✗ GBM install failed" && tail -50 /tmp/gbm-meson-install.log && exit 1) && \
     \
-    echo "=== LIBEPOXY INSTALLATION VERIFICATION ===" && \
-    echo "Libraries installed:" && \
-    ls -la /lilyspark/opt/lib/sys/usr/lib/libepoxy* 2>/dev/null || echo "No libepoxy libraries found" && \
-    echo "Headers installed:" && \
-    ls -la /lilyspark/opt/lib/sys/usr/include/epoxy/ 2>/dev/null || echo "No epoxy headers found" && \
-    echo "PKG-config files:" && \
-    ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig/epoxy.pc 2>/dev/null || echo "No epoxy.pc found" && \
+    echo "=== Populating sysroot for GBM ===" && \
+    SYSROOT="/lilyspark/opt/lib/sys" && \
+    mkdir -p $SYSROOT/usr/{include,lib,lib/pkgconfig} && \
+    cp -av /lilyspark/opt/lib/driver/usr/include/* $SYSROOT/usr/include/ 2>/dev/null || echo "⚠ include copy failed" && \
+    cp -av /lilyspark/opt/lib/driver/usr/lib/* $SYSROOT/usr/lib/ 2>/dev/null || echo "⚠ lib copy failed" && \
+    cp -av /lilyspark/opt/lib/driver/usr/lib/pkgconfig/* $SYSROOT/usr/lib/pkgconfig/ 2>/dev/null || echo "⚠ pkgconfig copy failed" && \
+    ls -la $SYSROOT/usr/include | head -20 && \
+    ls -la $SYSROOT/usr/lib | head -20 && \
+    ls -la $SYSROOT/usr/lib/pkgconfig | head -20 && \
     \
-    echo "=== CREATING REQUIRED SYMLINKS ===" && \
-    cd /lilyspark/opt/lib/sys/usr/lib && \
-    for lib in $(ls libepoxy*.so.*.* 2>/dev/null); do \
-        soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
-        basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
-        ln -sf "$lib" "$soname"; \
-        ln -sf "$soname" "$basename"; \
-        echo "Created symlinks for $lib"; \
-    done && \
+    echo "=== Verifying pkg-config can see GBM ===" && \
+    export PKG_CONFIG_PATH="$SYSROOT/usr/lib/pkgconfig:/lilyspark/opt/lib/driver/usr/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig" && \
+    pkg-config --modversion gbm || echo "⚠ GBM still not detected" && \
+    pkg-config --cflags gbm && pkg-config --libs gbm && \
     \
-    echo "=== FINAL CONTAMINATION SCAN ===" && \
-    find /lilyspark/opt/lib/sys/usr/lib -name "libepoxy*" -exec grep -l "LLVM15\|llvm-15" {} \; 2>/dev/null | tee /tmp/libepoxy_contamination.log || true && \
-    \
-    cd / && rm -rf /tmp/libepoxy && \
-    \
-    /usr/local/bin/check_llvm15.sh "post-libepoxy-source-build" || true && \
-    echo "=== LIBEPOXY BUILD COMPLETE ===" && \
-    if [ -f /lilyspark/opt/lib/sys/usr/lib/libepoxy.so ] && [ -f /lilyspark/opt/lib/sys/usr/include/epoxy/gl.h ]; then \
-        echo "✓ SUCCESS: libepoxy components installed"; \
-    else \
-        echo "⚠ WARNING: Some libepoxy components missing"; \
-    fi
+    echo "=== GBM post-install verification ===" && \
+    find /lilyspark/opt/lib/driver -name "*gbm*" -type f | tee /tmp/gbm_verify.log && \
+    /usr/local/bin/check_llvm15.sh "post-gbm-install" || true && \
+    cd / && rm -rf /tmp/mesa-gbm && \
+    echo "=== GBM BUILD COMPLETE ===" && \
+    true
 
 
 # ======================
-# BUILD GBM (from Mesa) for ARM64
+# BUILD EGL (from Mesa) for ARM64
 # ======================
-RUN echo "=== BUILDING GBM FROM MESA SOURCE (ARM64) ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-gbm-source-build" || true && \
+RUN echo "=== BUILDING EGL FROM MESA SOURCE (ARM64) ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-egl-source-build" || true && \
     \
     git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa && \
     cd /tmp/mesa && \
     \
-    echo ">>> Configuring GBM for ARM64 <<<" && \
+    echo ">>> Configuring EGL for ARM64 <<<" && \
     CC=/lilyspark/compiler/bin/clang-16 \
     CXX=/lilyspark/compiler/bin/clang++-16 \
     CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
@@ -2634,58 +2640,20 @@ RUN echo "=== BUILDING GBM FROM MESA SOURCE (ARM64) ===" && \
         -Dgbm=enabled \
         -Ddri-drivers= \
         -Dgallium-drivers= \
-        -Degl=disabled \
+        -Degl=enabled \
         -Dgles1=disabled \
         -Dgles2=disabled \
         -Dopengl=true \
         --buildtype=release \
-        --wrap-mode=nodownload || (echo "✗ GBM meson setup failed" && exit 1) && \
+        --wrap-mode=nodownload || (echo "✗ EGL meson setup failed" && exit 1) && \
     \
+    echo "=== Building EGL ===" && \
     ninja -C builddir -v && \
     DESTDIR="/lilyspark/opt/lib/driver" ninja -C builddir install && \
     \
-    echo "=== VERIFYING GBM INSTALLATION ===" && \
-    find /lilyspark/opt/lib/driver -name "*gbm*" -type f | tee /tmp/gbm_install.log && \
-    /usr/local/bin/check_llvm15.sh "post-gbm-install" || true && \
-    \
-    cd / && rm -rf /tmp/mesa
-
-
-# ======================
-# BUILD GBM (from Mesa) for ARM64
-# ======================
-RUN echo "=== BUILDING GBM FROM MESA SOURCE (ARM64) ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-gbm-source-build" || true && \
-    \
-    git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa && \
-    cd /tmp/mesa && \
-    \
-    echo ">>> Configuring GBM for ARM64 <<<" && \
-    CC=/lilyspark/compiler/bin/clang-16 \
-    CXX=/lilyspark/compiler/bin/clang++-16 \
-    CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
-    CXXFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
-    LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/opt/lib/sys/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/opt/lib/sys/glibc/lib" \
-    PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" \
-    PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig" \
-    meson setup builddir \
-        --prefix=/usr \
-        -Dgbm=enabled \
-        -Ddri-drivers= \
-        -Dgallium-drivers= \
-        -Degl=disabled \
-        -Dgles1=disabled \
-        -Dgles2=disabled \
-        -Dopengl=true \
-        --buildtype=release \
-        --wrap-mode=nodownload || (echo "✗ GBM meson setup failed" && exit 1) && \
-    \
-    ninja -C builddir -v && \
-    DESTDIR="/lilyspark/opt/lib/driver" ninja -C builddir install && \
-    \
-    echo "=== VERIFYING GBM INSTALLATION ===" && \
-    find /lilyspark/opt/lib/driver -name "*gbm*" -type f | tee /tmp/gbm_install.log && \
-    /usr/local/bin/check_llvm15.sh "post-gbm-install" || true && \
+    echo "=== VERIFYING EGL INSTALLATION ===" && \
+    find /lilyspark/opt/lib/driver -name "*egl*" -type f | tee /tmp/egl_install.log && \
+    /usr/local/bin/check_llvm15.sh "post-egl-install" || true && \
     \
     cd / && rm -rf /tmp/mesa
 
@@ -2718,6 +2686,111 @@ RUN echo "=== BUILDING GLES FROM MESA SOURCE ===" && \
     /usr/local/bin/check_llvm15.sh "post-gles-install" || true && \
     \
     cd / && rm -rf /tmp/mesa
+
+# ======================
+# libepoxy Build (ARM64-safe, fully logged)
+# ======================
+ARG LIBEPOXY_VER=1.5.10
+ARG LIBEPOXY_GIT="https://github.com/anholt/libepoxy.git"
+
+ENV PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+ENV PATH="/lilyspark/compiler/bin:${PATH}"
+
+RUN echo "=== START: BUILDING libepoxy ${LIBEPOXY_VER} ===" && \
+    ARCH="$(uname -m)" && echo "Detected architecture: $ARCH"; \
+    \
+    mkdir -p /tmp/libepoxy-src && cd /tmp/libepoxy-src; \
+    echo "=== Attempt 1️⃣: Shallow clone + fetch specific commit ==="; \
+    git clone --depth=1 "$LIBEPOXY_GIT" . 2>/tmp/libepoxy_clone.log || echo "⚠ Shallow clone failed, will try fallback"; \
+    git fetch --depth=1 origin c84bc9459357a40e46e2fec0408d04fbdde2c973 2>/tmp/libepoxy_fetch.log || echo "⚠ Fetch commit failed, will try fallback"; \
+    git checkout c84bc9459357a40e46e2fec0408d04fbdde2c973 -b libepoxy-${LIBEPOXY_VER} 2>/tmp/libepoxy_checkout.log || ( \
+        echo "⚠ Commit checkout failed, trying fallback method 2"; \
+        echo "=== Attempt 2️⃣: Full clone, checkout commit ==="; \
+        rm -rf /tmp/libepoxy-src/*; \
+        git clone "$LIBEPOXY_GIT" . 2>/tmp/libepoxy_full_clone.log || echo "⚠ Full clone failed, will try fallback 3"; \
+        git checkout c84bc9459357a40e46e2fec0408d04fbdde2c973 -b libepoxy-${LIBEPOXY_VER} 2>/tmp/libepoxy_full_checkout.log || ( \
+            echo "⚠ Full clone checkout failed, trying fallback method 3"; \
+            echo "=== Attempt 3️⃣: Clone specific tag/branch ==="; \
+            rm -rf /tmp/libepoxy-src/*; \
+            git clone --branch ${LIBEPOXY_VER} --depth=1 "$LIBEPOXY_GIT" . 2>/tmp/libepoxy_tag_clone.log || ( \
+                echo "⚠ Tag clone failed — cannot proceed"; exit 1 \
+            ); \
+        ) \
+    ); \
+    echo "✓ Git setup complete for libepoxy ${LIBEPOXY_VER}" \
+    # ----------------------
+    # 1️⃣ Compiler detection & native file
+    # ----------------------
+    echo "=== Compiler detection ==="; \
+    CC_FALLBACK="cc"; CXX_FALLBACK="c++"; \
+    CC="$(command -v /lilyspark/compiler/bin/clang-16 || command -v clang || echo $CC_FALLBACK)"; \
+    CXX="$(command -v /lilyspark/compiler/bin/clang++-16 || command -v clang++ || echo $CXX_FALLBACK)"; \
+    echo "Using CC=$CC, CXX=$CXX"; command -v $CC || echo "⚠ $CC not in PATH"; command -v $CXX || echo "⚠ $CXX not in PATH"; \
+    \
+    echo "Creating Meson native file..."; \
+    echo "[binaries]" > native-file.ini; \
+    echo "c = '$CC'" >> native-file.ini; \
+    echo "cpp = '$CXX'" >> native-file.ini; \
+    echo "ar = 'ar'" >> native-file.ini; \
+    echo "strip = 'strip'" >> native-file.ini; \
+    echo "pkg-config = 'pkg-config'" >> native-file.ini; \
+    echo "[host_machine]" >> native-file.ini; \
+    echo "system = 'linux'" >> native-file.ini; \
+    echo "cpu_family = '$ARCH'" >> native-file.ini; \
+    echo "cpu = '$ARCH'" >> native-file.ini; \
+    echo "endian = 'little'" >> native-file.ini; \
+    cat native-file.ini; \
+    \
+    # ----------------------
+    # 2️⃣ Meson setup, build, install
+    # ----------------------
+    echo "=== Meson setup ==="; \
+    meson setup builddir \
+        --prefix=/usr \
+        --libdir=lib \
+        --includedir=include \
+        --buildtype=release \
+        -Dglx=yes -Degl=yes -Dx11=true -Dtests=false \
+        --native-file native-file.ini \
+        -Dpkg_config_path="$PKG_CONFIG_PATH" 2>&1 | tee /tmp/libepoxy-meson-setup.log; \
+    \
+    echo "=== Meson compile ==="; \
+    meson compile -C builddir -j$(nproc) 2>&1 | tee /tmp/libepoxy-meson-compile.log; \
+    \
+    echo "=== Meson install ==="; \
+    meson install -C builddir --destdir=/lilyspark/opt/lib/sys --no-rebuild 2>&1 | tee /tmp/libepoxy-meson-install.log; \
+    \
+    # ----------------------
+    # 3️⃣ Populate sysroot after install
+    # ----------------------
+    echo "=== Populating sysroot AFTER installation ==="; \
+    SYSROOT="/lilyspark/opt/lib/sys"; \
+    mkdir -p $SYSROOT/usr/{include,lib,lib/pkgconfig}; \
+    cp -av /lilyspark/opt/lib/sys/usr/include/* $SYSROOT/usr/include/ 2>/dev/null || echo "⚠ include copy failed"; \
+    cp -av /lilyspark/opt/lib/sys/usr/lib/* $SYSROOT/usr/lib/ 2>/dev/null || echo "⚠ lib copy failed"; \
+    cp -av /lilyspark/opt/lib/sys/usr/lib/pkgconfig/* $SYSROOT/usr/lib/pkgconfig/ 2>/dev/null || echo "⚠ pkgconfig copy failed"; \
+    ls -la $SYSROOT/usr/include | head -20; \
+    ls -la $SYSROOT/usr/lib | head -20; \
+    ls -la $SYSROOT/usr/lib/pkgconfig | head -20; \
+    \
+    # ----------------------
+    # 4️⃣ Verify pkg-config can see it
+    # ----------------------
+    echo "=== Verifying pkg-config can see libepoxy ==="; \
+    export PKG_CONFIG_PATH="$SYSROOT/usr/lib/pkgconfig:$PKG_CONFIG_PATH"; \
+    pkg-config --modversion epoxy || echo "⚠ libepoxy still not detected"; \
+    pkg-config --cflags epoxy; pkg-config --libs epoxy; \
+    \
+    # ----------------------
+    # 5️⃣ Post-install verification
+    # ----------------------
+    echo "=== Post-install verification ==="; \
+    ls -R /lilyspark/opt/lib/sys | head -50; \
+    cd / && rm -rf /tmp/libepoxy-src native-file.ini; \
+    echo "=== libepoxy BUILD complete ==="; \
+    true
+
+
 
 
 # ======================
