@@ -2619,22 +2619,31 @@ RUN echo "=== START: BUILDING GBM FROM MESA SOURCE (ARM64) ===" && \
 
 
 # ======================
-# BUILD EGL (from Mesa) for ARM64
+# BUILD EGL (from Mesa) for ARM64 with libdrm verification
 # ======================
-RUN echo "=== BUILDING EGL FROM MESA SOURCE (ARM64) ===" && \
+RUN echo "=== START: BUILDING EGL FROM MESA SOURCE (ARM64) ===" && \
     /usr/local/bin/check_llvm15.sh "pre-egl-source-build" || true && \
     \
-    git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa && \
-    cd /tmp/mesa && \
+    echo ">>> Verifying libdrm installation <<<" && \
+    if pkg-config --exists libdrm; then \
+        echo "✔ libdrm found: $(pkg-config --modversion libdrm)"; \
+    else \
+        echo "⚠ libdrm not found! EGL build may fail"; \
+    fi && \
     \
-    echo ">>> Configuring EGL for ARM64 <<<" && \
+    mkdir -p /tmp/mesa-egl && cd /tmp/mesa-egl && \
+    echo "Cloning Mesa source for EGL..." && \
+    git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git . || (echo "⚠ Git clone failed" && exit 1) && \
+    git checkout $(git rev-list --tags --max-count=1) || echo "⚠ Git checkout failed, using HEAD" && \
+    \
+    echo ">>> Configuring EGL build <<<" && \
     CC=/lilyspark/compiler/bin/clang-16 \
     CXX=/lilyspark/compiler/bin/clang++-16 \
     CFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
     CXXFLAGS="-I/lilyspark/compiler/include -I/lilyspark/opt/lib/sys/glibc/include -march=armv8-a" \
     LDFLAGS="-L/lilyspark/compiler/lib -L/lilyspark/opt/lib/sys/glibc/lib -Wl,-rpath,/lilyspark/compiler/lib:/lilyspark/opt/lib/sys/glibc/lib" \
     PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" \
-    PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig" \
+    PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig" \
     meson setup builddir \
         --prefix=/usr \
         -Dgbm=enabled \
@@ -2645,17 +2654,35 @@ RUN echo "=== BUILDING EGL FROM MESA SOURCE (ARM64) ===" && \
         -Dgles2=disabled \
         -Dopengl=true \
         --buildtype=release \
-        --wrap-mode=nodownload || (echo "✗ EGL meson setup failed" && exit 1) && \
+        --wrap-mode=nodownload 2>&1 | tee /tmp/egl-meson-setup.log || (echo "✗ EGL meson setup failed" && tail -50 /tmp/egl-meson-setup.log && exit 1) && \
     \
-    echo "=== Building EGL ===" && \
-    ninja -C builddir -v && \
-    DESTDIR="/lilyspark/opt/lib/driver" ninja -C builddir install && \
+    echo "=== Compiling EGL ===" && \
+    ninja -C builddir -v 2>&1 | tee /tmp/egl-meson-compile.log || (echo "✗ EGL compilation failed" && tail -50 /tmp/egl-meson-compile.log && exit 1) && \
     \
-    echo "=== VERIFYING EGL INSTALLATION ===" && \
-    find /lilyspark/opt/lib/driver -name "*egl*" -type f | tee /tmp/egl_install.log && \
+    echo "=== Installing EGL ===" && \
+    DESTDIR="/lilyspark/opt/lib/driver" ninja -C builddir install 2>&1 | tee /tmp/egl-meson-install.log || (echo "✗ EGL install failed" && tail -50 /tmp/egl-meson-install.log && exit 1) && \
+    \
+    echo "=== Populating sysroot for EGL ===" && \
+    SYSROOT="/lilyspark/opt/lib/sys" && \
+    mkdir -p $SYSROOT/usr/{include,lib,lib/pkgconfig} && \
+    cp -av /lilyspark/opt/lib/driver/usr/include/* $SYSROOT/usr/include/ 2>/dev/null || echo "⚠ include copy failed" && \
+    cp -av /lilyspark/opt/lib/driver/usr/lib/* $SYSROOT/usr/lib/ 2>/dev/null || echo "⚠ lib copy failed" && \
+    cp -av /lilyspark/opt/lib/driver/usr/lib/pkgconfig/* $SYSROOT/usr/lib/pkgconfig/ 2>/dev/null || echo "⚠ pkgconfig copy failed" && \
+    ls -la $SYSROOT/usr/include | head -20 && \
+    ls -la $SYSROOT/usr/lib | head -20 && \
+    ls -la $SYSROOT/usr/lib/pkgconfig | head -20 && \
+    \
+    echo "=== Verifying pkg-config can see EGL ===" && \
+    export PKG_CONFIG_PATH="$SYSROOT/usr/lib/pkgconfig:/lilyspark/opt/lib/driver/usr/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig" && \
+    pkg-config --modversion egl || echo "⚠ EGL still not detected" && \
+    pkg-config --cflags egl && pkg-config --libs egl && \
+    \
+    echo "=== EGL post-install verification ===" && \
+    find /lilyspark/opt/lib/driver -name "*egl*" -type f | tee /tmp/egl_verify.log && \
     /usr/local/bin/check_llvm15.sh "post-egl-install" || true && \
-    \
-    cd / && rm -rf /tmp/mesa
+    cd / && rm -rf /tmp/mesa-egl && \
+    echo "=== EGL BUILD COMPLETE ===" && \
+    true
 
 
 # ======================
