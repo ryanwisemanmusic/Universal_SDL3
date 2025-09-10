@@ -1,8 +1,12 @@
-- New Sysroot Section (double check foundational stuff, and preload into the tricky stuff that has foundational problems)
+- Have libepoxy handled like libdrm 
+- Have shaderc handled like libdrm
+- Find libavif
+- Have libdrm be linked with MESA and GBM (MESA) officially (libdrm now is recognized!!!!)
 - Link MESA with SDL3
-
-
-
+- Fix missing libEGL.so library and EGL headers
+- Fix missing GLES libraries
+- Fix SDL_mixer issue of not being found
+- Fix glmark2 issue of not being found
 
 In order to move this project to a great state, there are a few important
 things to tackle.
