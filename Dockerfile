@@ -2424,13 +2424,42 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
         # set up build dir
         rm -rf builddir; mkdir builddir; cd builddir; \
         \
+        # ----- ADDED: pkg-config preflight / ensure pkgconfig paths include sys & graphics -----
+        echo "=== pkg-config preflight for Mesa ==="; \
+        export PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"; \
+        echo "--- pkgconfig dirs ---"; ls -la /lilyspark/opt/lib/graphics/usr/lib/pkgconfig || echo "no graphics pkgconfig dir"; ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig || echo "no sys pkgconfig dir"; ls -la /lilyspark/usr/lib/pkgconfig || echo "no /lilyspark/usr/lib/pkgconfig"; \
+        echo "--- pkgconfig files (graphics) ---"; ls -la /lilyspark/opt/lib/graphics/usr/lib/pkgconfig 2>/dev/null || true; \
+        echo "--- pkgconfig files (sys) ---"; ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig 2>/dev/null || true; \
+        echo "Checking libdrm via pkg-config:"; \
+        pkg-config --modversion libdrm || echo "⚠ libdrm not visible to pkg-config (pre-meson)"; \
+        pkg-config --cflags libdrm || true; pkg-config --libs libdrm || true; \
+        \
+        # ==== STAGE 1: EXTRA PRE-MESON VALIDATION ==== \
+        echo "=== STAGE 1: PRE-MESON DETAILED CHECKS ==="; \
+        echo "--- Listing libdrm .pc files and contents ---"; \
+        for d in /lilyspark/opt/lib/graphics/usr/lib/pkgconfig /lilyspark/opt/lib/sys/usr/lib/pkgconfig /lilyspark/usr/lib/pkgconfig; do \
+            echo "DIR: $d"; ls -la "$d" 2>/dev/null || echo " (missing)"; \
+            if [ -f "$d/libdrm.pc" ]; then echo "---- $d/libdrm.pc ----"; sed -n '1,120p' "$d/libdrm.pc" || true; fi; \
+        done; \
+        echo "--- Checking for libdrm shared objects ---"; \
+        ls -la /lilyspark/opt/lib/graphics/usr/lib/libdrm* /lilyspark/opt/lib/sys/usr/lib/libdrm* /lilyspark/usr/lib/libdrm* 2>/dev/null || echo "No libdrm .so found in expected locations"; \
+        if command -v readelf >/dev/null 2>&1; then \
+            for f in /lilyspark/opt/lib/graphics/usr/lib/libdrm*.so* /lilyspark/opt/lib/sys/usr/lib/libdrm*.so* /lilyspark/usr/lib/libdrm*.so*; do \
+                [ -f "$f" ] && echo "readelf -d $f" && readelf -d "$f" | sed -n '1,120p' || true; \
+            done; \
+        else \
+            echo "ℹ readelf not installed, skipping ELF inspection"; \
+        fi; \
+        \
         # run meson (stderr filtered to drop mtls-dialect=gnu2 + cxx_args noise)
-        PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:/lilyspark/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}" \
+        PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
         PATH="/lilyspark/compiler/bin:$PATH" \
         CC="/lilyspark/compiler/bin/clang-16 --sysroot=/lilyspark" \
         CXX="/lilyspark/compiler/bin/clang++-16 --sysroot=/lilyspark" \
         meson setup \
             --prefix=/lilyspark/opt/mesa \
+            -Dpkg_config_path="$PKG_CONFIG_PATH" \
             -Dvulkan-drivers=auto \
             -Dgallium-drivers=auto \
             -Dplatforms=x11,wayland \
@@ -2455,6 +2484,22 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
             grep -R "libdrm" meson-logs/meson-log.txt || true; \
             exit 1); \
         \
+        # ==== STAGE 2: MESON LOGS & DEPENDENCY GREP ==== \
+        echo "=== STAGE 2: MESON LOG & DEPENDENCY DUMP ==="; \
+        if [ -f meson-logs/meson-log.txt ]; then \
+            echo "---- Meson log tail (last 200 lines) ----"; tail -n 200 meson-logs/meson-log.txt || true; \
+            echo "---- Grep for libdrm/dependency lines ----"; grep -i -n "libdrm" meson-logs/meson-log.txt || echo "No libdrm mention in meson-log"; \
+            echo "---- Grep for pciaccess/libepoxy/gbm/wayland ----"; grep -i -n "pciaccess\|libepoxy\|gbm\|wayland\|x11" meson-logs/meson-log.txt || true; \
+        else \
+            echo "ℹ meson-logs/meson-log.txt not present (Meson may have logged elsewhere)"; \
+        fi; \
+        \
+        # ==== STAGE 3: PRE-NINJA BUILDDIR INSPECTION ==== \
+        echo "=== STAGE 3: BUILDDIR INSPECTION BEFORE NINJA ==="; \
+        echo "Listing builddir top-level:"; ls -la builddir || true; \
+        echo "Finding references to libdrm inside builddir:"; grep -R --line-number -i "libdrm" builddir || true; \
+        echo "Checking meson-info and compile commands if present:"; ls -la builddir/meson-info || true; sed -n '1,200p' builddir/meson-info/intro.json 2>/dev/null || true; \
+        \
         # build with ninja
         ninja -v || (echo "✗ ninja build failed"; \
                      cat meson-logs/meson-log.txt || true; \
@@ -2464,6 +2509,22 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
                            cat meson-logs/meson-log.txt || true; \
                            grep -R "tls-model" meson-logs/meson-log.txt || true; \
                            exit 1); \
+        \
+        # ==== STAGE 4: POST-INSTALL VERIFICATION & SYSROOT SYNC ==== \
+        echo "=== STAGE 4: POST-INSTALL VERIFICATION ==="; \
+        echo "Listing /lilyspark/opt/lib/graphics contents (top):"; ls -la /lilyspark/opt/lib/graphics | head -50 || true; \
+        echo "Listing pkgconfig dirs after install:"; ls -la /lilyspark/opt/lib/graphics/usr/lib/pkgconfig 2>/dev/null || true; ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig 2>/dev/null || true; \
+        echo "Attempting to copy libdrm pc/libs into sysroot (safe)"; \
+        mkdir -p /lilyspark/opt/lib/sys/usr/lib/pkgconfig /lilyspark/opt/lib/sys/usr/lib 2>/dev/null || true; \
+        cp -av /lilyspark/opt/lib/graphics/usr/lib/pkgconfig/libdrm*.pc /lilyspark/opt/lib/sys/usr/lib/pkgconfig/ 2>/dev/null || echo "⚠ copy of libdrm*.pc to sys failed"; \
+        cp -av /lilyspark/opt/lib/graphics/usr/lib/libdrm* /lilyspark/opt/lib/sys/usr/lib/ 2>/dev/null || echo "⚠ copy of libdrm libs to sys failed"; \
+        ls -la /lilyspark/opt/lib/sys/usr/lib | head -40 || true; \
+        echo "Recompute PKG_CONFIG_PATH and test pkg-config"; \
+        export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:/lilyspark/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"; \
+        pkg-config --modversion libdrm || echo "⚠ libdrm not found by pkg-config after install/sync"; \
+        pkg-config --cflags libdrm || true; pkg-config --libs libdrm || true; \
+        echo "Inspect meson logs for libdrm occurrences (post):"; grep -i -n "libdrm" meson-logs/meson-log.txt || true; \
         \
         echo "=== MESA BUILD COMPLETE ==="; \
     fi
