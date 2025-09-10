@@ -2686,33 +2686,102 @@ RUN echo "=== START: BUILDING EGL FROM MESA SOURCE (ARM64) ===" && \
 
 
 # ======================
-# BUILD GLES (from Mesa)
+# BUILD GLES (from Mesa) for ARM64
 # ======================
-RUN echo "=== BUILDING GLES FROM MESA SOURCE ===" && \
+RUN echo "=== START: BUILDING GLES FROM MESA SOURCE (ARM64) ===" && \
     /usr/local/bin/check_llvm15.sh "pre-gles-source-build" || true && \
     \
-    git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa && \
-    cd /tmp/mesa && \
+    echo ">>> Verifying libdrm installation <<<" && \
+    if pkg-config --exists libdrm; then \
+        echo "✔ libdrm found: $(pkg-config --modversion libdrm)"; \
+    else \
+        echo "⚠ libdrm not found! GLES build may fail"; \
+    fi && \
     \
-    echo ">>> Configuring GLES <<<" && \
-    export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/driver" && \
-    export PKG_CONFIG_PATH="/lilyspark/opt/lib/driver/usr/lib/pkgconfig" && \
+    mkdir -p /tmp/mesa-gles && cd /tmp/mesa-gles && \
+    echo "Cloning Mesa source for GLES..." && \
+    git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git . || (echo "⚠ Git clone failed" && exit 1) && \
+    git checkout $(git rev-list --tags --max-count=1) || echo "⚠ Git checkout failed, using HEAD" && \
+    \
+    # ----------------------
+    # 1️⃣ Compiler detection & native file
+    # ----------------------
+    echo "=== Compiler detection ==="; \
+    CC_FALLBACK="cc"; CXX_FALLBACK="c++"; \
+    CC="$(command -v /lilyspark/compiler/bin/clang-16 || command -v clang || echo $CC_FALLBACK)"; \
+    CXX="$(command -v /lilyspark/compiler/bin/clang++-16 || command -v clang++ || echo $CXX_FALLBACK)"; \
+    echo "Using CC=$CC, CXX=$CXX"; command -v $CC || echo "⚠ $CC not in PATH"; command -v $CXX || echo "⚠ $CXX not in PATH"; \
+    \
+    echo "Creating Meson native file..."; \
+    echo "[binaries]" > native-file.ini; \
+    echo "c = '$CC'" >> native-file.ini; \
+    echo "cpp = '$CXX'" >> native-file.ini; \
+    echo "ar = 'ar'" >> native-file.ini; \
+    echo "strip = 'strip'" >> native-file.ini; \
+    echo "pkg-config = 'pkg-config'" >> native-file.ini; \
+    echo "[host_machine]" >> native-file.ini; \
+    echo "system = 'linux'" >> native-file.ini; \
+    echo "cpu_family = 'aarch64'" >> native-file.ini; \
+    echo "cpu = 'aarch64'" >> native-file.ini; \
+    echo "endian = 'little'" >> native-file.ini; \
+    cat native-file.ini; \
+    \
+    # ----------------------
+    # 2️⃣ Meson setup, build, install
+    # ----------------------
+    echo "=== Meson setup for GLES ==="; \
     meson setup builddir \
         --prefix=/usr \
+        --libdir=lib \
+        --includedir=include \
+        --buildtype=release \
         -Dgbm=disabled \
         -Degl=disabled \
         -Dgles1=enabled \
         -Dgles2=enabled \
-        -Dopengl=true && \
+        -Dopengl=true \
+        --native-file native-file.ini \
+        -Dpkg_config_path="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig" 2>&1 | tee /tmp/gles-meson-setup.log || (echo "✗ GLES meson setup failed" && tail -50 /tmp/gles-meson-setup.log && exit 1); \
     \
-    ninja -C builddir -v && \
-    DESTDIR="/lilyspark/opt/lib/driver" ninja -C builddir install && \
+    echo "=== Meson compile for GLES ==="; \
+    meson compile -C builddir -j$(nproc) 2>&1 | tee /tmp/gles-meson-compile.log || (echo "✗ GLES compilation failed" && tail -50 /tmp/gles-meson-compile.log && exit 1); \
     \
-    echo "=== VERIFYING GLES INSTALLATION ===" && \
-    find /lilyspark/opt/lib/driver -name "*GLES*" -type f | tee /tmp/gles_install.log && \
-    /usr/local/bin/check_llvm15.sh "post-gles-install" || true && \
+    echo "=== Meson install for GLES ==="; \
+    meson install -C builddir --destdir=/lilyspark/opt/lib/driver --no-rebuild 2>&1 | tee /tmp/gles-meson-install.log || (echo "✗ GLES install failed" && tail -50 /tmp/gles-meson-install.log && exit 1); \
     \
-    cd / && rm -rf /tmp/mesa
+    # ----------------------
+    # 3️⃣ Populate sysroot after install
+    # ----------------------
+    echo "=== Populating sysroot AFTER GLES installation ==="; \
+    SYSROOT="/lilyspark/opt/lib/sys"; \
+    mkdir -p $SYSROOT/usr/{include,lib,lib/pkgconfig}; \
+    cp -av /lilyspark/opt/lib/driver/usr/include/* $SYSROOT/usr/include/ 2>/dev/null || echo "⚠ include copy failed"; \
+    cp -av /lilyspark/opt/lib/driver/usr/lib/* $SYSROOT/usr/lib/ 2>/dev/null || echo "⚠ lib copy failed"; \
+    cp -av /lilyspark/opt/lib/driver/usr/lib/pkgconfig/* $SYSROOT/usr/lib/pkgconfig/ 2>/dev/null || echo "⚠ pkgconfig copy failed"; \
+    ls -la $SYSROOT/usr/include | head -20; \
+    ls -la $SYSROOT/usr/lib | head -20; \
+    ls -la $SYSROOT/usr/lib/pkgconfig | head -20; \
+    \
+    # ----------------------
+    # 4️⃣ Verify pkg-config can see GLES
+    # ----------------------
+    echo "=== Verifying pkg-config can see GLES libraries ==="; \
+    export PKG_CONFIG_PATH="$SYSROOT/usr/lib/pkgconfig:/lilyspark/opt/lib/driver/usr/lib/pkgconfig:/lilyspark/opt/lib/graphics/usr/lib/pkgconfig"; \
+    pkg-config --modversion glesv1 || echo "⚠ GLESv1 still not detected"; \
+    pkg-config --modversion glesv2 || echo "⚠ GLESv2 still not detected"; \
+    pkg-config --cflags glesv1 && pkg-config --libs glesv1; \
+    pkg-config --cflags glesv2 && pkg-config --libs glesv2; \
+    \
+    # ----------------------
+    # 5️⃣ Post-install verification
+    # ----------------------
+    echo "=== GLES post-install verification ==="; \
+    find /lilyspark/opt/lib/driver -name "*GLES*" -type f | tee /tmp/gles_verify.log; \
+    /usr/local/bin/check_llvm15.sh "post-gles-install" || true; \
+    cd / && rm -rf /tmp/mesa-gles native-file.ini; \
+    echo "=== GLES BUILD COMPLETE ==="; \
+    true
+
 
 # ======================
 # libepoxy Build (ARM64-safe, fully logged)
