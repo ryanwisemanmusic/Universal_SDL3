@@ -365,11 +365,18 @@ RUN echo "=== COPYING CORE SYSROOT FILES TO /lilyspark ===" && \
     # Copy apk db (for later reference/debug)
     cp -r /lib/apk /lilyspark/lib/ 2>/dev/null || true && \
     \
-    # Copy libc/musl runtime
+    # Copy libc/musl runtime (arch-specific)
+    ARCH=$(uname -m) && \
     cp -a /lib/ld-musl-*.so.1 /lilyspark/lib/ 2>/dev/null || true && \
     cp -a /lib/libc.musl-*.so.1 /lilyspark/lib/ 2>/dev/null || true && \
+    \
+    if [ "$ARCH" = "x86_64" ]; then \
+        ln -sf ld-musl-x86_64.so.1 /lilyspark/lib/ld-linux.so.1; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        ln -sf ld-musl-aarch64.so.1 /lilyspark/lib/ld-linux-aarch64.so.1; \
+        ln -sf ld-musl-aarch64.so.1 /lilyspark/lib/ld-linux.so.1; \
+    fi && \
     ln -sf libc.musl-*.so.1 /lilyspark/lib/libc.so 2>/dev/null || true && \
-    ln -sf ld-musl-*.so.1 /lilyspark/lib/ld-linux.so.1 2>/dev/null || true && \
     \
     # Copy toolchain runtime bits
     cp -a /usr/lib/libgcc* /lilyspark/usr/lib/ 2>/dev/null || true && \
@@ -1231,6 +1238,20 @@ RUN set -ux; \
     copy_and_verify "/lib/libc.musl-*.so.1" "$SR_LIB" "musl libc"; \
     copy_and_verify "/lib/libpthread*.so*" "$SR_LIB" "pthread"; \
     copy_and_verify "/usr/lib/libc.a" "$SR_USR_LIB" "libc static (dev)"; \
+    \
+    # Create essential symlinks if musl files were copied
+    if ls /lilyspark/lib/ld-musl-*.so.1 >/dev/null 2>&1; then \
+        cd /lilyspark/lib && \
+        for f in ld-musl-*.so.1; do \
+            ln -sf "$f" "ld-linux-$(uname -m).so.1" 2>/dev/null || true; \
+            ln -sf "$f" "ld-linux.so.1" 2>/dev/null || true; \
+        done && \
+        cd - >/dev/null; \
+        echo "✓ Created musl symlinks"; \
+    else \
+        echo "⚠ No musl loader found, creating placeholder"; \
+        touch /lilyspark/lib/.musl-placeholder; \
+    fi; \
     \
     echo "Copying compiler support and libgcc..."; \
     copy_and_verify "/usr/lib/libgcc*" "$SR_USR_LIB" "libgcc"; \
@@ -2208,30 +2229,115 @@ RUN echo "=== SYSROOT PREPARATION AND MESA BUILD (auto-DRI/glvnd/LLVM) ===" && \
     safe_copy "/usr/lib/libssp*" "/lilyspark/usr/lib"; \
     \
     # musl/resolved loader (try resolved paths, but don't fail)
-    for f in /lib/ld-musl-$(uname -m).so.1 /lib/libc.musl-$(uname -m).so.1; do \
-        if [ -e "$f" ]; then \
-            realf=$(readlink -f "$f" 2>/dev/null || printf "%s" "$f"); \
-            if cp -a "$realf" /lilyspark/lib/ 2>/dev/null; then \
-                echo "Copied musl file: $(basename "$realf")"; \
-            else \
-                echo "⚠ failed to copy musl file $realf (creating placeholder)"; touch /lilyspark/lib/.placeholder; \
+    echo "=== DEBUGGING MUSL FILE LOCATIONS ==="; \
+    echo "Architecture: $(uname -m)"; \
+    echo "Looking for musl files:"; \
+    ls -la /lib/ld-musl* 2>/dev/null || echo "No ld-musl files in /lib"; \
+    ls -la /lib/libc.musl* 2>/dev/null || echo "No libc.musl files in /lib"; \
+    ls -la /usr/lib/ld-musl* 2>/dev/null || echo "No ld-musl files in /usr/lib"; \
+    ls -la /usr/lib/libc.musl* 2>/dev/null || echo "No libc.musl files in /usr/lib"; \
+    \
+    # Try multiple possible locations for musl files with better error handling
+    for pattern in "/lib/ld-musl-*.so.1" "/usr/lib/ld-musl-*.so.1" "/lib/libc.musl-*.so.1" "/usr/lib/libc.musl-*.so.1"; do \
+        echo "Checking pattern: $pattern"; \
+        for f in $pattern; do \
+            if [ -e "$f" ]; then \
+                echo "Found musl file: $f"; \
+                realf=$(readlink -f "$f" 2>/dev/null || printf "%s" "$f"); \
+                echo "Real path: $realf"; \
+                # Use the same successful copy method as XORG section
+                if cp -a "$realf" /lilyspark/lib/ 2>/dev/null; then \
+                    echo "✓ Copied musl file: $(basename "$realf")"; \
+                else \
+                    echo "⚠ Failed to copy musl file $realf"; \
+                fi; \
             fi; \
-        else \
-            mkdir -p /lilyspark/lib; touch /lilyspark/lib/.placeholder; echo "⚠ musl source not found: $f"; \
-        fi; \
+        done; \
     done; \
+    \
+    # Create essential symlinks if musl files were copied
+    if ls /lilyspark/lib/ld-musl-*.so.1 >/dev/null 2>&1; then \
+        cd /lilyspark/lib && \
+        for f in ld-musl-*.so.1; do \
+            ln -sf "$f" "ld-linux-$(uname -m).so.1" 2>/dev/null || true; \
+            ln -sf "$f" "ld-linux.so.1" 2>/dev/null || true; \
+        done && \
+        cd - >/dev/null; \
+        echo "✓ Created musl symlinks"; \
+    else \
+        echo "⚠ No musl loader found, creating placeholder"; \
+        touch /lilyspark/lib/.musl-placeholder; \
+    fi; \
+    \
+    # FALLBACK: Use EXACT XORG sysroot population method if musl still missing
+    if [ ! -f "/lilyspark/lib/ld-musl-aarch64.so.1" ]; then \
+        echo "=== FALLBACK: USING XORG SYSROOT POPULATION METHOD FOR MESA ==="; \
+        SYSROOT="/lilyspark"; \
+        SR_USR_LIB="$SYSROOT/usr/lib"; \
+        SR_USR_INCLUDE="$SYSROOT/usr/include"; \
+        SR_LIB="$SYSROOT/lib"; \
+        mkdir -p "$SR_USR_LIB" "$SR_USR_INCLUDE" "$SR_LIB"; \
+        \
+        copy_and_verify() { \
+            src="$1"; dest="$2"; descr="$3"; \
+            echo "Attempting to copy ($descr): $src -> $dest"; \
+            mkdir -p "$dest" 2>/dev/null || true; \
+            if cp -a $src "$dest" 2>/dev/null; then \
+                echo "✓ Copied: $src -> $dest"; \
+            else \
+                echo "⚠ Could not copy $src -> $dest (continuing)"; \
+                if [ -z "$(ls -A "$dest" 2>/dev/null)" ]; then \
+                    touch "$dest/.placeholder" || true; \
+                fi; \
+            fi; \
+        }; \
+        \
+        echo "Copying libc/musl and dynamic linker..."; \
+        copy_and_verify "/lib/ld-musl-*.so.1" "$SR_LIB" "musl dynamic loader"; \
+        copy_and_verify "/lib/libc.musl-*.so.1" "$SR_LIB" "musl libc"; \
+        copy_and_verify "/lib/libpthread*.so*" "$SR_LIB" "pthread"; \
+        copy_and_verify "/usr/lib/libc.a" "$SR_USR_LIB" "libc static (dev)"; \
+        \
+        # Create essential symlinks if musl files were copied
+        if ls /lilyspark/lib/ld-musl-*.so.1 >/dev/null 2>&1; then \
+            cd /lilyspark/lib && \
+            for f in ld-musl-*.so.1; do \
+                ln -sf "$f" "ld-linux-$(uname -m).so.1" 2>/dev/null || true; \
+                ln -sf "$f" "ld-linux.so.1" 2>/dev/null || true; \
+            done && \
+            cd - >/dev/null; \
+            echo "✓ Created musl symlinks via XORG fallback"; \
+        else \
+            echo "⚠ XORG fallback also failed to copy musl"; \
+        fi; \
+        \
+        echo "Copying compiler support and libgcc..."; \
+        copy_and_verify "/usr/lib/libgcc*" "$SR_USR_LIB" "libgcc"; \
+        copy_and_verify "/usr/lib/libssp*" "$SR_USR_LIB" "libssp"; \
+        copy_and_verify "/usr/lib/libatomic*" "$SR_USR_LIB" "libatomic"; \
+        \
+        echo "Copying math and other standard libs..."; \
+        copy_and_verify "/usr/lib/libm.a" "$SR_USR_LIB" "libm static"; \
+        copy_and_verify "/usr/lib/libm.so*" "$SR_USR_LIB" "libm shared"; \
+        copy_and_verify "/usr/lib/libdl.so*" "$SR_USR_LIB" "libdl"; \
+        \
+        echo "=== XORG FALLBACK SYSROOT POPULATION COMPLETE ==="; \
+    else \
+        echo "✓ Musl already present, skipping XORG fallback"; \
+    fi; \
     \
     safe_copy "/usr/lib/libpthread.a" "/lilyspark/usr/lib"; \
     safe_copy "/usr/lib/libm.a" "/lilyspark/usr/lib"; \
     \
-    # ensure libm SONAME exists in sysroot (link to host soname if present)
+    # Fix libm SONAME for musl (math functions are in libc)
     if [ ! -f /lilyspark/usr/lib/libm.so ]; then \
-        if [ -f /usr/lib/libm.so.6 ]; then \
-            ln -sf /usr/lib/libm.so.6 /lilyspark/usr/lib/libm.so && echo "Linked libm.so -> /usr/lib/libm.so.6"; \
-        elif [ -f /usr/lib/libm.so ]; then \
-            cp -a /usr/lib/libm.so /lilyspark/usr/lib/ 2>/dev/null || true; \
+        # In musl, libm is part of libc, so create symlink to libc
+        if [ -f /lilyspark/lib/libc.musl-aarch64.so.1 ]; then \
+            ln -sf ../lib/libc.musl-aarch64.so.1 /lilyspark/usr/lib/libm.so && \
+            echo "✓ Created libm.so -> musl libc symlink"; \
         else \
-            touch /lilyspark/usr/lib/.placeholder; echo "⚠ libm SONAME missing"; \
+            echo "⚠ libm SONAME missing - creating placeholder"; \
+            touch /lilyspark/usr/lib/.libm-placeholder; \
         fi; \
     fi; \
     \
