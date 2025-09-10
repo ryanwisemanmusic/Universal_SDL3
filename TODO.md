@@ -1,4 +1,3 @@
-- Mkdir cleanup
 - New Sysroot Section (double check foundational stuff, and preload into the tricky stuff that has foundational problems)
 - Link MESA with SDL3
 
