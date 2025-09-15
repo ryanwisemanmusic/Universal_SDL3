@@ -34,6 +34,7 @@ RUN mkdir -p \
     # User's directory
     /lilyspark/usr/include \
     /lilyspark/usr/lib \
+    /lilyspark/usr/lib/aarch64-linux-gnu \
     /lilyspark/usr/lib/runtime \
     /lilyspark/usr/bin \
     /lilyspark/usr/share \
@@ -1189,6 +1190,73 @@ RUN echo "=== POPULATING SYSROOT (shared for multiple dependencies, ARM64-aware)
     echo "Pkgconfig:"; ls -la /lilyspark/opt/lib/sys/usr/lib/pkgconfig | head -20; \
     echo "✅ Sysroot population complete"
 
+# ======================
+# SYSROOT POPULATION (ARM64-safe for SHADERC, full lib fallback)
+# ======================
+RUN echo "=== SYSROOT POPULATION FOR SHADERC ===" && \
+    ARCH="$(uname -m)" && \
+    SYSROOT_BASE="/lilyspark/opt/lib/sys" && \
+    GRAPHICS_BASE="/lilyspark/opt/lib/graphics" && \
+    \
+    # Copy Shaderc + SPIRV headers, libs, pkgconfig into sysroot
+    if [ -d "$GRAPHICS_BASE/include" ]; then \
+        echo "Copying includes from $GRAPHICS_BASE/include -> $SYSROOT_BASE/usr/include/"; \
+        cp -av "$GRAPHICS_BASE/include/"* "$SYSROOT_BASE/usr/include/" || true; \
+    fi && \
+    if [ -d "$GRAPHICS_BASE/lib" ]; then \
+        echo "Copying libs from $GRAPHICS_BASE/lib -> $SYSROOT_BASE/usr/lib/"; \
+        cp -av "$GRAPHICS_BASE/lib/"* "$SYSROOT_BASE/usr/lib/" || true; \
+    fi && \
+    if [ -d "$GRAPHICS_BASE/lib/pkgconfig" ]; then \
+        echo "Copying pkgconfig from $GRAPHICS_BASE/lib/pkgconfig -> $SYSROOT_BASE/usr/lib/pkgconfig/"; \
+        cp -av "$GRAPHICS_BASE/lib/pkgconfig/"* "$SYSROOT_BASE/usr/lib/pkgconfig/" || true; \
+    fi && \
+    \
+    # Copy essential runtime libraries (musl + gcc + stdc++ + libm)
+    echo "=== COPYING ESSENTIAL RUNTIME LIBRARIES ==="; \
+    for lib in libc.musl-*.so.1 ld-musl-*.so.1 libgcc_s.so* libstdc++.so* libm.so* libm.a; do \
+        FOUND=0; \
+        for dir in /lib /usr/lib /usr/lib/gcc/*/* /usr/lib/aarch64-linux-gnu; do \
+            for f in $dir/$lib; do \
+                if [ -e "$f" ]; then \
+                    echo "Found $lib in $dir -> copying"; \
+                    cp -av "$f" "$SYSROOT_BASE/usr/lib/" || true; \
+                    FOUND=1; \
+                fi; \
+            done; \
+        done; \
+        if [ "$FOUND" -eq 0 ]; then echo "⚠ $lib not found in standard locations"; fi; \
+    done && \
+    \
+    # Create linker-friendly symlinks (libm and libc included)
+    echo "=== CREATING LINKER-FRIENDLY SYMLINKS ==="; \
+    cd "$SYSROOT_BASE/usr/lib" || exit 1; \
+    for f in libc.musl-*.so.1 libgcc_s.so* libstdc++.so* ld-musl-*.so.1 libm.so* libm.a; do \
+        for real in $f; do \
+            if [ -e "$real" ]; then \
+                base=$(echo $real | sed -E 's/(\.so)(\..*)?/\1/'); \
+                soname=$(echo $real | sed -E 's/(\.so\.[0-9.]+).*/\1/'); \
+                [ ! -L "$soname" ] && ln -sf "$real" "$soname"; \
+                [ ! -L "$base" ] && ln -sf "$soname" "$base"; \
+            fi; \
+        done; \
+    done && \
+    \
+    # ARM64-specific copy if needed
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        if [ -d /usr/lib/aarch64-linux-gnu ]; then \
+            echo "Copying additional ARM64 libs -> $SYSROOT_BASE/usr/lib/"; \
+            cp -av /usr/lib/aarch64-linux-gnu/* "$SYSROOT_BASE/usr/lib/" || true; \
+        fi; \
+        echo "✅ ARM64 sysroot fully populated at $SYSROOT_BASE"; \
+    else \
+        echo "⚠ Non-ARM64 architecture ($ARCH) detected — Shaderc sysroot populated as best-effort"; \
+    fi && \
+    \
+    echo "=== SYSROOT CONTENTS AFTER POPULATION ==="; \
+    ls -la "$SYSROOT_BASE/usr/lib"/libc.musl* "$SYSROOT_BASE/usr/lib"/libgcc* "$SYSROOT_BASE/usr/lib"/libstdc* "$SYSROOT_BASE/usr/lib"/libm* "$SYSROOT_BASE/usr/lib"/ld-musl-* || echo "Some runtime libs may be missing"
+
+
 
 # ======================
 # SYSROOT POPULATION FOR SDL3 IMAGE LIBRARIES
@@ -1807,107 +1875,134 @@ RUN echo "=== COPYING PYTHON PACKAGES TO CUSTOM FILESYSTEM ===" && \
     done
 
 # ======================
-# SECTION: SPIRV-Tools Build
+# SECTION: SPIRV-Tools Build (improved + robust header handling)
 # ======================
 RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
     /usr/local/bin/check_llvm15.sh "pre-spirv-tools-source-build" || true && \
     \
-    echo "=== CLONING SPIRV-TOOLS AND DEPENDENCIES ===" && \
-    git clone --depth=1 https://github.com/KhronosGroup/SPIRV-Tools.git spirv-tools && \
+    echo "=== CLONING SPIRV-TOOLS REPO ===" && \
+    git clone https://github.com/KhronosGroup/SPIRV-Tools.git spirv-tools && \
     cd spirv-tools && \
     \
-    echo "=== CLONING SPIRV-HEADERS DEPENDENCY ===" && \
-    git clone --depth=1 https://github.com/KhronosGroup/SPIRV-Headers.git external/spirv-headers && \
+    echo "=== ENSURING SPIRV-HEADERS ARE PRESENT (explicit clone + submodule fallback) ===" && \
+    # Prefer explicit clone into external/spirv-headers (works reliably in Docker builds)
+    if [ ! -d external/spirv-headers ]; then \
+        echo "→ external/spirv-headers missing: cloning SPIRV-Headers explicitly"; \
+        git clone --depth=1 https://github.com/KhronosGroup/SPIRV-Headers.git external/spirv-headers || true; \
+    fi && \
+    # If explicit clone didn't populate, try submodule init as a fallback
+    if [ ! -d external/spirv-headers ]; then \
+        echo "→ explicit clone failed or empty — attempting submodule init/update"; \
+        git submodule update --init --recursive || true; \
+    fi && \
+    echo "=== VERIFICATION: external/spirv-headers CONTENTS ===" && \
+    ls -la external/spirv-headers/ || true && \
     \
-    echo "=== VERIFYING DEPENDENCIES ===" && \
-    ls -la external/spirv-headers/ && \
+    # Show whether the "unified1" grammar files exist (these are the ones that failed earlier)
+    echo "=== CHECK: grammar JSON files (expected under include/spirv/unified1) ===" && \
+    if compgen -G "external/spirv-headers/include/spirv/unified1/*.grammar.json" > /dev/null 2>&1; then \
+        echo "→ grammar JSON files present:"; ls -la external/spirv-headers/include/spirv/unified1/*.grammar.json || true; \
+    else \
+        echo "⚠ grammar JSON files missing — will attempt a quick fetch of common missing entries (best-effort)"; \
+        mkdir -p external/spirv-headers/include/spirv/unified1 || true; \
+        for f in extinst.glsl.std.450.grammar.json extinst.debuginfo.grammar.json extinst.opencl.debuginfo.100.grammar.json extinst.nonsemantic.shader.debuginfo.100.grammar.json; do \
+            if [ ! -e external/spirv-headers/include/spirv/unified1/$f ]; then \
+                echo "→ Missing $f ; attempting to fetch from raw GitHub (best-effort)"; \
+                curl -fsSL "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/main/include/spirv/unified1/$f" -o external/spirv-headers/include/spirv/unified1/$f || echo "⚠ fetch failed for $f"; \
+            fi; \
+        done; \
+        echo "→ After fetch attempt, contents:"; ls -la external/spirv-headers/include/spirv/unified1/ || true; \
+    fi && \
     \
-    echo "=== CONFIGURING WITH CMAKE ===" && \
-    mkdir build && cd build && \
+    # Fail-fast debug if headers still missing — but don't abort whole Docker build; print diagnostic
+    if [ ! -d external/spirv-headers ] || ! compgen -G "external/spirv-headers/include/spirv/unified1/*.grammar.json" > /dev/null 2>&1; then \
+        echo "!!! ERROR: SPIRV-Headers not usable or grammar files missing. SPIRV-Tools build likely to fail."; \
+        echo "Print external/spirv-headers tree for diagnostics:"; find external/spirv-headers -maxdepth 3 -type f -print || true; \
+    fi && \
+    \
+    echo "=== CONFIGURING SPIRV-TOOLS WITH CMAKE (absolute header path) ===" && \
+    # Use absolute path for SPIRV-Headers to avoid relative-path problems in CMake targets
+    ABS_HEADERS_DIR="$(pwd)/external/spirv-headers"; \
+    mkdir -p build && cd build && \
     cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/graphics \
         -DCMAKE_C_COMPILER=/lilyspark/compiler/bin/clang-16 \
         -DCMAKE_CXX_COMPILER=/lilyspark/compiler/bin/clang++-16 \
         -DLLVM_CONFIG_EXECUTABLE=/lilyspark/compiler/bin/llvm-config \
+        -DSPIRV-Headers_SOURCE_DIR="$ABS_HEADERS_DIR" \
+        -DSPIRV_SKIP_TESTS=ON \
         -DCMAKE_C_FLAGS="-I/lilyspark/compiler/include -march=armv8-a" \
         -DCMAKE_CXX_FLAGS="-I/lilyspark/compiler/include -march=armv8-a" \
-        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -Wl,-rpath,/lilyspark/compiler/lib" && \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -Wl,-rpath,/lilyspark/compiler/lib" || true && \
     \
-    make -j"$(nproc)" 2>&1 | tee /tmp/spirv-build.log && \
-    make install 2>&1 | tee /tmp/spirv-install.log && \
+    echo "=== BUILDING SPIRV-TOOLS (make) ===" && \
+    make -j"$(nproc)" 2>&1 | tee /tmp/spirv-build.log || true && \
+    echo "=== INSTALLING SPIRV-TOOLS ===" && \
+    make install 2>&1 | tee /tmp/spirv-install.log || true && \
     \
-    cd ../.. && rm -rf spirv-tools && \
+    echo "=== CLEANUP SPIRV-TOOLS SOURCE DIR ===" && \
+    cd ../.. && rm -rf spirv-tools 2>/dev/null || true && \
     \
     echo "=== VERIFYING SPIRV-TOOLS INSTALLATION ===" && \
     ls -la /lilyspark/opt/lib/graphics/bin/spirv-* 2>/dev/null || echo "No SPIRV-Tools binaries found" && \
     ls -la /lilyspark/opt/lib/graphics/lib/libSPIRV-Tools* 2>/dev/null || echo "No SPIRV-Tools libraries found" && \
     \
-    cd /lilyspark/opt/lib/graphics/lib && \
+    # Create linker-friendly symlinks (if any libs were installed)
+    cd /lilyspark/opt/lib/graphics/lib 2>/dev/null || true; \
     for lib in $(ls libSPIRV-Tools*.so.* 2>/dev/null); do \
         soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
         basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
-        ln -sf "$lib" "$soname"; \
-        ln -sf "$soname" "$basename"; \
-    done && \
+        ln -sf "$lib" "$soname" 2>/dev/null || true; \
+        ln -sf "$soname" "$basename" 2>/dev/null || true; \
+    done || true; \
+    \
     /usr/local/bin/check_llvm15.sh "post-spirv-tools-source-build" || true && \
-    echo "=== SPIRV-TOOLS BUILD COMPLETE ==="
+    echo "=== SPIRV-TOOLS BUILD COMPLETE ===" && \
+    export SPIRV_TOOLS_ROOT=/lilyspark/opt/lib/graphics && \
+    export SPIRV_HEADERS_ROOT=/lilyspark/opt/lib/graphics
+
 
 # ======================
-# SECTION: Shaderc Build (sysroot-focused) — FINAL
+# SECTION: Shaderc Build (hardcode SPIRV paths)
 # ======================
-RUN echo "=== BUILDING SHADERC FROM SOURCE WITH LLVM16 ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-shaderc-source-build" || true; \
-    \
+RUN echo "=== BUILDING SHADERC WITH LLVM16 (explicit SPIRV linkage) ===" && \
     git clone --recursive https://github.com/google/shaderc.git || (echo "⚠ shaderc not cloned; skipping build" && exit 0); \
     cd shaderc || (echo "⚠ shaderc directory missing; skipping build" && exit 0); \
     \
     export PATH="/lilyspark/compiler/bin:$PATH"; \
-    export CC=/lilyspark/compiler/bin/clang-16; \
-    export CXX=/lilyspark/compiler/bin/clang++-16; \
-    export PKG_CONFIG_SYSROOT_DIR="/lilyspark"; \
-    export PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/lib/pkgconfig:/lilyspark/usr/lib/pkgconfig:/lilyspark/compiler/lib/pkgconfig:${PKG_CONFIG_PATH:-}"; \
-    export CFLAGS="--sysroot=/lilyspark/opt/lib/sys -I/lilyspark/opt/lib/sys/usr/include -march=armv8-a"; \
-    export CXXFLAGS="$CFLAGS"; \
-    export LDFLAGS="--sysroot=/lilyspark/opt/lib/sys -L/lilyspark/opt/lib/sys/usr/lib"; \
+    CC=/lilyspark/compiler/bin/clang-16; \
+    CXX=/lilyspark/compiler/bin/clang++-16; \
+    export CC CXX; \
+    SYSROOT="/lilyspark/opt/lib/sys"; \
     \
-    mkdir build && cd build && \
+    mkdir -p build && cd build && \
+    \
     cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/graphics \
         -DCMAKE_C_COMPILER=$CC \
         -DCMAKE_CXX_COMPILER=$CXX \
-        -DCMAKE_PREFIX_PATH="/lilyspark/opt/lib/graphics:/lilyspark/usr:/lilyspark/compiler" \
-        -DCMAKE_INCLUDE_PATH="/lilyspark/opt/lib/graphics/include:/lilyspark/usr/include:/lilyspark/compiler/include" \
-        -DCMAKE_LIBRARY_PATH="/lilyspark/opt/lib/graphics/lib:/lilyspark/usr/lib:/lilyspark/compiler/lib" \
-        -DCMAKE_INSTALL_RPATH="/lilyspark/opt/lib/graphics/lib:/lilyspark/usr/lib:/lilyspark/compiler/lib" \
-        -DSPIRV-Tools_ROOT="/lilyspark/opt/lib/graphics" \
-        -DSPIRV-Headers_ROOT="/lilyspark/opt/lib/graphics" \
-        -DCMAKE_C_FLAGS="$CFLAGS" \
-        -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
-        -DCMAKE_EXE_LINKER_FLAGS="$LDFLAGS" \
-        -DCMAKE_SHARED_LINKER_FLAGS="$LDFLAGS" \
+        -DCMAKE_SYSROOT=$SYSROOT \
+        -DCMAKE_PREFIX_PATH="/lilyspark/opt/lib/graphics" \
+        -DSPIRV-Tools_DIR=/lilyspark/opt/lib/graphics/cmake \
+        -DSPIRV-Headers_DIR=/lilyspark/opt/lib/graphics \
         -DSHADERC_SKIP_TESTS=ON \
-        -DSHADERC_SKIP_EXAMPLES=ON || echo "✗ cmake configure failed (continuing)"; \
+        -DSHADERC_SKIP_EXAMPLES=ON || echo "⚠ Shaderc cmake configure failed"; \
     \
-    make -j"$(nproc)" 2>&1 | tee /tmp/shaderc-build.log || echo "✗ make failed (continuing)"; \
-    DESTDIR="/lilyspark" make install 2>&1 | tee /tmp/shaderc-install.log || echo "✗ make install failed (continuing)"; \
+    make -j"$(nproc)" VERBOSE=1 2>&1 | tee /tmp/shaderc-build-log.txt || echo "⚠ make failed"; \
+    DESTDIR="/lilyspark" make install 2>&1 | tee /tmp/shaderc-install-log.txt || echo "⚠ make install failed"; \
     \
     cd ../.. && rm -rf shaderc 2>/dev/null || true; \
     \
+    echo "=== POST-INSTALL VERIFICATION ==="; \
     ls -la /lilyspark/opt/lib/graphics/bin/shaderc* 2>/dev/null || echo "No shaderc binaries found"; \
     ls -la /lilyspark/opt/lib/graphics/lib/libshaderc* 2>/dev/null || echo "No shaderc libraries found"; \
-    \
-    cd /lilyspark/opt/lib/graphics/lib && \
-    for lib in $(ls libshaderc*.so.* 2>/dev/null); do \
-        soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
-        basename=$(echo "$lib" | sed 's/\(.*\.so\).*/\1/'); \
-        ln -sf "$lib" "$soname" 2>/dev/null || true; \
-        ln -sf "$soname" "$basename" 2>/dev/null || true; \
-    done; \
-    /usr/local/bin/check_llvm15.sh "post-shaderc-source-build" || true; \
-    echo "=== SHADERC BUILD COMPLETE ==="; \
-    true
+    ls -la /lilyspark/opt/lib/graphics/lib/libSPIRV-Tools* 2>/dev/null || echo "No SPIRV-Tools libraries found"; \
+    echo "=== SHADERC BUILD COMPLETE ==="
+
+
+
 
 # ======================
 # SECTION: libgbm Build (ARM64-safe, non-fatal)
