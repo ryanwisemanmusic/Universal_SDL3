@@ -144,6 +144,7 @@ COPY setup-scripts/sgid_suid_scanner.sh /usr/local/bin/sgid_suid_scanner.sh
 COPY setup-scripts/dependency_checker.sh /usr/local/bin/dependency_checker.sh
 COPY setup-scripts/version_matrix.sh /usr/local/bin/version_matrix.sh
 COPY setup-scripts/cflag_audit.sh /usr/local/bin/cflag_audit.sh
+COPY setup-scripts/apk-retry.sh /usr/local/bin/apk-retry
 RUN chmod +x /usr/local/bin/check_llvm15.sh \
     /usr/local/bin/check-filesystem.sh \
     /usr/local/bin/binlib_validator.sh \
@@ -151,7 +152,8 @@ RUN chmod +x /usr/local/bin/check_llvm15.sh \
     /usr/local/bin/sgid_suid_scanner.sh \
     /usr/local/bin/dependency_checker.sh \
     /usr/local/bin/version_matrix.sh \
-    /usr/local/bin/cflag_audit.sh
+    /usr/local/bin/cflag_audit.sh \
+    /usr/local/bin/apk-retry
 
 # Remove any preinstalled LLVM/Clang
 RUN apk del --no-cache llvm clang || true
@@ -302,6 +304,9 @@ RUN echo "=== Verifying /lilyspark/usr/bin ===" && \
 # Stage: filesystem setup - Install base-deps
 FROM base-deps AS filesystem-base-deps-builder
 
+COPY setup-scripts/apk-retry.sh /usr/local/bin/apk-retry
+RUN chmod +x /usr/local/bin/apk-retry
+
 # Fix Hangup Code (Test)
 CMD ["tail", "-f", "/dev/null"]
 
@@ -324,39 +329,39 @@ RUN echo ">>> check for libc++" && ls -la /lilyspark/compiler/lib | head -20 || 
 # Core packages ONLY
 # ======================
 # Vanilla requirements
-RUN apk add --no-cache bash && /usr/local/bin/check_llvm15.sh "after-bash" || true
-RUN apk add --no-cache curl && /usr/local/bin/check_llvm15.sh "after-curl" || true
-RUN apk add --no-cache ncurses-dev && /usr/local/bin/check_llvm15.sh "after-ncurses-dev" || true
-RUN apk add --no-cache ca-certificates && /usr/local/bin/check_llvm15.sh "after-ca-certificates" || true
-RUN apk add --no-cache build-base && /usr/local/bin/check_llvm15.sh "after-build-base" || true
-RUN apk add --no-cache bsd-compat-headers && /usr/local/bin/check_llvm15.sh "after-bsd-compat-headers" || true
-RUN apk add --no-cache linux-headers && /usr/local/bin/check_llvm15.sh "after-linux-headers" || true
-RUN apk add --no-cache musl-dev && /usr/local/bin/check_llvm15.sh "after-musl-dev" || true
-RUN apk add --no-cache libc-dev && /usr/local/bin/check_llvm15.sh "after-libc-dev" || true
-RUN apk add --no-cache libstdc++ && /usr/local/bin/check_llvm15.sh "after-libstdc++" || true
-RUN apk add --no-cache pkgconf && /usr/local/bin/check_llvm15.sh "after-pkgconf" || true
-RUN apk add --no-cache pkgconf-dev && /usr/local/bin/check_llvm15.sh "after-pkgconf-dev" || true
-RUN apk add --no-cache autoconf && /usr/local/bin/check_llvm15.sh "after-autoconf" || true
-RUN apk add --no-cache tar && /usr/local/bin/check_llvm15.sh "after-tar" || true
-RUN apk add --no-cache git && /usr/local/bin/check_llvm15.sh "after-git" || true
-RUN apk add --no-cache m4 && /usr/local/bin/check_llvm15.sh "after-m4" || true
-RUN apk add --no-cache expat-dev && /usr/local/bin/check_llvm15.sh "after-expat-dev" || true
-RUN apk add --no-cache glslang && /usr/local/bin/check_llvm15.sh "after-glslang" || true
-RUN apk add --no-cache make && /usr/local/bin/check_llvm15.sh "after-make" || true
-RUN apk add --no-cache cmake && /usr/local/bin/check_llvm15.sh "after-cmake" || true
-RUN apk add --no-cache automake && /usr/local/bin/check_llvm15.sh "after-automake" || true
-RUN apk add --no-cache bison && /usr/local/bin/check_llvm15.sh "after-bison" || true
-RUN apk add --no-cache flex && /usr/local/bin/check_llvm15.sh "after-flex" || true
-RUN apk add --no-cache libtool && /usr/local/bin/check_llvm15.sh "after-libtool" || true
-RUN apk add --no-cache zlib-dev && /usr/local/bin/check_llvm15.sh "after-zlib-dev" || true
-RUN apk add --no-cache util-macros && /usr/local/bin/check_llvm15.sh "after-util-macros" || true
-RUN apk add --no-cache readline-dev && /usr/local/bin/check_llvm15.sh "after-readline-dev" || true
-RUN apk add --no-cache openssl-dev && /usr/local/bin/check_llvm15.sh "after-openssl-dev" || true
-RUN apk add --no-cache bzip2-dev && /usr/local/bin/check_llvm15.sh "after-bzip2-dev" || true
+RUN apk-retry add --no-cache bash && /usr/local/bin/check_llvm15.sh "after-bash" || true
+RUN apk-retry add --no-cache curl && /usr/local/bin/check_llvm15.sh "after-curl" || true
+RUN apk-retry add --no-cache ncurses-dev && /usr/local/bin/check_llvm15.sh "after-ncurses-dev" || true
+RUN apk-retry add --no-cache ca-certificates && /usr/local/bin/check_llvm15.sh "after-ca-certificates" || true
+RUN apk-retry add --no-cache build-base && /usr/local/bin/check_llvm15.sh "after-build-base" || true
+RUN apk-retry add --no-cache bsd-compat-headers && /usr/local/bin/check_llvm15.sh "after-bsd-compat-headers" || true
+RUN apk-retry add --no-cache linux-headers && /usr/local/bin/check_llvm15.sh "after-linux-headers" || true
+RUN apk-retry add --no-cache musl-dev && /usr/local/bin/check_llvm15.sh "after-musl-dev" || true
+RUN apk-retry add --no-cache libc-dev && /usr/local/bin/check_llvm15.sh "after-libc-dev" || true
+RUN apk-retry add --no-cache libstdc++ && /usr/local/bin/check_llvm15.sh "after-libstdc++" || true
+RUN apk-retry add --no-cache pkgconf && /usr/local/bin/check_llvm15.sh "after-pkgconf" || true
+RUN apk-retry add --no-cache pkgconf-dev && /usr/local/bin/check_llvm15.sh "after-pkgconf-dev" || true
+RUN apk-retry add --no-cache autoconf && /usr/local/bin/check_llvm15.sh "after-autoconf" || true
+RUN apk-retry add --no-cache tar && /usr/local/bin/check_llvm15.sh "after-tar" || true
+RUN apk-retry add --no-cache git && /usr/local/bin/check_llvm15.sh "after-git" || true
+RUN apk-retry add --no-cache m4 && /usr/local/bin/check_llvm15.sh "after-m4" || true
+RUN apk-retry add --no-cache expat-dev && /usr/local/bin/check_llvm15.sh "after-expat-dev" || true
+RUN apk-retry add --no-cache glslang && /usr/local/bin/check_llvm15.sh "after-glslang" || true
+RUN apk-retry add --no-cache make && /usr/local/bin/check_llvm15.sh "after-make" || true
+RUN apk-retry add --no-cache cmake && /usr/local/bin/check_llvm15.sh "after-cmake" || true
+RUN apk-retry add --no-cache automake && /usr/local/bin/check_llvm15.sh "after-automake" || true
+RUN apk-retry add --no-cache bison && /usr/local/bin/check_llvm15.sh "after-bison" || true
+RUN apk-retry add --no-cache flex && /usr/local/bin/check_llvm15.sh "after-flex" || true
+RUN apk-retry add --no-cache libtool && /usr/local/bin/check_llvm15.sh "after-libtool" || true
+RUN apk-retry add --no-cache zlib-dev && /usr/local/bin/check_llvm15.sh "after-zlib-dev" || true
+RUN apk-retry add --no-cache util-macros && /usr/local/bin/check_llvm15.sh "after-util-macros" || true
+RUN apk-retry add --no-cache readline-dev && /usr/local/bin/check_llvm15.sh "after-readline-dev" || true
+RUN apk-retry add --no-cache openssl-dev && /usr/local/bin/check_llvm15.sh "after-openssl-dev" || true
+RUN apk-retry add --no-cache bzip2-dev && /usr/local/bin/check_llvm15.sh "after-bzip2-dev" || true
 
 # Render essentials
-RUN apk add --no-cache meson && /usr/local/bin/check_llvm15.sh "after-meson" || true
-RUN apk add --no-cache ninja && /usr/local/bin/check_llvm15.sh "after-ninja" || true
+RUN apk-retry add --no-cache meson && /usr/local/bin/check_llvm15.sh "after-meson" || true
+RUN apk-retry add --no-cache ninja && /usr/local/bin/check_llvm15.sh "after-ninja" || true
 
 # ===============================
 # Copy essentials into /lilyspark
@@ -437,17 +442,17 @@ RUN apk add --no-cache file tree valgrind-dev linux-tools-dev && \
 # Other Essential Libraries
 # =========================
 # Audio Libraries - /lilyspark/usr/local/lib/audio
-RUN apk add --no-cache sndio-dev && /usr/local/bin/check_llvm15.sh "after-sndio-dev" || true
-RUN apk add --no-cache libvorbis-dev && /usr/local/bin/check_llvm15.sh "after-liborbis-dev" || true
-RUN apk add --no-cache libogg-dev && /usr/local/bin/check_llvm15.sh "after-libogg-dev" || true
-RUN apk add --no-cache flac-dev && /usr/local/bin/check_llvm15.sh "after flac-dev" || true
-RUN apk add --no-cache libmodplug-dev && /usr/local/bin/check_llvm15.sh "after-libmodplug-dev" || true
-RUN apk add --no-cache mpg123-dev && /usr/local/bin/check_llvm15.sh "after-mpg123-dev" || true
-RUN apk add --no-cache opusfile-dev && /usr/local/bin/check_llvm15.sh "after-opusfile-dev" || true
-RUN apk add --no-cache alsa-lib-dev && /usr/local/bin/check_llvm15.sh "after-alsa-lib-dev" || true
-RUN apk add --no-cache pulseaudio-dev && /usr/local/bin/check_llvm15.sh "after-pulseaudio-dev" || true
-RUN apk add --no-cache libsamplerate-dev && /usr/local/bin/check_llvm15.sh "after-libsamplerate-dev" || true
-RUN apk add --no-cache portaudio-dev && /usr/local/bin/check_llvm15.sh "after-portaudio-dev" || true
+RUN apk-retry add --no-cache sndio-dev && /usr/local/bin/check_llvm15.sh "after-sndio-dev" || true
+RUN apk-retry add --no-cache libvorbis-dev && /usr/local/bin/check_llvm15.sh "after-liborbis-dev" || true
+RUN apk-retry add --no-cache libogg-dev && /usr/local/bin/check_llvm15.sh "after-libogg-dev" || true
+RUN apk-retry add --no-cache flac-dev && /usr/local/bin/check_llvm15.sh "after flac-dev" || true
+RUN apk-retry add --no-cache libmodplug-dev && /usr/local/bin/check_llvm15.sh "after-libmodplug-dev" || true
+RUN apk-retry add --no-cache mpg123-dev && /usr/local/bin/check_llvm15.sh "after-mpg123-dev" || true
+RUN apk-retry add --no-cache opusfile-dev && /usr/local/bin/check_llvm15.sh "after-opusfile-dev" || true
+RUN apk-retry add --no-cache alsa-lib-dev && /usr/local/bin/check_llvm15.sh "after-alsa-lib-dev" || true
+RUN apk-retry add --no-cache pulseaudio-dev && /usr/local/bin/check_llvm15.sh "after-pulseaudio-dev" || true
+RUN apk-retry add --no-cache libsamplerate-dev && /usr/local/bin/check_llvm15.sh "after-libsamplerate-dev" || true
+RUN apk-retry add --no-cache portaudio-dev && /usr/local/bin/check_llvm15.sh "after-portaudio-dev" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING AUDIO LIBRARIES ===" && \
@@ -492,7 +497,7 @@ RUN echo "=== INTEGRATING AUDIO LIBRARIES INTO SYSROOT ===" && \
 #
 
 # A/V Libraries - /lilyspark/usr/local/lib/av
-RUN apk add --no-cache pipewire-dev && /usr/local/bin/check_llvm15.sh "after-pipewire-dev" || true
+RUN apk-retry add --no-cache pipewire-dev && /usr/local/bin/check_llvm15.sh "after-pipewire-dev" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING A/V LIBRARIES ===" && \
@@ -512,8 +517,8 @@ RUN echo "=== INTEGRATING A/V LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Compression Libraries - /lilyspark/usr/local/lib/compression
-RUN apk add --no-cache xz-dev && /usr/local/bin/check_llvm15.sh "after-xz-dev" || true
-RUN apk add --no-cache zstd-dev && /usr/local/bin/check_llvm15.sh "after-zstd-dev" || true
+RUN apk-retry add --no-cache xz-dev && /usr/local/bin/check_llvm15.sh "after-xz-dev" || true
+RUN apk-retry add --no-cache zstd-dev && /usr/local/bin/check_llvm15.sh "after-zstd-dev" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING COMPRESSION LIBRARIES ===" && \
@@ -534,12 +539,12 @@ RUN echo "=== INTEGRATING COMPRESSION LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Database Libraries - /lilyspark/usr/local/lib/database
-RUN apk add --no-cache sqlite-dev && /usr/local/bin/check_llvm15.sh "after-sqlite-dev" || true
-RUN apk add --no-cache libedit-dev && /usr/local/bin/check_llvm15.sh "after-libedit-dev" || true
-RUN apk add --no-cache icu-dev && /usr/local/bin/check_llvm15.sh "after-icu-dev" || true
-RUN apk add --no-cache tcl-dev && /usr/local/bin/check_llvm15.sh "after-tcl-dev" || true
-RUN apk add --no-cache lz4-dev && /usr/local/bin/check_llvm15.sh "after-lz4-dev" || true
-RUN apk add --no-cache db-dev && /usr/local/bin/check_llvm15.sh "after-db-dev" || true
+RUN apk-retry add --no-cache sqlite-dev && /usr/local/bin/check_llvm15.sh "after-sqlite-dev" || true
+RUN apk-retry add --no-cache libedit-dev && /usr/local/bin/check_llvm15.sh "after-libedit-dev" || true
+RUN apk-retry add --no-cache icu-dev && /usr/local/bin/check_llvm15.sh "after-icu-dev" || true
+RUN apk-retry add --no-cache tcl-dev && /usr/local/bin/check_llvm15.sh "after-tcl-dev" || true
+RUN apk-retry add --no-cache lz4-dev && /usr/local/bin/check_llvm15.sh "after-lz4-dev" || true
+RUN apk-retry add --no-cache db-dev && /usr/local/bin/check_llvm15.sh "after-db-dev" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING DATABASE LIBRARIES ===" && \
@@ -563,9 +568,9 @@ RUN echo "=== INTEGRATING DATABASE LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Device Management Libraries - /lilyspark/usr/local/lib/device_management
-RUN apk add --no-cache eudev-dev && /usr/local/bin/check_llvm15.sh "after-eudev-dev" || true
-RUN apk add --no-cache pciutils-dev && /usr/local/bin/check_llvm15.sh "after-pciutils-dev" || true
-RUN apk add --no-cache libusb-dev && /usr/local/bin/check_llvm15.sh "after-libusb-dev" || true
+RUN apk-retry add --no-cache eudev-dev && /usr/local/bin/check_llvm15.sh "after-eudev-dev" || true
+RUN apk-retry add --no-cache pciutils-dev && /usr/local/bin/check_llvm15.sh "after-pciutils-dev" || true
+RUN apk-retry add --no-cache libusb-dev && /usr/local/bin/check_llvm15.sh "after-libusb-dev" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING DEVICE MANAGEMENT LIBRARIES ===" && \
@@ -587,7 +592,7 @@ RUN echo "=== INTEGRATING DEVICE MANAGEMENT LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Documentation Libraries - /lilyspark/usr/local/lib/documentation
-RUN apk add --no-cache xmlto && /usr/local/bin/check_llvm15.sh "after-xmlto" || true
+RUN apk-retry add --no-cache xmlto && /usr/local/bin/check_llvm15.sh "after-xmlto" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING DOCUMENTATION LIBRARIES ===" && \
@@ -609,15 +614,15 @@ RUN echo "=== INTEGRATING DOCUMENTATION TOOLS INTO SYSROOT ===" && \
 #
 
 # Graphics Libraries - /lilyspark/usr/local/lib/graphics
-RUN apk add --no-cache gtk+3-dev && /usr/local/bin/check_llvm15.sh "after-gtk+3-dev" || true
-RUN apk add --no-cache cairo-dev && /usr/local/bin/check_llvm15.sh "after-cairo-dev" || true
-RUN apk add --no-cache pixman-dev && /usr/local/bin/check_llvm15.sh "after-pixman-dev" || true
-RUN apk add --no-cache harfbuzz-dev && /usr/local/bin/check_llvm15.sh "after-harfbuzz-dev" || true
-RUN apk add --no-cache vulkan-headers && /usr/local/bin/check_llvm15.sh "after-vulkan-headers" || true
-RUN apk add --no-cache vulkan-loader && /usr/local/bin/check_llvm15.sh "after-vulkan-loader" || true
-RUN apk add --no-cache vulkan-tools && /usr/local/bin/check_llvm15.sh "after-vulkan-tools" || true
-RUN apk add --no-cache freetype-dev && /usr/local/bin/check_llvm15.sh "after-freetype-dev" || true
-RUN apk add --no-cache fontconfig-dev && /usr/local/bin/check_llvm15.sh "after-fontconfig-dev" || true
+RUN apk-retry add --no-cache gtk+3-dev && /usr/local/bin/check_llvm15.sh "after-gtk+3-dev" || true
+RUN apk-retry add --no-cache cairo-dev && /usr/local/bin/check_llvm15.sh "after-cairo-dev" || true
+RUN apk-retry add --no-cache pixman-dev && /usr/local/bin/check_llvm15.sh "after-pixman-dev" || true
+RUN apk-retry add --no-cache harfbuzz-dev && /usr/local/bin/check_llvm15.sh "after-harfbuzz-dev" || true
+RUN apk-retry add --no-cache vulkan-headers && /usr/local/bin/check_llvm15.sh "after-vulkan-headers" || true
+RUN apk-retry add --no-cache vulkan-loader && /usr/local/bin/check_llvm15.sh "after-vulkan-loader" || true
+RUN apk-retry add --no-cache vulkan-tools && /usr/local/bin/check_llvm15.sh "after-vulkan-tools" || true
+RUN apk-retry add --no-cache freetype-dev && /usr/local/bin/check_llvm15.sh "after-freetype-dev" || true
+RUN apk-retry add --no-cache fontconfig-dev && /usr/local/bin/check_llvm15.sh "after-fontconfig-dev" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING GRAPHICS LIBRARIES ===" && \
@@ -663,13 +668,13 @@ RUN echo "=== INTEGRATING I18N LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Image Libraries - /lilyspark/usr/local/lib/image
-RUN apk add --no-cache jpeg-dev && /usr/local/bin/check_llvm15.sh "after-jpeg-dev" || true
-RUN apk add --no-cache libjpeg-turbo-dev && /usr/local/bin/check_llvm15.sh "after-libjpeg-turbo-dev" || true
-RUN apk add --no-cache libpng-dev && /usr/local/bin/check_llvm15.sh "after-libpng-dev" || true
-RUN apk add --no-cache tiff-dev && /usr/local/bin/check_llvm15.sh "after-tiff-dev" || true
-RUN apk add --no-cache libtiff && /usr/local/bin/check_llvm15.sh "after-lib-tiff" || true
-RUN apk add --no-cache libavif && /usr/local/bin/check_llvm15.sh "after-libavif" || true
-RUN apk add --no-cache libwebp && /usr/local/bin/check_llvm15.sh "after-libwebp" || true
+RUN apk-retry add --no-cache jpeg-dev && /usr/local/bin/check_llvm15.sh "after-jpeg-dev" || true
+RUN apk-retry add --no-cache libjpeg-turbo-dev && /usr/local/bin/check_llvm15.sh "after-libjpeg-turbo-dev" || true
+RUN apk-retry add --no-cache libpng-dev && /usr/local/bin/check_llvm15.sh "after-libpng-dev" || true
+RUN apk-retry add --no-cache tiff-dev && /usr/local/bin/check_llvm15.sh "after-tiff-dev" || true
+RUN apk-retry add --no-cache libtiff && /usr/local/bin/check_llvm15.sh "after-lib-tiff" || true
+RUN apk-retry add --no-cache libavif && /usr/local/bin/check_llvm15.sh "after-libavif" || true
+RUN apk-retry add --no-cache libwebp && /usr/local/bin/check_llvm15.sh "after-libwebp" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING IMAGE LIBRARIES ===" && \
@@ -690,7 +695,7 @@ RUN echo "=== INTEGRATING IMAGE LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Java Libraries - /lilyspark/usr/local/lib/java
-RUN apk add --no-cache openjdk11 && \
+RUN apk-retry add --no-cache openjdk11 && \
     /usr/local/bin/check_llvm15.sh "after-openjdk11" || true && \
     \
     # Verify Java installation
@@ -707,7 +712,7 @@ RUN apk add --no-cache openjdk11 && \
         false; \
     fi
 
-RUN apk add --no-cache ant && /usr/local/bin/check_llvm15.sh "after-ant" || true
+RUN apk-retry add --no-cache ant && /usr/local/bin/check_llvm15.sh "after-ant" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING JAVA LIBRARIES ===" && \
@@ -729,9 +734,9 @@ RUN echo "=== INTEGRATING JAVA LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Math Libraries - /lilyspark/usr/local/lib/math
-RUN apk add --no-cache eigen-dev && /usr/local/bin/check_llvm15.sh "after-eigen-dev" || true
-RUN apk add --no-cache gmp && /usr/local/bin/check_llvm15.sh "after-gmp" || true
-RUN apk add --no-cache gsl && /usr/local/bin/check_llvm15.sh "after-gsl" || true
+RUN apk-retry add --no-cache eigen-dev && /usr/local/bin/check_llvm15.sh "after-eigen-dev" || true
+RUN apk-retry add --no-cache gmp && /usr/local/bin/check_llvm15.sh "after-gmp" || true
+RUN apk-retry add --no-cache gsl && /usr/local/bin/check_llvm15.sh "after-gsl" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING MATH LIBRARIES ===" && \
@@ -763,12 +768,12 @@ RUN echo "=== INTEGRATING MATH LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Networking Libraries - /lilyspark/usr/local/lib/networking
-RUN apk add --no-cache libpcap-dev && /usr/local/bin/check_llvm15.sh "after-libpcap-dev" || true
-RUN apk add --no-cache libunwind-dev && /usr/local/bin/check_llvm15.sh "after-libunwind-dev" || true
-RUN apk add --no-cache dbus-dev && /usr/local/bin/check_llvm15.sh "after-dbus-dev" || true
-RUN apk add --no-cache libmnl-dev && /usr/local/bin/check_llvm15.sh "after-libmnl-dev" || true
-RUN apk add --no-cache net-tools && /usr/local/bin/check_llvm15.sh "after-net-tools" || true
-RUN apk add --no-cache iproute2 && /usr/local/bin/check_llvm15.sh "after-iproute2" || true
+RUN apk-retry add --no-cache libpcap-dev && /usr/local/bin/check_llvm15.sh "after-libpcap-dev" || true
+RUN apk-retry add --no-cache libunwind-dev && /usr/local/bin/check_llvm15.sh "after-libunwind-dev" || true
+RUN apk-retry add --no-cache dbus-dev && /usr/local/bin/check_llvm15.sh "after-dbus-dev" || true
+RUN apk-retry add --no-cache libmnl-dev && /usr/local/bin/check_llvm15.sh "after-libmnl-dev" || true
+RUN apk-retry add --no-cache net-tools && /usr/local/bin/check_llvm15.sh "after-net-tools" || true
+RUN apk-retry add --no-cache iproute2 && /usr/local/bin/check_llvm15.sh "after-iproute2" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING NETWORKING LIBRARIES ===" && \
@@ -789,7 +794,7 @@ RUN echo "=== INTEGRATING NETWORKING LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Python Libraries - /lilyspark/usr/local/lib/python
-RUN apk add --no-cache python3 python3-dev py3-setuptools py3-pip py3-markupsafe \
+RUN apk-retry add --no-cache python3 python3-dev py3-setuptools py3-pip py3-markupsafe \
     && /usr/local/bin/check_llvm15.sh "after-python-libs" || true
 
 # FORCE INSTALL MAKO VIA PIP WITH --break-system-packages
@@ -844,8 +849,8 @@ RUN echo "=== SYMLINKING PYTHON PACKAGES TO SYSROOT ===" && \
 #
 
 # Security Libraries - /lilyspark/usr/local/lib/security
-RUN apk add --no-cache libselinux-dev && /usr/local/bin/check_llvm15.sh "after-libselinux-dev" || true
-RUN apk add --no-cache libseccomp-dev && /usr/local/bin/check_llvm15.sh "after-libseccomp-dev" || true
+RUN apk-retry add --no-cache libselinux-dev && /usr/local/bin/check_llvm15.sh "after-libselinux-dev" || true
+RUN apk-retry add --no-cache libseccomp-dev && /usr/local/bin/check_llvm15.sh "after-libseccomp-dev" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING SECURITY LIBRARIES ===" && \
@@ -868,15 +873,15 @@ RUN echo "=== INTEGRATING SECURITY LIBRARIES INTO SYSROOT ===" && \
 #
 
 # System Libraries - /lilyspark/usr/local/lib/system
-RUN apk add --no-cache libatomic_ops-dev && /usr/local/bin/check_llvm15.sh "after-libatomic_ops-dev" || true
-RUN apk add --no-cache util-linux-dev && /usr/local/bin/check_llvm15.sh "after-util-linux-dev" || true
-RUN apk add --no-cache libcap-dev && /usr/local/bin/check_llvm15.sh "after-libcap-dev" || true
-RUN apk add --no-cache liburing-dev && /usr/local/bin/check_llvm15.sh "after-liburing-dev" || true
-RUN apk add --no-cache e2fsprogs-dev && /usr/local/bin/check_llvm15.sh "after-e2fsprogs-dev" || true
-RUN apk add --no-cache xfsprogs-dev && /usr/local/bin/check_llvm15.sh "after-xfsprogs-dev" || true
-RUN apk add --no-cache btrfs-progs-dev && /usr/local/bin/check_llvm15.sh "after-btrfs-progs-dev" || true
-RUN apk add --no-cache libexecinfo-dev && /usr/local/bin/check_llvm15.sh "after-libexecinfo-dev" || true
-RUN apk add --no-cache libdw && /usr/local/bin/check_llvm15.sh "after-libdw" || true
+RUN apk-retry add --no-cache libatomic_ops-dev && /usr/local/bin/check_llvm15.sh "after-libatomic_ops-dev" || true
+RUN apk-retry add --no-cache util-linux-dev && /usr/local/bin/check_llvm15.sh "after-util-linux-dev" || true
+RUN apk-retry add --no-cache libcap-dev && /usr/local/bin/check_llvm15.sh "after-libcap-dev" || true
+RUN apk-retry add --no-cache liburing-dev && /usr/local/bin/check_llvm15.sh "after-liburing-dev" || true
+RUN apk-retry add --no-cache e2fsprogs-dev && /usr/local/bin/check_llvm15.sh "after-e2fsprogs-dev" || true
+RUN apk-retry add --no-cache xfsprogs-dev && /usr/local/bin/check_llvm15.sh "after-xfsprogs-dev" || true
+RUN apk-retry add --no-cache btrfs-progs-dev && /usr/local/bin/check_llvm15.sh "after-btrfs-progs-dev" || true
+RUN apk-retry add --no-cache libexecinfo-dev && /usr/local/bin/check_llvm15.sh "after-libexecinfo-dev" || true
+RUN apk-retry add --no-cache libdw && /usr/local/bin/check_llvm15.sh "after-libdw" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING SYSTEM LIBRARIES ===" && \
@@ -907,7 +912,7 @@ RUN echo "=== INTEGRATING SYSTEM LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Testing Libraries - /lilyspark/usr/local/lib/testing
-RUN apk add --no-cache cunit-dev && /usr/local/bin/check_llvm15.sh "after-cunit-dev" || true
+RUN apk-retry add --no-cache cunit-dev && /usr/local/bin/check_llvm15.sh "after-cunit-dev" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING TESTING LIBRARIES ===" && \
@@ -920,7 +925,7 @@ RUN echo "=== COPYING TESTING LIBRARIES ===" && \
 #
 
 # Video Libraries - /lilyspark/usr/local/lib/video
-RUN apk add --no-cache v4l-utils-dev && /usr/local/bin/check_llvm15.sh "after-v4l-utils-dev" || true
+RUN apk-retry add --no-cache v4l-utils-dev && /usr/local/bin/check_llvm15.sh "after-v4l-utils-dev" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING VIDEO LIBRARIES ===" && \
@@ -941,8 +946,8 @@ RUN echo "=== INTEGRATING VIDEO LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Wayland Libraries - /lilyspark/usr/local/lib/wayland
-RUN apk add --no-cache wayland-dev && /usr/local/bin/check_llvm15.sh "after-wayland-dev" || true
-RUN apk add --no-cache wayland-protocols && /usr/local/bin/check_llvm15.sh "after-wayland-protocols" || true
+RUN apk-retry add --no-cache wayland-dev && /usr/local/bin/check_llvm15.sh "after-wayland-dev" || true
+RUN apk-retry add --no-cache wayland-protocols && /usr/local/bin/check_llvm15.sh "after-wayland-protocols" || true
 
     # Copy Libraries To Directory
 RUN echo "=== COPYING WAYLAND LIBRARIES ===" && \
@@ -964,35 +969,35 @@ RUN echo "=== INTEGRATING WAYLAND LIBRARIES INTO SYSROOT ===" && \
 #
 
 # X11 Libraries - /lilyspark/usr/local/lib/x11
-RUN apk add --no-cache libx11-dev && /usr/local/bin/check_llvm15.sh "after-libx11-dev" || true
-RUN apk add --no-cache libxkbcommon-dev && /usr/local/bin/check_llvm15.sh "after-libxkbcommon-dev" || true
-RUN apk add --no-cache xkeyboard-config && /usr/local/bin/check_llvm15.sh "after-xkeyboard-config" || true
-RUN apk add --no-cache xkbcomp && /usr/local/bin/check_llvm15.sh "after-xkbcomp" || true
-RUN apk add --no-cache libxkbfile-dev && /usr/local/bin/check_llvm15.sh "after-libxkbfile-dev" || true
-RUN apk add --no-cache libxfont2-dev && /usr/local/bin/check_llvm15.sh "after-libxfont2-dev" || true
-RUN apk add --no-cache font-util-dev && /usr/local/bin/check_llvm15.sh "after-font-util-dev-dev" || true
-RUN apk add --no-cache xcb-util-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-dev" || true
-RUN apk add --no-cache xcb-util-renderutil-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-renderutil-dev" || true
-RUN apk add --no-cache xcb-util-wm-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-wm-dev" || true
-RUN apk add --no-cache xcb-util-keysyms-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-keysyms-dev" || true
-RUN apk add --no-cache xf86driproto && /usr/local/bin/check_llvm15.sh "after-xf86driproto" || true
-RUN apk add --no-cache xf86vidmodeproto && /usr/local/bin/check_llvm15.sh "after-xf86vidmodeproto" || true
-RUN apk add --no-cache glproto && /usr/local/bin/check_llvm15.sh "after-glproto" || true
-RUN apk add --no-cache dri2proto && /usr/local/bin/check_llvm15.sh "after-dri2proto" || true
-RUN apk add --no-cache libxext-dev && /usr/local/bin/check_llvm15.sh "after-libxext-dev" || true
-RUN apk add --no-cache libxrender-dev && /usr/local/bin/check_llvm15.sh "after-libxrender-dev" || true
-RUN apk add --no-cache libxfixes-dev && /usr/local/bin/check_llvm15.sh "after-libxfixes-dev" || true
-RUN apk add --no-cache libxdamage-dev && /usr/local/bin/check_llvm15.sh "after-libxdamage-dev" || true
-RUN apk add --no-cache libxcb-dev && /usr/local/bin/check_llvm15.sh "after-libxcb-dev" || true
-RUN apk add --no-cache libxcomposite-dev && /usr/local/bin/check_llvm15.sh "after-libxcomposite-dev" || true
-RUN apk add --no-cache libxinerama-dev && /usr/local/bin/check_llvm15.sh "after-libxinerama-dev" || true
-RUN apk add --no-cache libxi-dev && /usr/local/bin/check_llvm15.sh "after-libxi-dev" || true
-RUN apk add --no-cache libxcursor-dev && /usr/local/bin/check_llvm15.sh "after-libxcursor-dev" || true
-RUN apk add --no-cache libxrandr-dev && /usr/local/bin/check_llvm15.sh "after-libxrandr-dev" || true
-RUN apk add --no-cache libxshmfence-dev && /usr/local/bin/check_llvm15.sh "after-libxshmfence-dev" || true
-RUN apk add --no-cache libxxf86vm-dev && /usr/local/bin/check_llvm15.sh "after-libxxf86vm-dev" || true
-RUN apk add --no-cache xf86-video-fbdev && /usr/local/bin/check_llvm15.sh "after-xf86-video-fbdev" || true
-RUN apk add --no-cache xf86-video-dummy && /usr/local/bin/check_llvm15.sh "after-xf86-video-dummy" || true
+RUN apk-retry add --no-cache libx11-dev && /usr/local/bin/check_llvm15.sh "after-libx11-dev" || true
+RUN apk-retry add --no-cache libxkbcommon-dev && /usr/local/bin/check_llvm15.sh "after-libxkbcommon-dev" || true
+RUN apk-retry add --no-cache xkeyboard-config && /usr/local/bin/check_llvm15.sh "after-xkeyboard-config" || true
+RUN apk-retry add --no-cache xkbcomp && /usr/local/bin/check_llvm15.sh "after-xkbcomp" || true
+RUN apk-retry add --no-cache libxkbfile-dev && /usr/local/bin/check_llvm15.sh "after-libxkbfile-dev" || true
+RUN apk-retry add --no-cache libxfont2-dev && /usr/local/bin/check_llvm15.sh "after-libxfont2-dev" || true
+RUN apk-retry add --no-cache font-util-dev && /usr/local/bin/check_llvm15.sh "after-font-util-dev-dev" || true
+RUN apk-retry add --no-cache xcb-util-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-dev" || true
+RUN apk-retry add --no-cache xcb-util-renderutil-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-renderutil-dev" || true
+RUN apk-retry add --no-cache xcb-util-wm-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-wm-dev" || true
+RUN apk-retry add --no-cache xcb-util-keysyms-dev && /usr/local/bin/check_llvm15.sh "after-xcb-util-keysyms-dev" || true
+RUN apk-retry add --no-cache xf86driproto && /usr/local/bin/check_llvm15.sh "after-xf86driproto" || true
+RUN apk-retry add --no-cache xf86vidmodeproto && /usr/local/bin/check_llvm15.sh "after-xf86vidmodeproto" || true
+RUN apk-retry add --no-cache glproto && /usr/local/bin/check_llvm15.sh "after-glproto" || true
+RUN apk-retry add --no-cache dri2proto && /usr/local/bin/check_llvm15.sh "after-dri2proto" || true
+RUN apk-retry add --no-cache libxext-dev && /usr/local/bin/check_llvm15.sh "after-libxext-dev" || true
+RUN apk-retry add --no-cache libxrender-dev && /usr/local/bin/check_llvm15.sh "after-libxrender-dev" || true
+RUN apk-retry add --no-cache libxfixes-dev && /usr/local/bin/check_llvm15.sh "after-libxfixes-dev" || true
+RUN apk-retry add --no-cache libxdamage-dev && /usr/local/bin/check_llvm15.sh "after-libxdamage-dev" || true
+RUN apk-retry add --no-cache libxcb-dev && /usr/local/bin/check_llvm15.sh "after-libxcb-dev" || true
+RUN apk-retry add --no-cache libxcomposite-dev && /usr/local/bin/check_llvm15.sh "after-libxcomposite-dev" || true
+RUN apk-retry add --no-cache libxinerama-dev && /usr/local/bin/check_llvm15.sh "after-libxinerama-dev" || true
+RUN apk-retry add --no-cache libxi-dev && /usr/local/bin/check_llvm15.sh "after-libxi-dev" || true
+RUN apk-retry add --no-cache libxcursor-dev && /usr/local/bin/check_llvm15.sh "after-libxcursor-dev" || true
+RUN apk-retry add --no-cache libxrandr-dev && /usr/local/bin/check_llvm15.sh "after-libxrandr-dev" || true
+RUN apk-retry add --no-cache libxshmfence-dev && /usr/local/bin/check_llvm15.sh "after-libxshmfence-dev" || true
+RUN apk-retry add --no-cache libxxf86vm-dev && /usr/local/bin/check_llvm15.sh "after-libxxf86vm-dev" || true
+RUN apk-retry add --no-cache xf86-video-fbdev && /usr/local/bin/check_llvm15.sh "after-xf86-video-fbdev" || true
+RUN apk-retry add --no-cache xf86-video-dummy && /usr/local/bin/check_llvm15.sh "after-xf86-video-dummy" || true
 
 # Copy Libraries To Directory
 RUN echo "=== COPYING X11 LIBRARIES ===" && \
@@ -1980,53 +1985,60 @@ RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
 
 
 # ======================
-# SECTION: Populate sysroot with SPIRV-Tools (so shaderc can find it)
+# SYSROOT POPULATION: SPIRV-Headers + SPIRV-Tools (with deep logging)
 # ======================
-RUN echo "=== POPULATING SYSROOT WITH SPIRV-TOOLS ARTIFACTS ===" && \
+RUN echo "=== POPULATING SYSROOT WITH SPIRV-HEADERS AND SPIRV-TOOLS ===" && \
     set -eux; \
     SYSROOT="/lilyspark/opt/lib/sys"; \
     INSTPREFIX="/lilyspark/opt/lib/graphics"; \
-    mkdir -p "$SYSROOT/usr/include" "$SYSROOT/usr/lib" "$SYSROOT/usr/lib/pkgconfig" "$SYSROOT/usr/lib/cmake" "$SYSROOT/usr/share"; \
     \
-    echo "→ Copying includes"; \
+    mkdir -p "$SYSROOT/usr/include" "$SYSROOT/usr/lib" "$SYSROOT/usr/lib/pkgconfig" "$SYSROOT/usr/lib/cmake"; \
+    \
+    echo "→ Copying SPIRV-Headers includes"; \
     cp -a "$INSTPREFIX/include/." "$SYSROOT/usr/include/"; \
+    ls -laR "$INSTPREFIX/include" || true; \
     \
-    echo "→ Copying libraries"; \
+    echo "→ Copying SPIRV-Tools libraries"; \
     cp -a "$INSTPREFIX/lib"/libSPIRV-Tools* "$SYSROOT/usr/lib/" || echo "⚠ no SPIRV libs found"; \
+    ls -la "$INSTPREFIX/lib" || true; \
+    ls -la "$SYSROOT/usr/lib" || true; \
     \
     echo "→ Copying pkg-config files"; \
-    if [ -d "$INSTPREFIX/lib/pkgconfig" ]; then cp -a "$INSTPREFIX/lib/pkgconfig/." "$SYSROOT/usr/lib/pkgconfig/"; fi; \
-    \
-    echo "→ Copying CMake package config"; \
-    if [ -d "$INSTPREFIX/lib/cmake" ]; then cp -a "$INSTPREFIX/lib/cmake/." "$SYSROOT/usr/lib/cmake/"; else \
-        echo "⚠ No cmake package tree found; creating minimal shim"; \
-        mkdir -p "$SYSROOT/usr/lib/cmake/SPIRV-Tools"; \
-        SHIM="$SYSROOT/usr/lib/cmake/SPIRV-Tools/SPIRV-ToolsConfig.cmake"; \
-        LIB_DIR="$INSTPREFIX/lib"; INCLUDE_DIR="$INSTPREFIX/include"; \
-        echo "# Minimal SPIRV-ToolsConfig.cmake (shim) -- autogenerated" > "$SHIM"; \
-        echo "set(SPIRV-Tools_INCLUDE_DIR \"$INCLUDE_DIR\")" >> "$SHIM"; \
-        echo "set(SPIRV-Tools_FOUND TRUE)" >> "$SHIM"; \
-        for lib in SPIRV-Tools SPIRV-Tools-opt SPIRV-Tools-link SPIRV-Tools-lint SPIRV-Tools-reduce; do \
-            SO_LIB="$LIB_DIR/lib$lib-shared.so"; \
-            if [ ! -f "$SO_LIB" ]; then SO_LIB="$LIB_DIR/lib$lib.a"; fi; \
-            echo "if(NOT TARGET $lib)" >> "$SHIM"; \
-            echo "  add_library($lib SHARED IMPORTED)" >> "$SHIM"; \
-            echo "  set_target_properties($lib PROPERTIES IMPORTED_LOCATION \"$SO_LIB\" INTERFACE_INCLUDE_DIRECTORIES \"$INCLUDE_DIR\")" >> "$SHIM"; \
-            echo "endif()" >> "$SHIM"; \
-        done; \
-        echo "✓ wrote shim $SHIM"; ls -la "$SHIM" || true; \
+    if [ -d "$INSTPREFIX/lib/pkgconfig" ]; then \
+        cp -a "$INSTPREFIX/lib/pkgconfig/." "$SYSROOT/usr/lib/pkgconfig/"; \
     fi; \
+    ls -la "$INSTPREFIX/lib/pkgconfig" || true; \
+    ls -la "$SYSROOT/usr/lib/pkgconfig" || true; \
+    echo "→ Inspecting pkg-config contents"; \
+    find "$SYSROOT/usr/lib/pkgconfig" -type f -name "*.pc" -exec echo "--- {} ---" \; -exec cat {} \; || echo "⚠ no .pc files present"; \
     \
-    echo "→ Sysroot pkgconfig contents:"; ls -la "$SYSROOT/usr/lib/pkgconfig" || true; \
-    echo "→ Sysroot include contents:"; ls -la "$SYSROOT/usr/include" | head -n120 || true; \
-    echo "→ Sysroot lib contents:"; ls -la "$SYSROOT/usr/lib" | head -n120 || true; \
-    echo "→ Sysroot cmake contents:"; ls -la "$SYSROOT/usr/lib/cmake" | head -n200 || true; \
+    echo "→ Copying SPIRV-Tools CMake install tree"; \
+    if [ -d "$INSTPREFIX/lib/cmake/SPIRV-Tools" ]; then \
+        cp -a "$INSTPREFIX/lib/cmake/SPIRV-Tools" "$SYSROOT/usr/lib/cmake/"; \
+    else \
+        echo "⚠ SPIRV-Tools CMake install tree not found"; \
+    fi; \
+    ls -laR "$INSTPREFIX/lib/cmake" || true; \
+    ls -laR "$SYSROOT/usr/lib/cmake" || true; \
+    echo "→ Inspecting SPIRV-related CMake configs"; \
+    find "$SYSROOT/usr/lib/cmake" -type f -name "*SPIRV*Config.cmake" -exec echo "--- {} ---" \; -exec grep -H . {} \; || echo "⚠ no SPIRV CMake configs present"; \
+    \
+    echo "→ Generating minimal SPIRV-Headers CMake shim"; \
+    mkdir -p "$SYSROOT/usr/lib/cmake/SPIRV-Headers"; \
+    SHIM_HDR="$SYSROOT/usr/lib/cmake/SPIRV-Headers/SPIRV-HeadersConfig.cmake"; \
+    echo "# Autogenerated SPIRV-HeadersConfig.cmake" > "$SHIM_HDR"; \
+    echo "set(SPIRV-Headers_INCLUDE_DIR \"$INSTPREFIX/include/spirv\")" >> "$SHIM_HDR"; \
+    echo "set(SPIRV-Headers_FOUND TRUE)" >> "$SHIM_HDR"; \
+    echo "✓ SPIRV-Headers shim created at $SHIM_HDR"; \
+    cat "$SHIM_HDR"; \
+    \
     echo "=== SYSROOT POPULATION COMPLETE ==="
 
 
 
+
 # ======================
-# SECTION: Shaderc Build (sysroot-aware)
+# SECTION: Shaderc Build (sysroot-aware, with SPIRV path hunting)
 # ======================
 RUN echo "=== BUILDING SHADERC WITH LLVM16 (sysroot SPIRV linkage) ===" && \
     git clone --recursive https://github.com/google/shaderc.git || (echo "⚠ shaderc not cloned; skipping build" && exit 0); \
@@ -2037,22 +2049,37 @@ RUN echo "=== BUILDING SHADERC WITH LLVM16 (sysroot SPIRV linkage) ===" && \
     CXX=/lilyspark/compiler/bin/clang++-16; \
     export CC CXX; \
     SYSROOT="/lilyspark/opt/lib/sys"; \
+    INSTPREFIX="/lilyspark/opt/lib/graphics"; \
     \
-    # Ensure build dir exists
+    # --- Hunt for SPIRV-Tools CMake dir ---
+    SPIRV_TOOLS_DIR=""; \
+    for p in "$SYSROOT/usr/lib/cmake/SPIRV-Tools" "$INSTPREFIX/lib/cmake/SPIRV-Tools"; do \
+        if [ -d "$p" ]; then SPIRV_TOOLS_DIR="$p"; break; fi; \
+    done; \
+    echo "✓ Using SPIRV-Tools_DIR=$SPIRV_TOOLS_DIR"; \
+    \
+    # --- Hunt for SPIRV-Headers CMake dir ---
+    SPIRV_HEADERS_DIR=""; \
+    for p in "$SYSROOT/usr/lib/cmake/SPIRV-Headers" "$INSTPREFIX/lib/cmake/SPIRV-Headers"; do \
+        if [ -d "$p" ]; then SPIRV_HEADERS_DIR="$p"; break; fi; \
+    done; \
+    echo "✓ Using SPIRV-Headers_DIR=$SPIRV_HEADERS_DIR"; \
+    \
     mkdir -p build && cd build && \
     \
     cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/graphics \
+        -DCMAKE_INSTALL_PREFIX=$INSTPREFIX \
         -DCMAKE_C_COMPILER=$CC \
         -DCMAKE_CXX_COMPILER=$CXX \
         -DCMAKE_SYSROOT=$SYSROOT \
-        -DCMAKE_PREFIX_PATH="$SYSROOT/usr;/lilyspark/opt/lib/graphics" \
-        -DSPIRV-Tools_DIR="$SYSROOT/usr/lib/cmake/SPIRV-Tools" \
-        -DSPIRV-Headers_DIR="$SYSROOT/usr/include/spirv" \
+        -DCMAKE_PREFIX_PATH="$SYSROOT/usr;$INSTPREFIX" \
+        -DSPIRV-Tools_DIR="$SPIRV_TOOLS_DIR" \
+        -DSPIRV-Headers_DIR="$SPIRV_HEADERS_DIR" \
         -DCMAKE_FIND_ROOT_PATH=$SYSROOT \
         -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
         -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+        -DSHADERC_ENABLE_SYSTEM_SPIRV_TOOLS=ON \
         -DSHADERC_SKIP_TESTS=ON \
         -DSHADERC_SKIP_EXAMPLES=ON || echo "⚠ Shaderc cmake configure failed"; \
     \
@@ -2062,12 +2089,10 @@ RUN echo "=== BUILDING SHADERC WITH LLVM16 (sysroot SPIRV linkage) ===" && \
     cd ../.. && rm -rf shaderc 2>/dev/null || true; \
     \
     echo "=== POST-INSTALL VERIFICATION ==="; \
-    ls -la /lilyspark/opt/lib/graphics/bin/shaderc* 2>/dev/null || echo "No shaderc binaries found"; \
-    ls -la /lilyspark/opt/lib/graphics/lib/libshaderc* 2>/dev/null || echo "No shaderc libraries found"; \
-    ls -la /lilyspark/opt/lib/graphics/lib/libSPIRV-Tools* 2>/dev/null || echo "No SPIRV-Tools libraries found"; \
+    ls -la $INSTPREFIX/bin/shaderc* 2>/dev/null || echo "No shaderc binaries found"; \
+    ls -la $INSTPREFIX/lib/libshaderc* 2>/dev/null || echo "No shaderc libraries found"; \
+    ls -la $INSTPREFIX/lib/libSPIRV-Tools* 2>/dev/null || echo "No SPIRV-Tools libraries found"; \
     echo "=== SHADERC BUILD COMPLETE ==="
-
-
 
 
 
