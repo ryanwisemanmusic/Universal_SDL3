@@ -1875,71 +1875,87 @@ RUN echo "=== COPYING PYTHON PACKAGES TO CUSTOM FILESYSTEM ===" && \
     done
 
 # ======================
-# SECTION: SPIRV-Tools Build (improved + robust header handling)
+# SECTION: SPIRV-Headers Build (standalone, installed first)
 # ======================
-RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
-    /usr/local/bin/check_llvm15.sh "pre-spirv-tools-source-build" || true && \
+RUN echo "=== BUILDING SPIRV-HEADERS FROM SOURCE ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-spirv-headers-build" || true && \
     \
-    echo "=== CLONING SPIRV-TOOLS REPO ===" && \
-    git clone https://github.com/KhronosGroup/SPIRV-Tools.git spirv-tools && \
-    cd spirv-tools && \
+    echo "=== CLONING SPIRV-HEADERS REPO ===" && \
+    git clone https://github.com/KhronosGroup/SPIRV-Headers.git spirv-headers && \
+    cd spirv-headers && mkdir -p build && cd build && \
     \
-    echo "=== ENSURING SPIRV-HEADERS ARE PRESENT (explicit clone + submodule fallback) ===" && \
-    # Prefer explicit clone into external/spirv-headers (works reliably in Docker builds)
-    if [ ! -d external/spirv-headers ]; then \
-        echo "→ external/spirv-headers missing: cloning SPIRV-Headers explicitly"; \
-        git clone --depth=1 https://github.com/KhronosGroup/SPIRV-Headers.git external/spirv-headers || true; \
-    fi && \
-    # If explicit clone didn't populate, try submodule init as a fallback
-    if [ ! -d external/spirv-headers ]; then \
-        echo "→ explicit clone failed or empty — attempting submodule init/update"; \
-        git submodule update --init --recursive || true; \
-    fi && \
-    echo "=== VERIFICATION: external/spirv-headers CONTENTS ===" && \
-    ls -la external/spirv-headers/ || true && \
-    \
-    # Show whether the "unified1" grammar files exist (these are the ones that failed earlier)
-    echo "=== CHECK: grammar JSON files (expected under include/spirv/unified1) ===" && \
-    if compgen -G "external/spirv-headers/include/spirv/unified1/*.grammar.json" > /dev/null 2>&1; then \
-        echo "→ grammar JSON files present:"; ls -la external/spirv-headers/include/spirv/unified1/*.grammar.json || true; \
-    else \
-        echo "⚠ grammar JSON files missing — will attempt a quick fetch of common missing entries (best-effort)"; \
-        mkdir -p external/spirv-headers/include/spirv/unified1 || true; \
-        for f in extinst.glsl.std.450.grammar.json extinst.debuginfo.grammar.json extinst.opencl.debuginfo.100.grammar.json extinst.nonsemantic.shader.debuginfo.100.grammar.json; do \
-            if [ ! -e external/spirv-headers/include/spirv/unified1/$f ]; then \
-                echo "→ Missing $f ; attempting to fetch from raw GitHub (best-effort)"; \
-                curl -fsSL "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/main/include/spirv/unified1/$f" -o external/spirv-headers/include/spirv/unified1/$f || echo "⚠ fetch failed for $f"; \
-            fi; \
-        done; \
-        echo "→ After fetch attempt, contents:"; ls -la external/spirv-headers/include/spirv/unified1/ || true; \
-    fi && \
-    \
-    # Fail-fast debug if headers still missing — but don't abort whole Docker build; print diagnostic
-    if [ ! -d external/spirv-headers ] || ! compgen -G "external/spirv-headers/include/spirv/unified1/*.grammar.json" > /dev/null 2>&1; then \
-        echo "!!! ERROR: SPIRV-Headers not usable or grammar files missing. SPIRV-Tools build likely to fail."; \
-        echo "Print external/spirv-headers tree for diagnostics:"; find external/spirv-headers -maxdepth 3 -type f -print || true; \
-    fi && \
-    \
-    echo "=== CONFIGURING SPIRV-TOOLS WITH CMAKE (absolute header path) ===" && \
-    # Use absolute path for SPIRV-Headers to avoid relative-path problems in CMake targets
-    ABS_HEADERS_DIR="$(pwd)/external/spirv-headers"; \
-    mkdir -p build && cd build && \
+    echo "=== CONFIGURING SPIRV-HEADERS INSTALL ===" && \
     cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/graphics \
         -DCMAKE_C_COMPILER=/lilyspark/compiler/bin/clang-16 \
         -DCMAKE_CXX_COMPILER=/lilyspark/compiler/bin/clang++-16 \
-        -DLLVM_CONFIG_EXECUTABLE=/lilyspark/compiler/bin/llvm-config \
-        -DSPIRV-Headers_SOURCE_DIR="$ABS_HEADERS_DIR" \
+        -DCMAKE_C_FLAGS="-I/lilyspark/compiler/include -march=armv8-a" \
+        -DCMAKE_CXX_FLAGS="-I/lilyspark/compiler/include -march=armv8-a" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -Wl,-rpath,/lilyspark/compiler/lib" || true && \
+    \
+    echo "=== INSTALLING SPIRV-HEADERS ===" && \
+    make -j"$(nproc)" install 2>&1 | tee /tmp/spirv-headers-install.log || true && \
+    \
+    echo "=== CLEANUP SPIRV-HEADERS SOURCE DIR ===" && \
+    cd ../.. && rm -rf spirv-headers 2>/dev/null || true && \
+    \
+    echo "=== VERIFICATION: SPIRV-HEADERS INSTALLATION ===" && \
+    ls -la /lilyspark/opt/lib/graphics/include/spirv 2>/dev/null || echo "No SPIRV-Headers installed" && \
+    /usr/local/bin/check_llvm15.sh "post-spirv-headers-build" || true && \
+    echo "=== SPIRV-HEADERS BUILD COMPLETE ==="
+
+# ======================
+# SECTION: Populate sysroot and SPIRV-Tools external headers
+# ======================
+RUN echo "=== POPULATING SYSROOT AND SPIRV-TOOLS EXTERNAL FOLDER WITH SPIRV-HEADERS ===" && \
+    SYSROOT="/lilyspark/opt/lib/sys" && \
+    HEADER_INSTALL_DIR="/lilyspark/opt/lib/graphics/include/spirv" && \
+    mkdir -p "$SYSROOT/include/spirv" && \
+    cp -R "$HEADER_INSTALL_DIR/"* "$SYSROOT/include/spirv/" && \
+    echo "=== SYSROOT POPULATION COMPLETE ===" && \
+    \
+    # Also populate SPIRV-Tools external folder so CMake can detect the headers
+    mkdir -p /spirv-tools/external && \
+    ln -sf "$HEADER_INSTALL_DIR" /spirv-tools/external/spirv-headers && \
+    echo "=== SPIRV-TOOLS EXTERNAL FOLDER POPULATED ==="
+
+# ======================
+# SECTION: SPIRV-Tools Build (using full SPIRV-Headers source)
+# ======================
+RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
+    /usr/local/bin/check_llvm15.sh "pre-spirv-tools-source-build" || true && \
+    \
+    echo "=== CLEAN ANY PREVIOUS SPIRV-TOOLS ===" && \
+    rm -rf spirv-tools || true && \
+    \
+    echo "=== CLONING SPIRV-TOOLS REPO ===" && \
+    git clone https://github.com/KhronosGroup/SPIRV-Tools.git spirv-tools && \
+    cd spirv-tools && mkdir -p build && \
+    \
+    echo "=== POPULATE SPIRV-HEADERS INSIDE SPIRV-TOOLS ===" && \
+    rm -rf external/spirv-headers && \
+    git clone https://github.com/KhronosGroup/SPIRV-Headers.git external/spirv-headers && \
+    \
+    echo "=== CONFIGURING SPIRV-TOOLS WITH CMAKE ===" && \
+    SPIRV_HEADERS_ABS="$(pwd)/external/spirv-headers" && \
+    cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/graphics \
+        -DCMAKE_C_COMPILER=/lilyspark/compiler/bin/clang-16 \
+        -DCMAKE_CXX_COMPILER=/lilyspark/compiler/bin/clang++-16 \
+        -DSPIRV-Headers_SOURCE_DIR="$SPIRV_HEADERS_ABS" \
         -DSPIRV_SKIP_TESTS=ON \
         -DCMAKE_C_FLAGS="-I/lilyspark/compiler/include -march=armv8-a" \
         -DCMAKE_CXX_FLAGS="-I/lilyspark/compiler/include -march=armv8-a" \
         -DCMAKE_EXE_LINKER_FLAGS="-L/lilyspark/compiler/lib -Wl,-rpath,/lilyspark/compiler/lib" || true && \
     \
-    echo "=== BUILDING SPIRV-TOOLS (make) ===" && \
-    make -j"$(nproc)" 2>&1 | tee /tmp/spirv-build.log || true && \
+    echo "=== BUILDING SPIRV-TOOLS ===" && \
+    make -j"$(nproc)" 2>&1 | tee /tmp/spirv-tools-build.log || true && \
+    \
     echo "=== INSTALLING SPIRV-TOOLS ===" && \
-    make install 2>&1 | tee /tmp/spirv-install.log || true && \
+    make install 2>&1 | tee /tmp/spirv-tools-install.log || true && \
     \
     echo "=== CLEANUP SPIRV-TOOLS SOURCE DIR ===" && \
     cd ../.. && rm -rf spirv-tools 2>/dev/null || true && \
@@ -1948,7 +1964,6 @@ RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
     ls -la /lilyspark/opt/lib/graphics/bin/spirv-* 2>/dev/null || echo "No SPIRV-Tools binaries found" && \
     ls -la /lilyspark/opt/lib/graphics/lib/libSPIRV-Tools* 2>/dev/null || echo "No SPIRV-Tools libraries found" && \
     \
-    # Create linker-friendly symlinks (if any libs were installed)
     cd /lilyspark/opt/lib/graphics/lib 2>/dev/null || true; \
     for lib in $(ls libSPIRV-Tools*.so.* 2>/dev/null); do \
         soname=$(echo "$lib" | sed 's/\(.*\.so\.[0-9]*\).*/\1/'); \
@@ -1962,6 +1977,8 @@ RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
     export SPIRV_TOOLS_ROOT=/lilyspark/opt/lib/graphics && \
     export SPIRV_HEADERS_ROOT=/lilyspark/opt/lib/graphics
 
+
+
 # ======================
 # SECTION: Populate sysroot with SPIRV-Tools (so shaderc can find it)
 # ======================
@@ -1972,43 +1989,20 @@ RUN echo "=== POPULATING SYSROOT WITH SPIRV-TOOLS ARTIFACTS ===" && \
     mkdir -p "$SYSROOT/usr/include" "$SYSROOT/usr/lib" "$SYSROOT/usr/lib/pkgconfig" "$SYSROOT/usr/lib/cmake" "$SYSROOT/usr/share"; \
     \
     echo "→ Copying includes"; \
-    if [ -d "$INSTPREFIX/include" ]; then \
-        cp -a "$INSTPREFIX/include/." "$SYSROOT/usr/include/"; \
-    else \
-        echo "⚠ no $INSTPREFIX/include found"; \
-    fi; \
+    cp -a "$INSTPREFIX/include/." "$SYSROOT/usr/include/"; \
     \
     echo "→ Copying libraries"; \
-    if ls "$INSTPREFIX/lib"/libSPIRV-Tools* 1> /dev/null 2>&1; then \
-        cp -a "$INSTPREFIX/lib"/libSPIRV-Tools* "$SYSROOT/usr/lib/"; \
-    else \
-        echo "⚠ no SPIRV libs found in $INSTPREFIX/lib"; \
-    fi; \
+    cp -a "$INSTPREFIX/lib"/libSPIRV-Tools* "$SYSROOT/usr/lib/" || echo "⚠ no SPIRV libs found"; \
     \
     echo "→ Copying pkg-config files"; \
-    if [ -d "$INSTPREFIX/lib/pkgconfig" ]; then \
-        cp -a "$INSTPREFIX/lib/pkgconfig/." "$SYSROOT/usr/lib/pkgconfig/"; \
-    else \
-        echo "⚠ no pkgconfig dir at $INSTPREFIX/lib/pkgconfig"; \
-    fi; \
+    if [ -d "$INSTPREFIX/lib/pkgconfig" ]; then cp -a "$INSTPREFIX/lib/pkgconfig/." "$SYSROOT/usr/lib/pkgconfig/"; fi; \
     \
     echo "→ Copying CMake package config"; \
-    CMAKE_SRC_DIR=""; \
-    if [ -d "$INSTPREFIX/cmake" ]; then \
-        CMAKE_SRC_DIR="$INSTPREFIX/cmake"; \
-    elif [ -d "$INSTPREFIX/lib/cmake" ]; then \
-        CMAKE_SRC_DIR="$INSTPREFIX/lib/cmake"; \
-    fi; \
-    if [ -n "$CMAKE_SRC_DIR" ]; then \
-        mkdir -p "$SYSROOT/usr/lib/cmake"; \
-        cp -a "$CMAKE_SRC_DIR/." "$SYSROOT/usr/lib/cmake/"; \
-        echo "✓ copied $CMAKE_SRC_DIR -> $SYSROOT/usr/lib/cmake/"; \
-    else \
+    if [ -d "$INSTPREFIX/lib/cmake" ]; then cp -a "$INSTPREFIX/lib/cmake/." "$SYSROOT/usr/lib/cmake/"; else \
         echo "⚠ No cmake package tree found; creating minimal shim"; \
         mkdir -p "$SYSROOT/usr/lib/cmake/SPIRV-Tools"; \
         SHIM="$SYSROOT/usr/lib/cmake/SPIRV-Tools/SPIRV-ToolsConfig.cmake"; \
-        LIB_DIR="$INSTPREFIX/lib"; \
-        INCLUDE_DIR="$INSTPREFIX/include"; \
+        LIB_DIR="$INSTPREFIX/lib"; INCLUDE_DIR="$INSTPREFIX/include"; \
         echo "# Minimal SPIRV-ToolsConfig.cmake (shim) -- autogenerated" > "$SHIM"; \
         echo "set(SPIRV-Tools_INCLUDE_DIR \"$INCLUDE_DIR\")" >> "$SHIM"; \
         echo "set(SPIRV-Tools_FOUND TRUE)" >> "$SHIM"; \
@@ -2020,8 +2014,7 @@ RUN echo "=== POPULATING SYSROOT WITH SPIRV-TOOLS ARTIFACTS ===" && \
             echo "  set_target_properties($lib PROPERTIES IMPORTED_LOCATION \"$SO_LIB\" INTERFACE_INCLUDE_DIRECTORIES \"$INCLUDE_DIR\")" >> "$SHIM"; \
             echo "endif()" >> "$SHIM"; \
         done; \
-        echo "✓ wrote shim $SHIM"; \
-        ls -la "$SHIM" || true; \
+        echo "✓ wrote shim $SHIM"; ls -la "$SHIM" || true; \
     fi; \
     \
     echo "→ Sysroot pkgconfig contents:"; ls -la "$SYSROOT/usr/lib/pkgconfig" || true; \
@@ -2029,6 +2022,7 @@ RUN echo "=== POPULATING SYSROOT WITH SPIRV-TOOLS ARTIFACTS ===" && \
     echo "→ Sysroot lib contents:"; ls -la "$SYSROOT/usr/lib" | head -n120 || true; \
     echo "→ Sysroot cmake contents:"; ls -la "$SYSROOT/usr/lib/cmake" | head -n200 || true; \
     echo "=== SYSROOT POPULATION COMPLETE ==="
+
 
 
 # ======================
