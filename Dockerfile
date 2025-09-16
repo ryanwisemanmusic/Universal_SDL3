@@ -2034,15 +2034,12 @@ RUN echo "=== POPULATING SYSROOT WITH SPIRV-HEADERS AND SPIRV-TOOLS ===" && \
     \
     echo "=== SYSROOT POPULATION COMPLETE ==="
 
-
-
-
 # ======================
-# SECTION: Shaderc Build (sysroot-aware, with SPIRV path hunting)
+# SECTION: Shaderc Build (sysroot-aware, SPIRV linkage, mandatory .pc files)
 # ======================
 RUN echo "=== BUILDING SHADERC WITH LLVM16 (sysroot SPIRV linkage) ===" && \
-    git clone --recursive https://github.com/google/shaderc.git || (echo "⚠ shaderc not cloned; skipping build" && exit 0); \
-    cd shaderc || (echo "⚠ shaderc directory missing; skipping build" && exit 0); \
+    git clone --recursive https://github.com/google/shaderc.git || echo "⚠ shaderc not cloned; skipping build"; \
+    cd shaderc || echo "⚠ shaderc directory missing; skipping build"; \
     \
     export PATH="/lilyspark/compiler/bin:$PATH"; \
     CC=/lilyspark/compiler/bin/clang-16; \
@@ -2051,22 +2048,38 @@ RUN echo "=== BUILDING SHADERC WITH LLVM16 (sysroot SPIRV linkage) ===" && \
     SYSROOT="/lilyspark/opt/lib/sys"; \
     INSTPREFIX="/lilyspark/opt/lib/graphics"; \
     \
-    # --- Hunt for SPIRV-Tools CMake dir ---
-    SPIRV_TOOLS_DIR=""; \
-    for p in "$SYSROOT/usr/lib/cmake/SPIRV-Tools" "$INSTPREFIX/lib/cmake/SPIRV-Tools"; do \
-        if [ -d "$p" ]; then SPIRV_TOOLS_DIR="$p"; break; fi; \
-    done; \
-    echo "✓ Using SPIRV-Tools_DIR=$SPIRV_TOOLS_DIR"; \
+    # --- Ensure pkgconfig dirs exist ---
+    mkdir -p "$SYSROOT/usr/lib/pkgconfig" "$INSTPREFIX/lib/pkgconfig" || true; \
     \
-    # --- Hunt for SPIRV-Headers CMake dir ---
-    SPIRV_HEADERS_DIR=""; \
-    for p in "$SYSROOT/usr/lib/cmake/SPIRV-Headers" "$INSTPREFIX/lib/cmake/SPIRV-Headers"; do \
-        if [ -d "$p" ]; then SPIRV_HEADERS_DIR="$p"; break; fi; \
-    done; \
-    echo "✓ Using SPIRV-Headers_DIR=$SPIRV_HEADERS_DIR"; \
+    # --- Mandatory .pc files for SPIRV-Tools ---
+    { \
+      echo "prefix=$INSTPREFIX"; \
+      echo "exec_prefix=\${prefix}"; \
+      echo "libdir=\${exec_prefix}/lib"; \
+      echo "includedir=\${prefix}/include"; \
+      echo ""; \
+      echo "Name: SPIRV-Tools"; \
+      echo "Description: SPIRV Tools library"; \
+      echo "Version: 2025.0"; \
+      echo "Libs: -L\${libdir} -lSPIRV-Tools"; \
+      echo "Cflags: -I\${includedir}"; \
+    } > "$SYSROOT/usr/lib/pkgconfig/spirv-tools.pc" 2>/dev/null || echo "⚠ failed to write sysroot spirv-tools.pc"; \
+    cp "$SYSROOT/usr/lib/pkgconfig/spirv-tools.pc" "$INSTPREFIX/lib/pkgconfig/" 2>/dev/null || echo "⚠ failed to copy spirv-tools.pc"; \
+    \
+    { \
+      echo "prefix=$INSTPREFIX"; \
+      echo "exec_prefix=\${prefix}"; \
+      echo "libdir=\${exec_prefix}/lib"; \
+      echo "includedir=\${prefix}/include"; \
+      echo ""; \
+      echo "Name: SPIRV-Headers"; \
+      echo "Description: SPIRV Headers"; \
+      echo "Version: 2025.0"; \
+      echo "Cflags: -I\${includedir}"; \
+    } > "$SYSROOT/usr/lib/pkgconfig/spirv-headers.pc" 2>/dev/null || echo "⚠ failed to write sysroot spirv-headers.pc"; \
+    cp "$SYSROOT/usr/lib/pkgconfig/spirv-headers.pc" "$INSTPREFIX/lib/pkgconfig/" 2>/dev/null || echo "⚠ failed to copy spirv-headers.pc"; \
     \
     mkdir -p build && cd build && \
-    \
     cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=$INSTPREFIX \
@@ -2074,11 +2087,12 @@ RUN echo "=== BUILDING SHADERC WITH LLVM16 (sysroot SPIRV linkage) ===" && \
         -DCMAKE_CXX_COMPILER=$CXX \
         -DCMAKE_SYSROOT=$SYSROOT \
         -DCMAKE_PREFIX_PATH="$SYSROOT/usr;$INSTPREFIX" \
-        -DSPIRV-Tools_DIR="$SPIRV_TOOLS_DIR" \
-        -DSPIRV-Headers_DIR="$SPIRV_HEADERS_DIR" \
+        -DSPIRV-Tools_DIR="$INSTPREFIX/lib/cmake/SPIRV-Tools" \
+        -DSPIRV-Headers_DIR="$INSTPREFIX/lib/cmake/SPIRV-Headers" \
         -DCMAKE_FIND_ROOT_PATH=$SYSROOT \
         -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
         -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+        -DCMAKE_FIND_DEBUG_MODE=ON \
         -DSHADERC_ENABLE_SYSTEM_SPIRV_TOOLS=ON \
         -DSHADERC_SKIP_TESTS=ON \
         -DSHADERC_SKIP_EXAMPLES=ON || echo "⚠ Shaderc cmake configure failed"; \
@@ -2089,14 +2103,10 @@ RUN echo "=== BUILDING SHADERC WITH LLVM16 (sysroot SPIRV linkage) ===" && \
     cd ../.. && rm -rf shaderc 2>/dev/null || true; \
     \
     echo "=== POST-INSTALL VERIFICATION ==="; \
-    ls -la $INSTPREFIX/bin/shaderc* 2>/dev/null || echo "No shaderc binaries found"; \
-    ls -la $INSTPREFIX/lib/libshaderc* 2>/dev/null || echo "No shaderc libraries found"; \
-    ls -la $INSTPREFIX/lib/libSPIRV-Tools* 2>/dev/null || echo "No SPIRV-Tools libraries found"; \
+    ls -la $INSTPREFIX/bin/shaderc* 2>/dev/null || echo "⚠ No shaderc binaries found"; \
+    ls -la $INSTPREFIX/lib/libshaderc* 2>/dev/null || echo "⚠ No shaderc libraries found"; \
+    ls -la $INSTPREFIX/lib/libSPIRV-Tools* 2>/dev/null || echo "⚠ No SPIRV-Tools libraries found"; \
     echo "=== SHADERC BUILD COMPLETE ==="
-
-
-
-
 
 # ======================
 # SECTION: libgbm Build (ARM64-safe, non-fatal)
