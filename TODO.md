@@ -1,6 +1,7 @@
 - Have libepoxy handled like libdrm 
 - Have shaderc handled like libdrm
 - Find libavif
+- Fix MESA Problems
 - Have libdrm be linked with MESA and GBM (MESA) officially (libdrm now is recognized!!!!)
 - Link MESA with SDL3
 - Fix missing libEGL.so library and EGL headers
