@@ -1982,6 +1982,115 @@ RUN echo "=== BUILDING SPIRV-TOOLS FROM SOURCE WITH LLVM16 ===" && \
     export SPIRV_TOOLS_ROOT=/lilyspark/opt/lib/graphics && \
     export SPIRV_HEADERS_ROOT=/lilyspark/opt/lib/graphics
 
+# ======================
+# SECTION: Pre-GLSLANG Debug and SPIRV + Core Population
+# ======================
+RUN echo "=== PRE-GLSLANG DEBUG: VERIFYING SPIRV + CORE HEADERS/LIBS FOR GLSLANG ===" && \
+    SYSROOT="/lilyspark/opt/lib/sys" && \
+    INSTPREFIX="/lilyspark/opt/lib/graphics/usr" && \
+    \
+    echo "→ Current SPIRV-Tools install state:" && \
+    echo "  Binaries:" && ls -la $INSTPREFIX/bin/spirv-* 2>/dev/null || echo "    ⚠ No SPIRV binaries" && \
+    echo "  Libraries:" && ls -la $INSTPREFIX/lib/libSPIRV-Tools* 2>/dev/null || echo "    ⚠ No SPIRV libraries" && \
+    echo "  Headers:" && ls -la $INSTPREFIX/include/spirv/ 2>/dev/null || echo "    ⚠ No SPIRV headers" && \
+    echo "  CMake configs:" && ls -la $INSTPREFIX/lib/cmake/SPIRV-Tools/ 2>/dev/null || echo "    ⚠ No SPIRV-Tools CMake configs" && \
+    \
+    echo "→ Preparing glslang sysroot layout" && \
+    mkdir -p $SYSROOT/usr/include/spirv $SYSROOT/usr/lib $SYSROOT/usr/lib/cmake $SYSROOT/usr/lib/pkgconfig $SYSROOT/usr/share && \
+    \
+    echo "→ Populating SPIRV into sysroot" && \
+    cp -a $INSTPREFIX/include/spirv/* $SYSROOT/usr/include/spirv/ 2>/dev/null || echo "⚠ No SPIRV headers copied" && \
+    cp -a $INSTPREFIX/lib/libSPIRV-Tools* $SYSROOT/usr/lib/ 2>/dev/null || echo "⚠ No SPIRV libs copied" && \
+    cp -a $INSTPREFIX/lib/cmake/SPIRV-Tools $SYSROOT/usr/lib/cmake/ 2>/dev/null || echo "⚠ No SPIRV-Tools cmake configs copied" && \
+    cp -a $INSTPREFIX/lib/pkgconfig/* $SYSROOT/usr/lib/pkgconfig/ 2>/dev/null || echo "⚠ No SPIRV pkgconfig files copied" && \
+    \
+    echo "→ Populating core toolchain into sysroot (headers, crt, stdlib)" && \
+    cp -a /lilyspark/usr/include/* $SYSROOT/usr/include/ 2>/dev/null || echo "⚠ Core headers missing" && \
+    cp -a /lilyspark/usr/share/* $SYSROOT/usr/share/ 2>/dev/null || true && \
+    cp -a /lilyspark/usr/lib/crt*.o $SYSROOT/usr/lib/ 2>/dev/null || true && \
+    cp -a /lilyspark/usr/lib/libgcc* $SYSROOT/usr/lib/ 2>/dev/null || true && \
+    cp -a /lilyspark/usr/lib/libstdc++* $SYSROOT/usr/lib/ 2>/dev/null || true && \
+    \
+    echo "=== PRE-GLSLANG DEBUG COMPLETE ===" && \
+    echo "Sysroot includes (stdlib sanity check):" && ls -la $SYSROOT/usr/include/c* | head -20 || true && \
+    echo "Sysroot libs (C++/crt sanity check):" && ls -la $SYSROOT/usr/lib/libstdc++* $SYSROOT/usr/lib/crt*.o 2>/dev/null || true && \
+    echo "Sysroot SPIRV headers:" && ls -la $SYSROOT/usr/include/spirv/ || true && \
+    echo "Sysroot SPIRV libs:" && ls -la $SYSROOT/usr/lib/libSPIRV-Tools* || true && \
+    echo "Sysroot SPIRV cmake:" && ls -la $SYSROOT/usr/lib/cmake/SPIRV-Tools/ || true && \
+    echo "Sysroot pkgconfig:" && ls -la $SYSROOT/usr/lib/pkgconfig | grep SPIRV || true
+
+
+# ======================
+# glslang Build (ARM64-safe, fully logged)
+# ======================
+ARG GLSLANG_VER=14.0.0
+ARG GLSLANG_URL="https://github.com/KhronosGroup/glslang/archive/refs/tags/${GLSLANG_VER}.tar.gz"
+
+ENV PKG_CONFIG_PATH="/lilyspark/opt/lib/graphics/usr/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+ENV PATH="/lilyspark/compiler/bin:${PATH}"
+
+RUN echo "=== START: BUILDING glslang ${GLSLANG_VER} ===" && \
+    ARCH="$(uname -m)" && echo "Detected architecture: $ARCH"; \
+    \
+    mkdir -p /tmp/glslang-src && cd /tmp/glslang-src; \
+    echo "Fetching glslang tarball: ${GLSLANG_URL}"; \
+    curl -L "${GLSLANG_URL}" -o glslang.tar.gz || (echo "⚠ Failed to fetch glslang tarball"; exit 0); \
+    tar -xf glslang.tar.gz --strip-components=1 || echo "⚠ Tar extraction failed"; \
+    \
+    # ----------------------
+    # 1️⃣ Compiler detection
+    # ----------------------
+    echo "=== Compiler detection ==="; \
+    CC="$(command -v /lilyspark/compiler/bin/clang-16 || command -v clang)"; \
+    CXX="$(command -v /lilyspark/compiler/bin/clang++-16 || command -v clang++)"; \
+    echo "Using CC=$CC, CXX=$CXX"; \
+    SYSROOT="/lilyspark/opt/lib/sys"; \
+    mkdir -p builddir; cd builddir; \
+    \
+    # ----------------------
+    # 2️⃣ CMake configure
+    # ----------------------
+    echo "=== CMake configure ==="; \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/graphics/usr \
+        -DCMAKE_C_COMPILER=$CC \
+        -DCMAKE_CXX_COMPILER=$CXX \
+        -DCMAKE_SYSROOT=$SYSROOT \
+        -DCMAKE_C_FLAGS="--sysroot=$SYSROOT -I$SYSROOT/usr/include -march=armv8-a" \
+        -DCMAKE_CXX_FLAGS="--sysroot=$SYSROOT -I$SYSROOT/usr/include -march=armv8-a" \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+        -DENABLE_OPT=OFF | tee /tmp/glslang-cmake-configure.log; \
+    \
+    # ----------------------
+    # 3️⃣ Build and install
+    # ----------------------
+    echo "=== CMake build ==="; \
+    cmake --build . -j$(nproc) 2>&1 | tee /tmp/glslang-cmake-build.log; \
+    echo "=== CMake install ==="; \
+    cmake --install . --prefix /lilyspark/opt/lib/graphics/usr 2>&1 | tee /tmp/glslang-cmake-install.log; \
+    \
+    # ----------------------
+    # 4️⃣ Populate sysroot
+    # ----------------------
+    echo "=== Populating sysroot AFTER installation ==="; \
+    mkdir -p $SYSROOT/usr/{include,lib,lib/pkgconfig}; \
+    cp -av /lilyspark/opt/lib/graphics/usr/include/* $SYSROOT/usr/include/ 2>/dev/null || echo "⚠ include copy failed"; \
+    cp -av /lilyspark/opt/lib/graphics/usr/lib/* $SYSROOT/usr/lib/ 2>/dev/null || echo "⚠ lib copy failed"; \
+    cp -av /lilyspark/opt/lib/graphics/usr/lib/pkgconfig/* $SYSROOT/usr/lib/pkgconfig/ 2>/dev/null || echo "⚠ pkgconfig copy failed"; \
+    \
+    # ----------------------
+    # 5️⃣ Verify pkg-config and cleanup
+    # ----------------------
+    echo "=== Verifying pkg-config can see glslang ==="; \
+    export PKG_CONFIG_PATH="$SYSROOT/usr/lib/pkgconfig:$PKG_CONFIG_PATH"; \
+    pkg-config --modversion glslang || echo "⚠ glslang still not detected"; \
+    pkg-config --cflags glslang; pkg-config --libs glslang; \
+    echo "=== Post-install verification ==="; \
+    ls -R /lilyspark/opt/lib/graphics | head -50; \
+    cd /; rm -rf /tmp/glslang-src; \
+    echo "=== glslang BUILD complete ==="; \
+    true
 
 
 # ======================

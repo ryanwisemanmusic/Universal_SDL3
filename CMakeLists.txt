@@ -980,6 +980,131 @@ else()
 endif()
 
 # -------------------------------
+# glslang Graphics/Shader Support
+# -------------------------------
+message(STATUS "Checking for glslang support...")
+
+# Search for pre-built glslang
+find_path(GLSLANG_INSTALL_DIR
+    NAMES include/glslang/glslang_c_interface.h lib/libglslang.so lib/libglslang.a
+    PATHS
+        /lilyspark/opt/lib/sys/usr
+        /usr
+        /usr/local
+    NO_DEFAULT_PATH
+)
+
+find_library(GLSLANG_LIBRARY
+    NAMES glslang
+    PATHS
+        /lilyspark/opt/lib/sys/usr/lib
+        /usr/lib
+        /usr/local/lib
+    NO_DEFAULT_PATH
+)
+
+# Check if we need to build from source
+set(GLSLANG_BUILD_FROM_SOURCE FALSE)
+set(GLSLANG_FOUND FALSE)
+
+if(GLSLANG_LIBRARY AND GLSLANG_INSTALL_DIR)
+    set(GLSLANG_FOUND TRUE)
+    message(STATUS "✓ glslang found (pre-built)")
+    message(STATUS "  library: ${GLSLANG_LIBRARY}")
+    message(STATUS "  install dir: ${GLSLANG_INSTALL_DIR}")
+    
+else()
+    message(STATUS "ℹ glslang not found as pre-built - checking if we can build from source")
+    
+    # Check for build dependencies
+    find_program(MESON_EXECUTABLE meson)
+    find_program(NINJA_EXECUTABLE ninja)
+    find_program(CURL_EXECUTABLE curl)
+    find_program(TAR_EXECUTABLE tar)
+    find_program(CLANG_16_EXECUTABLE NAMES clang-16 PATHS /lilyspark/opt/lib/sys/compiler/bin NO_DEFAULT_PATH)
+    find_program(CLANGXX_16_EXECUTABLE NAMES clang++-16 PATHS /lilyspark/opt/lib/sys/compiler/bin NO_DEFAULT_PATH)
+    
+    if(MESON_EXECUTABLE AND NINJA_EXECUTABLE AND CURL_EXECUTABLE AND TAR_EXECUTABLE AND CLANG_16_EXECUTABLE AND CLANGXX_16_EXECUTABLE)
+        set(GLSLANG_BUILD_FROM_SOURCE TRUE)
+        set(GLSLANG_FOUND SOURCE_AVAILABLE)
+        message(STATUS "✓ glslang build dependencies found - will build from source")
+        message(STATUS "  meson: ${MESON_EXECUTABLE}")
+        message(STATUS "  ninja: ${NINJA_EXECUTABLE}")
+        message(STATUS "  clang-16: ${CLANG_16_EXECUTABLE}")
+        message(STATUS "  clang++-16: ${CLANGXX_16_EXECUTABLE}")
+        
+    else()
+        set(GLSLANG_FOUND FALSE)
+        message(STATUS "ℹ glslang not available and cannot build from source")
+        if(NOT MESON_EXECUTABLE)
+            message(STATUS "  Missing: meson")
+        endif()
+        if(NOT NINJA_EXECUTABLE)
+            message(STATUS "  Missing: ninja")
+        endif()
+        if(NOT CLANG_16_EXECUTABLE)
+            message(STATUS "  Missing: clang-16")
+        endif()
+    endif()
+endif()
+
+# Set compile definitions based on glslang availability
+if(GLSLANG_FOUND STREQUAL "TRUE")
+    add_compile_definitions(HAVE_GLSLANG=1)
+    
+elseif(GLSLANG_FOUND STREQUAL "SOURCE_AVAILABLE")
+    add_compile_definitions(HAVE_GLSLANG_SOURCE=1)
+    add_compile_definitions(BUILD_GLSLANG_FROM_SOURCE=1)
+    
+    # Use ExternalProject for glslang source building
+    include(ExternalProject)
+    
+    set(GLSLANG_PREFIX ${CMAKE_BINARY_DIR}/glslang-install)
+    set(GLSLANG_VER 14.0.0)
+    set(GLSLANG_URL "https://github.com/KhronosGroup/glslang/archive/refs/tags/${GLSLANG_VER}.tar.gz")
+    
+    ExternalProject_Add(glslang_build
+        PREFIX ${GLSLANG_PREFIX}
+        URL ${GLSLANG_URL}
+        DOWNLOAD_DIR ${CMAKE_BINARY_DIR}/downloads
+        DOWNLOAD_NAME glslang-${GLSLANG_VER}.tar.gz
+        UPDATE_COMMAND ""
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS ${GLSLANG_PREFIX}/lib/libglslang.so
+    )
+    
+    # Add custom steps for the actual build process
+    ExternalProject_Add_Step(glslang_build build_glslang
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${GLSLANG_PREFIX}
+        COMMAND tar -xf glslang-${GLSLANG_VER}.tar.gz --strip-components=1
+        COMMAND export PATH="/lilyspark/opt/lib/sys/compiler/bin:$PATH" &&
+            export CC=/lilyspark/opt/lib/sys/compiler/bin/clang-16 &&
+            export CXX=/lilyspark/opt/lib/sys/compiler/bin/clang++-16 &&
+            export PKG_CONFIG_SYSROOT_DIR="/lilyspark/opt/lib/sys" &&
+            export PKG_CONFIG_PATH="/lilyspark/opt/lib/sys/usr/lib/pkgconfig:/lilyspark/opt/lib/sys/compiler/lib/pkgconfig" &&
+            export CFLAGS="--sysroot=/lilyspark/opt/lib/sys -I/lilyspark/opt/lib/sys/usr/include -I/lilyspark/opt/lib/sys/compiler/include -march=armv8-a" &&
+            export CXXFLAGS="$CFLAGS" &&
+            export LDFLAGS="--sysroot=/lilyspark/opt/lib/sys -L/lilyspark/opt/lib/sys/usr/lib -L/lilyspark/opt/lib/sys/compiler/lib" &&
+            ${MESON_EXECUTABLE} setup builddir
+                --prefix=${GLSLANG_PREFIX}
+                --libdir=lib
+                -Dtests=false
+                -Dglslang_validate=true
+        COMMAND ${NINJA_EXECUTABLE} -C builddir
+        COMMAND ${NINJA_EXECUTABLE} -C builddir install
+        DEPENDEES download
+        WORKING_DIRECTORY <SOURCE_DIR>
+        COMMENT "Building and installing glslang with LLVM16 toolchain"
+    )
+    
+else()
+    add_compile_definitions(HAVE_GLSLANG=0)
+    message(STATUS "ℹ Building without glslang support")
+endif()
+
+# -------------------------------
 # Shaderc Support
 # -------------------------------
 message(STATUS "Checking for Shaderc support...")
