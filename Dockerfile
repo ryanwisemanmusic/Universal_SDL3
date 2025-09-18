@@ -1994,7 +1994,7 @@ RUN echo "=== POPULATING SYSROOT WITH PRE-GLSLANG, SPIRV, AND CORE ===" && \
     mkdir -p "$SYSROOT/usr/include/spirv" "$SYSROOT/usr/include" \
              "$SYSROOT/usr/lib" "$SYSROOT/usr/lib/pkgconfig" \
              "$SYSROOT/usr/lib/cmake" "$SYSROOT/usr/share" \
-             "$SYSROOT/usr/bin"; \
+             "$SYSROOT/usr/bin" "$SYSROOT/lib" "$SYSROOT/compiler/lib" "$SYSROOT/compiler/include"; \
     \
     echo "→ Copying SPIRV-Headers"; \
     [ -d "$INSTPREFIX/include/spirv" ] && cp -a "$INSTPREFIX/include/spirv/." "$SYSROOT/usr/include/spirv/" || echo "⚠ No SPIRV headers copied"; \
@@ -2018,18 +2018,18 @@ RUN echo "=== POPULATING SYSROOT WITH PRE-GLSLANG, SPIRV, AND CORE ===" && \
     echo "set(SPIRV-Headers_FOUND TRUE)" >> "$SHIM"; \
     cat "$SHIM"; \
     \
-    echo "→ Populating core toolchain into sysroot"; \
+    echo "→ Populating core toolchain into sysroot (headers + libstdc++)"; \
     cp -a /lilyspark/usr/include/* "$SYSROOT/usr/include/" 2>/dev/null || echo "⚠ Core headers missing"; \
     \
-    echo "→ Copying libstdc++ headers"; \
-    CXX_HEADERS_DIR=$(find /lilyspark/usr/include -type d -name 'c++*' | head -n1); \
+    echo "→ Copying libstdc++ headers (best-effort)"; \
+    CXX_HEADERS_DIR=$(find /lilyspark/usr/include -type d -name 'c++*' | head -n1 || true); \
     if [ -n "$CXX_HEADERS_DIR" ]; then \
         cp -a "$CXX_HEADERS_DIR" "$SYSROOT/usr/include/" || echo "⚠ libstdc++ headers missing"; \
     else \
         echo "⚠ Could not find libstdc++ headers"; \
     fi; \
     \
-    echo "→ Copying core runtime libraries"; \
+    echo "→ Copying core runtime libraries (CRT, libgcc, libstdc++)"; \
     cp -a /lilyspark/usr/lib/crt*.o "$SYSROOT/usr/lib/" 2>/dev/null || true; \
     cp -a /lilyspark/usr/lib/libgcc* "$SYSROOT/usr/lib/" 2>/dev/null || true; \
     cp -a /lilyspark/usr/lib/libstdc++* "$SYSROOT/usr/lib/" 2>/dev/null || true; \
@@ -2037,30 +2037,121 @@ RUN echo "=== POPULATING SYSROOT WITH PRE-GLSLANG, SPIRV, AND CORE ===" && \
     echo "→ Copying shared data"; \
     cp -a /lilyspark/usr/share/* "$SYSROOT/usr/share/" 2>/dev/null || true; \
     \
-    echo "→ Sysroot population complete. Verifying contents:"; \
-    echo "  Includes (first 20 core files):" && ls -la "$SYSROOT/usr/include/c*" | head -20 || true; \
-    echo "  Libraries (CRT/stdlib):" && ls -la "$SYSROOT/usr/lib/libstdc++*" "$SYSROOT/usr/lib/crt*.o" 2>/dev/null || true; \
-    echo "  SPIRV headers:" && ls -la "$SYSROOT/usr/include/spirv/" || true; \
-    echo "  SPIRV libs:" && ls -la "$SYSROOT/usr/lib/libSPIRV-Tools*" || true; \
-    echo "  SPIRV CMake configs:" && ls -la "$SYSROOT/usr/lib/cmake/SPIRV-Tools/" || true; \
-    echo "  pkg-config files:" && ls -la "$SYSROOT/usr/lib/pkgconfig" | grep SPIRV || true; \
+    ############################################################################## \
+    # Additional copies & symlinks to help clang/ld find runtime and headers     #
+    # (borrowed approach from XORG sysroot population - additive only)          #
+    ############################################################################## \
     \
-    echo "→ Verifying presence of critical C++ headers:"; \
+    echo "→ Copying crt objects / gcc support to sysroot (extra)"; \
+    cp -a /usr/lib/crt*.o "$SYSROOT/usr/lib/" 2>/dev/null || true; \
+    cp -a /usr/lib/gcc/*/*/crt*.o "$SYSROOT/usr/lib/" 2>/dev/null || true || true; \
+    cp -a /usr/lib/gcc/*/*/*.a "$SYSROOT/usr/lib/" 2>/dev/null || true || true; \
+    \
+    echo "→ Copying musl dynamic loader and libc into sysroot (if present)"; \
+    cp -a /lib/ld-musl-*.so.1 "$SYSROOT/lib/" 2>/dev/null || true; \
+    cp -a /lib/libc.musl-*.so.1 "$SYSROOT/lib/" 2>/dev/null || true; \
+    cp -a /lib/libpthread*.so* "$SYSROOT/lib/" 2>/dev/null || true; \
+    \
+    echo "→ Creating musl loader symlinks inside sysroot (non-destructive)"; \
+    if ls "$SYSROOT/lib"/ld-musl-*.so.1 >/dev/null 2>&1; then \
+        for f in "$SYSROOT/lib"/ld-musl-*.so.1; do \
+            bn=$(basename "$f"); \
+            ln -sf "$bn" "$SYSROOT/lib/ld-linux-$(uname -m).so.1" 2>/dev/null || true; \
+            ln -sf "$bn" "$SYSROOT/lib/ld-linux.so.1" 2>/dev/null || true; \
+        done; \
+        echo "✓ musl loader symlinks created"; \
+    else \
+        echo "⚠ No musl loader copied into $SYSROOT/lib"; \
+    fi; \
+    \
+    echo "→ Creating libc/libpthread convenience symlinks inside sysroot"; \
+    if ls "$SYSROOT/lib"/libc.musl-*.so.1 >/dev/null 2>&1; then \
+        ln -sf "$(basename "$(ls -1 "$SYSROOT/lib"/libc.musl-*.so.1 | head -n1)")" "$SYSROOT/lib/libc.so" 2>/dev/null || true; \
+    fi; \
+    if ls "$SYSROOT/lib"/libpthread*.so* >/dev/null 2>&1; then \
+        ln -sf "$(basename "$(ls -1 "$SYSROOT/lib"/libpthread*.so* | head -n1)")" "$SYSROOT/lib/libpthread.so" 2>/dev/null || true; \
+    fi; \
+    \
+    echo "→ Copying compiler support libs (libgcc/libssp/libatomic) into sysroot"; \
+    cp -a /usr/lib/libgcc* "$SYSROOT/usr/lib/" 2>/dev/null || true; \
+    cp -a /usr/lib/libssp* "$SYSROOT/usr/lib/" 2>/dev/null || true; \
+    cp -a /usr/lib/libatomic* "$SYSROOT/usr/lib/" 2>/dev/null || true; \
+    \
+    echo "→ Copying libm/libdl into sysroot (if present)"; \
+    cp -a /usr/lib/libm.so* "$SYSROOT/usr/lib/" 2>/dev/null || true; \
+    cp -a /usr/lib/libm.a "$SYSROOT/usr/lib/" 2>/dev/null || true; \
+    cp -a /usr/lib/libdl.so* "$SYSROOT/usr/lib/" 2>/dev/null || true; \
+    \
+    echo "→ Ensure Scrt1.o alias exists if only crt1.o present"; \
+    if [ -f "$SYSROOT/usr/lib/crt1.o" ] && [ ! -f "$SYSROOT/usr/lib/Scrt1.o" ]; then \
+        ln -sf crt1.o "$SYSROOT/usr/lib/Scrt1.o" 2>/dev/null || true; \
+    fi; \
+    \
+    echo "→ Copying clang/LLVM resource includes (if available) into sysroot compiler overlay"; \
+    # Prefer local compiler overlay then system llvm installs \
+    if [ -d /lilyspark/compiler/lib/clang ]; then \
+        cp -a /lilyspark/compiler/lib/clang/* "$SYSROOT/compiler/lib/clang/" 2>/dev/null || true; \
+    fi; \
+    if [ -d /usr/lib/llvm16/lib/clang ]; then \
+        mkdir -p "$SYSROOT/compiler/lib/clang" 2>/dev/null || true; \
+        cp -a /usr/lib/llvm16/lib/clang/* "$SYSROOT/compiler/lib/clang/" 2>/dev/null || true; \
+    fi; \
+    # also copy any compiler include overlays if present (helps clang builtin headers) \
+    cp -a /lilyspark/compiler/include/* "$SYSROOT/compiler/include/" 2>/dev/null || true; \
+    \
+    echo "→ Final verification: list key sysroot entries (non-fatal)"; \
+    echo "  /lilyspark/opt/lib/sys/lib listing (first 20):" && ls -la "$SYSROOT/lib" | sed -n '1,20p' || true; \
+    echo "  /lilyspark/opt/lib/sys/usr/lib listing (first 40):" && ls -la "$SYSROOT/usr/lib" | sed -n '1,40p' || true; \
+    echo "  /lilyspark/opt/lib/sys/usr/include (first 40):" && ls -la "$SYSROOT/usr/include" | sed -n '1,40p' || true; \
+    echo "  /lilyspark/opt/lib/sys/compiler include/lib (first 40):" && ls -la "$SYSROOT/compiler/include" "$SYSROOT/compiler/lib" 2>/dev/null || true; \
+    \
+    echo "→ Verifying presence of critical C++ headers (quick checks):"; \
     for hdr in cstdlib string algorithm vector; do \
-        if [ -f "$SYSROOT/usr/include/c++/*/$hdr" ] || find "$SYSROOT/usr/include/c++" -name "$hdr" | grep -q .; then \
-            echo "✔ Found <$hdr>"; \
+        if find "$SYSROOT/usr/include/c++" -type f -name "$hdr" | grep -q . 2>/dev/null; then \
+            echo "✔ Found <$hdr> in C++ headers"; \
+        elif find "$SYSROOT/usr/include" -type f -name "$hdr" | grep -q . 2>/dev/null; then \
+            echo "✔ Found <$hdr> in sysroot includes"; \
         else \
-            echo "⚠ Missing <$hdr>"; \
+            echo "⚠ Missing <$hdr> -- may cause compiler errors"; \
         fi; \
     done; \
     \
-    echo "→ Verifying libstdc++ libraries:"; \
-    ls -la "$SYSROOT/usr/lib/libstdc++"* || echo "⚠ libstdc++ libs missing"
-    
+    echo "→ Verifying essential runtime libs in sysroot:"; \
+    for lib in ld-musl libc.musl libpthread libgcc libstdc++ libm libdl; do \
+        if ls "$SYSROOT/lib"/$lib* >/dev/null 2>&1 || ls "$SYSROOT/usr/lib"/$lib* >/dev/null 2>&1; then \
+            echo "✔ Found runtime: $lib"; \
+        else \
+            echo "⚠ Missing runtime: $lib"; \
+        fi; \
+    done; \
+    \
+    echo "→ Verifying clang resource headers present (if copied):"; \
+    if find "$SYSROOT/compiler/lib/clang" -maxdepth 2 -type d | grep -q . 2>/dev/null; then \
+        echo "✔ clang resource headers appears present at $SYSROOT/compiler/lib/clang (listing):"; \
+        ls -la "$SYSROOT/compiler/lib/clang" | sed -n '1,40p' || true; \
+    else \
+        echo "⚠ clang resource headers not found in sysroot overlay (this may be OK if host / compiler provides them)"; \
+    fi; \
+    \
+    echo "→ Sysroot population complete (glslang-focused overlay)."
 
+
+RUN echo "=== SYSROOT C++ INCLUDE DIAGNOSTICS ===" && \
+    SYSROOT="/lilyspark/opt/lib/sys"; \
+    echo "Sysroot: $SYSROOT"; \
+    echo "Searching for C++ standard headers in sysroot..."; \
+    find "$SYSROOT/usr/include/c++" -type f \( -name 'vector' -o -name 'string' -o -name 'algorithm' \) -print || echo "⚠ No standard headers found!"; \
+    echo "--- Full C++ include tree ---"; \
+    find "$SYSROOT/usr/include/c++" -type f | head -50; \
+    \
+    echo "Checking libc++ installation inside sysroot:"; \
+    ls -R "$SYSROOT/usr/include" | head -50; \
+    \
+    echo "Compiler test: printing include search paths"; \
+    /lilyspark/compiler/bin/clang++-16 --sysroot=$SYSROOT -E -x c++ - -v < /dev/null
 
 # ======================
-# glslang Build (ARM64-safe, fully logged)
+# glslang Build (ARM64-safe, fully logged, sysroot-aware 3-tier fallback)
 # ======================
 ARG GLSLANG_VER=14.0.0
 ARG GLSLANG_URL="https://github.com/KhronosGroup/glslang/archive/refs/tags/${GLSLANG_VER}.tar.gz"
@@ -2073,7 +2164,7 @@ RUN echo "=== START: BUILDING glslang ${GLSLANG_VER} ===" && \
     \
     mkdir -p /tmp/glslang-src && cd /tmp/glslang-src; \
     echo "Fetching glslang tarball: ${GLSLANG_URL}"; \
-    curl -L "${GLSLANG_URL}" -o glslang.tar.gz || (echo "⚠ Failed to fetch glslang tarball"; exit 0); \
+    curl -L "${GLSLANG_URL}" -o glslang.tar.gz || (echo "⚠ Failed to fetch glslang tarball"; exit 1); \
     tar -xf glslang.tar.gz --strip-components=1 || echo "⚠ Tar extraction failed"; \
     \
     # ----------------------
@@ -2087,7 +2178,47 @@ RUN echo "=== START: BUILDING glslang ${GLSLANG_VER} ===" && \
     mkdir -p builddir; cd builddir; \
     \
     # ----------------------
-    # 2️⃣ CMake configure
+    # 2️⃣ Sysroot-aware C++ include fallback detection
+    # ----------------------
+    echo "=== Detecting C++ include directories in sysroot ==="; \
+    SYSROOT_CPP_INCLUDE="$(find $SYSROOT/usr/include/c++ -maxdepth 2 -type d | head -n 1)"; \
+    if [ -n "$SYSROOT_CPP_INCLUDE" ]; then \
+        echo "Primary sysroot C++ include path found: $SYSROOT_CPP_INCLUDE"; \
+    else \
+        echo "⚠ Primary C++ include path not found, trying compiler built-in include"; \
+        SYSROOT_CPP_INCLUDE="$($CXX -print-search-dirs | grep 'install: ' | sed 's/install: //')/include/c++/16"; \
+        if [ ! -d "$SYSROOT_CPP_INCLUDE" ]; then \
+            echo "⚠ Secondary compiler include path not found, using glslang source Include directory"; \
+            SYSROOT_CPP_INCLUDE="/tmp/glslang-src/Include"; \
+        else \
+            echo "Secondary compiler include path found: $SYSROOT_CPP_INCLUDE"; \
+        fi; \
+    fi; \
+    \
+    # Detect libstdc++ version + target triplet inside sysroot
+    CXXVER="$(basename $(ls -d $SYSROOT/usr/include/c++/* | head -n1 2>/dev/null))"; \
+    if [ -n "$CXXVER" ]; then \
+        echo "Detected libstdc++ version: $CXXVER"; \
+        if [ -d "$SYSROOT/usr/include/c++/$CXXVER/aarch64-alpine-linux-musl" ]; then \
+            CXX_INCLUDES="-I$SYSROOT/usr/include/c++/$CXXVER -I$SYSROOT/usr/include/c++/$CXXVER/aarch64-alpine-linux-musl"; \
+        elif [ -d "$SYSROOT/usr/include/c++/$CXXVER/aarch64-linux-musl" ]; then \
+            echo "⚠ Using aarch64-linux-musl instead of alpine triplet"; \
+            CXX_INCLUDES="-I$SYSROOT/usr/include/c++/$CXXVER -I$SYSROOT/usr/include/c++/$CXXVER/aarch64-linux-musl"; \
+        else \
+            echo "⚠ No triplet-specific directory found under $CXXVER, falling back"; \
+            CXX_INCLUDES="-I$SYSROOT/usr/include/c++/$CXXVER"; \
+        fi; \
+    else \
+        echo "⚠ No libstdc++ versioned include found, falling back to SYSROOT_CPP_INCLUDE"; \
+        CXX_INCLUDES="-I$SYSROOT_CPP_INCLUDE"; \
+    fi; \
+    \
+    BASE_C_FLAGS="--sysroot=$SYSROOT -I$SYSROOT/usr/include -march=armv8-a"; \
+    BASE_CXX_FLAGS="$BASE_C_FLAGS $CXX_INCLUDES"; \
+    echo "Final CXX flags: $BASE_CXX_FLAGS"; \
+    \
+    # ----------------------
+    # 3️⃣ CMake configure
     # ----------------------
     echo "=== CMake configure ==="; \
     cmake .. \
@@ -2096,13 +2227,14 @@ RUN echo "=== START: BUILDING glslang ${GLSLANG_VER} ===" && \
         -DCMAKE_C_COMPILER=$CC \
         -DCMAKE_CXX_COMPILER=$CXX \
         -DCMAKE_SYSROOT=$SYSROOT \
-        -DCMAKE_C_FLAGS="--sysroot=$SYSROOT -I$SYSROOT/usr/include -march=armv8-a" \
-        -DCMAKE_CXX_FLAGS="--sysroot=$SYSROOT -I$SYSROOT/usr/include -march=armv8-a" \
+        -DCMAKE_C_FLAGS="$BASE_C_FLAGS" \
+        -DCMAKE_CXX_FLAGS="$BASE_CXX_FLAGS" \
         -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-        -DENABLE_OPT=OFF | tee /tmp/glslang-cmake-configure.log; \
+        -DENABLE_OPT=OFF \
+        -DCMAKE_VERBOSE_MAKEFILE=ON | tee /tmp/glslang-cmake-configure.log; \
     \
     # ----------------------
-    # 3️⃣ Build and install
+    # 4️⃣ Build and install
     # ----------------------
     echo "=== CMake build ==="; \
     cmake --build . -j$(nproc) 2>&1 | tee /tmp/glslang-cmake-build.log; \
@@ -2110,7 +2242,7 @@ RUN echo "=== START: BUILDING glslang ${GLSLANG_VER} ===" && \
     cmake --install . --prefix /lilyspark/opt/lib/graphics/usr 2>&1 | tee /tmp/glslang-cmake-install.log; \
     \
     # ----------------------
-    # 4️⃣ Populate sysroot
+    # 5️⃣ Populate sysroot
     # ----------------------
     echo "=== Populating sysroot AFTER installation ==="; \
     mkdir -p $SYSROOT/usr/{include,lib,lib/pkgconfig}; \
@@ -2119,7 +2251,7 @@ RUN echo "=== START: BUILDING glslang ${GLSLANG_VER} ===" && \
     cp -av /lilyspark/opt/lib/graphics/usr/lib/pkgconfig/* $SYSROOT/usr/lib/pkgconfig/ 2>/dev/null || true; \
     \
     # ----------------------
-    # 5️⃣ Verify pkg-config and cleanup
+    # 6️⃣ Verify pkg-config and cleanup
     # ----------------------
     echo "=== Verifying pkg-config can see glslang ==="; \
     export PKG_CONFIG_PATH="$SYSROOT/usr/lib/pkgconfig:$PKG_CONFIG_PATH"; \
@@ -2130,6 +2262,7 @@ RUN echo "=== START: BUILDING glslang ${GLSLANG_VER} ===" && \
     cd /; rm -rf /tmp/glslang-src; \
     echo "=== glslang BUILD complete ==="; \
     true
+
 
 
 # ======================
