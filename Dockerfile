@@ -2218,10 +2218,10 @@ RUN echo "=== START: BUILDING glslang ${GLSLANG_VER} ===" && \
     echo "Final CXX flags: $BASE_CXX_FLAGS"; \
     \
     # ----------------------
-    # 3️⃣ CMake configure
+    # 3️⃣ CMake configure with Ninja generator
     # ----------------------
     echo "=== CMake configure ==="; \
-    cmake .. \
+    cmake .. -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/lilyspark/opt/lib/graphics/usr \
         -DCMAKE_C_COMPILER=$CC \
@@ -2230,17 +2230,15 @@ RUN echo "=== START: BUILDING glslang ${GLSLANG_VER} ===" && \
         -DCMAKE_C_FLAGS="$BASE_C_FLAGS" \
         -DCMAKE_CXX_FLAGS="$BASE_CXX_FLAGS" \
         -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-        -DENABLE_OPT=OFF \
-        -DCMAKE_VERBOSE_MAKEFILE=ON | tee /tmp/glslang-cmake-configure.log; \
+        -DENABLE_OPT=OFF | tee /tmp/glslang-cmake-configure.log; \
     \
     # ----------------------
-    # 4️⃣ Build and install
+    # 4️⃣ Build and install (percentage only, minimal output)
     # ----------------------
     echo "=== CMake build ==="; \
-    cmake --build . -j$(nproc) 2>&1 | tee /tmp/glslang-cmake-build.log; \
+    cmake --build . -j$(nproc) | tee /tmp/glslang-cmake-build.log; \
     echo "=== CMake install ==="; \
-    cmake --install . --prefix /lilyspark/opt/lib/graphics/usr 2>&1 | tee /tmp/glslang-cmake-install.log; \
-    \
+    cmake --install . --prefix /lilyspark/opt/lib/graphics/usr | tee /tmp/glslang-cmake-install.log; \
     # ----------------------
     # 5️⃣ Populate sysroot
     # ----------------------
