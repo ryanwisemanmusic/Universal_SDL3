@@ -1,5 +1,6 @@
 #include "main.hpp"
 #include <iostream>
+#include <cstdlib>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
@@ -7,6 +8,8 @@ using namespace std;
 
 int main(int argc, char* argv[]) 
 {
+    system("startplasma-x11 &");
+    SDL_Delay(2000);
     SDL_Window *window;
     bool done = false;
     SDL_Init(SDL_INIT_VIDEO);
