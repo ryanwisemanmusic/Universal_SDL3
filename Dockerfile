@@ -58,6 +58,7 @@ RUN mkdir -p \
     /lilyspark/usr/local/lib/i18n \
     /lilyspark/usr/local/lib/image \
     /lilyspark/usr/local/lib/java \
+    /lilyspark/usr/local/lib/kde-desktop \
     /lilyspark/usr/local/lib/math \
     /lilyspark/usr/local/lib/networking \
     /lilyspark/usr/local/lib/python \
@@ -695,7 +696,7 @@ RUN echo "=== INTEGRATING IMAGE LIBRARIES INTO SYSROOT ===" && \
 #
 
 # Java Libraries - /lilyspark/usr/local/lib/java
-RUN apk-retry add --no-cache openjdk11 && \
+RUN apk --network-timeout=600 add --no-cache openjdk11 && \
     /usr/local/bin/check_llvm15.sh "after-openjdk11" || true && \
     \
     # Verify Java installation
@@ -732,6 +733,105 @@ RUN echo "=== INTEGRATING JAVA LIBRARIES INTO SYSROOT ===" && \
 #
 #
 #
+
+# KDE Desktop Libraries - /lilyspark/usr/local/lib/kde-desktop
+RUN apk --network-timeout=600 add --no-cache plasma-desktop && /usr/local/bin/check_llvm15.sh "after-plasma-workspace" || true
+#RUN apk --network-timeout=600 add --no-cache plasma-workspace-dev && /usr/local/bin/check_llvm15.sh "after-plasma-workspace-dev" || true
+#RUN apk --network-timeout=600 add --no-cache plasma-framework-dev && /usr/local/bin/check_llvm15.sh "after-plasma-framework-dev" || true
+#RUN apk-retry add --no-cache kwin && /usr/local/bin/check_llvm15.sh "after-kwin" || true
+#RUN apk-retry add --no-cache kscreen && /usr/local/bin/check_llvm15.sh "after-kscreen" || true
+#RUN apk-retry add --no-cache plasma-systemmonitor && /usr/local/bin/check_llvm15.sh "after-plasma-systemmonitor" || true
+#RUN apk-retry add --no-cache sddm && /usr/local/bin/check_llvm15.sh "after-sddm" || true
+#RUN apk-retry add --no-cache dolphin && /usr/local/bin/check_llvm15.sh "after-dolphin" || true
+#RUN apk-retry add --no-cache konsole && /usr/local/bin/check_llvm15.sh "after-konsole" || true
+#RUN apk-retry add --no-cache kate && /usr/local/bin/check_llvm15.sh "after-kate" || true
+#RUN apk-retry add --no-cache spectacle && /usr/local/bin/check_llvm15.sh "after-spectacle" || true
+#RUN apk-retry add --no-cache systemsettings && /usr/local/bin/check_llvm15.sh "after-systemsettings" || true
+#RUN apk-retry add --no-cache kio && /usr/local/bin/check_llvm15.sh "after-kio" || true
+#RUN apk-retry add --no-cache kconfig && /usr/local/bin/check_llvm15.sh "after-kconfig" || true
+#RUN apk-retry add --no-cache kcoreaddons && /usr/local/bin/check_llvm15.sh "after-kcoreaddons" || true
+#RUN apk-retry add --no-cache kservice && /usr/local/bin/check_llvm15.sh "after-kservice" || true
+#RUN apk-retry add --no-cache solid && /usr/local/bin/check_llvm15.sh "after-solid" || true
+#RUN apk-retry add --no-cache kglobalaccel && /usr/local/bin/check_llvm15.sh "after-kglobalaccel" || true
+#RUN apk-retry add --no-cache xdg-utils && /usr/local/bin/check_llvm15.sh "after-xdg-utils" || true
+#RUN apk-retry add --no-cache breeze && /usr/local/bin/check_llvm15.sh "after-breeze" || true
+#RUN apk-retry add --no-cache breeze-icons && /usr/local/bin/check_llvm15.sh "after-breeze-icons" || true
+#RUN apk-retry add --no-cache oxygen-icons && /usr/local/bin/check_llvm15.sh "after-oxygen-icons" || true
+#RUN apk-retry add --no-cache ark && /usr/local/bin/check_llvm15.sh "after-ark" || true
+#RUN apk-retry add --no-cache gwenview && /usr/local/bin/check_llvm15.sh "after-gwenview" || true
+#RUN apk-retry add --no-cache okular && /usr/local/bin/check_llvm15.sh "after-okular" || true
+#RUN apk-retry add --no-cache kcalc && /usr/local/bin/check_llvm15.sh "after-kcalc" || true
+#RUN apk-retry add --no-cache xorg-server-xephyr && /usr/local/bin/check_llvm15.sh "after-xorg-server-xephyr" || true
+#RUN apk-retry add --no-cache elogind && /usr/local/bin/check_llvm15.sh "after-elogind" || true
+#RUN apk-retry add --no-cache dbus && /usr/local/bin/check_llvm15.sh "after-dbus" || true
+#RUN apk-retry add --no-cache xauth && /usr/local/bin/check_llvm15.sh "after-xauth" || true
+
+
+# Copy Libraries To Directory
+RUN echo "=== COPYING KDE DESKTOP LIBRARIES ===" && \
+    # Plasma Desktop / Workspace / Framework
+    cp -a /usr/include/plasma* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    cp -a /usr/lib/libplasma*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #\
+    # KWin, KScreen, Plasma System Monitor
+    #cp -a /usr/include/kwin* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libkwin*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/include/kscreen* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libkscreen*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/include/plasma-systemmonitor* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libplasma-systemmonitor*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    \
+    # Core KDE Frameworks
+    #cp -a /usr/include/KF5/* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libKF5*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    \
+    # Applications (Konsole, Dolphin, etc.)
+    #cp -a /usr/include/dolphin* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libdolphin*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/include/konsole* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libkonsole*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/include/kate* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libkate*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/include/spectacle* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libspectacle*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/include/systemsettings* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libsystemsettings*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    \
+    # Utilities (Ark, Gwenview, Okular, KCalc)
+    #cp -a /usr/include/ark* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libark*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/include/gwenview* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libgwenview*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/include/okular* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libokular*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/include/kcalc* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    #cp -a /usr/lib/libkcalc*.so* /lilyspark/usr/local/lib/kde-desktop/ 2>/dev/null || true && \
+    \
+    echo "--- KDE DESKTOP CHECK ---" && \
+    ls -la /lilyspark/usr/local/lib/kde-desktop | head -40 || true
+
+# Sysroot Integration: KDE Desktop Libraries
+RUN echo "=== INTEGRATING KDE DESKTOP LIBRARIES INTO SYSROOT ===" && \
+    # Link any shared libraries from kde-desktop directory
+    find /lilyspark/usr/local/lib/kde-desktop -name "*.so*" -exec ln -sf {} /lilyspark/usr/lib/ \; 2>/dev/null || true && \
+    echo "KDE desktop libraries integrated. Counts:" && \
+    echo "Plasma libs:" $(ls -1 /lilyspark/usr/lib/libplasma*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "KWin libs:" $(ls -1 /lilyspark/usr/lib/libkwin*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "KScreen libs:" $(ls -1 /lilyspark/usr/lib/libkscreen*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "Plasma System Monitor libs:" $(ls -1 /lilyspark/usr/lib/libplasma-systemmonitor*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "KF5 libs:" $(ls -1 /lilyspark/usr/lib/libKF5*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "Dolphin libs:" $(ls -1 /lilyspark/usr/lib/libdolphin*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "Konsole libs:" $(ls -1 /lilyspark/usr/lib/libkonsole*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "Kate libs:" $(ls -1 /lilyspark/usr/lib/libkate*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "Spectacle libs:" $(ls -1 /lilyspark/usr/lib/libspectacle*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "Systemsettings libs:" $(ls -1 /lilyspark/usr/lib/libsystemsettings*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "Ark libs:" $(ls -1 /lilyspark/usr/lib/libark*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "Gwenview libs:" $(ls -1 /lilyspark/usr/lib/libgwenview*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "Okular libs:" $(ls -1 /lilyspark/usr/lib/libokular*.so* 2>/dev/null | wc -l || echo 0) && \
+    #echo "KCalc libs:" $(ls -1 /lilyspark/usr/lib/libkcalc*.so* 2>/dev/null | wc -l || echo 0) && \
+    echo "=== KDE DESKTOP SYSROOT INTEGRATION COMPLETE ==="
+
+
 
 # Math Libraries - /lilyspark/usr/local/lib/math
 RUN apk-retry add --no-cache eigen-dev && /usr/local/bin/check_llvm15.sh "after-eigen-dev" || true
