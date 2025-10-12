@@ -3,20 +3,15 @@ project(SDL3HelloWorld)
 
 set(CMAKE_CXX_STANDARD 17)
 
-# Find packages
 find_package(PkgConfig REQUIRED)
 
-# SDL3
 pkg_check_modules(SDL3 REQUIRED sdl3)
 
-# SDL3_image - UPDATED: Use different approach if pkg-config fails
 pkg_check_modules(SDL3_IMAGE QUIET SDL3_image)
 
 if(NOT SDL3_IMAGE_FOUND)
-    # Fallback: manually find SDL3_image
     message(WARNING "SDL3_image not found via pkg-config, trying manual discovery...")
     
-    # Try to find the library manually
     find_library(SDL3_IMAGE_LIBRARY
         NAMES SDL3_image
         PATHS /usr/local/lib /usr/lib
@@ -39,18 +34,15 @@ if(NOT SDL3_IMAGE_FOUND)
     endif()
 endif()
 
-# FFmpeg libraries - ADD THIS SECTION
 pkg_check_modules(LIBAVCODEC QUIET libavcodec)
 pkg_check_modules(LIBAVFORMAT QUIET libavformat)
 pkg_check_modules(LIBAVUTIL QUIET libavutil)
 pkg_check_modules(LIBSWSCALE QUIET libswscale)
 pkg_check_modules(LIBSWRESAMPLE QUIET libswresample)
 
-# Fallback for FFmpeg if pkg-config fails
 if(NOT LIBAVCODEC_FOUND)
     message(WARNING "FFmpeg not found via pkg-config, trying manual discovery...")
     
-    # Find FFmpeg libraries manually
     find_library(LIBAVCODEC_LIB NAMES avcodec PATHS /usr/local/lib /usr/lib NO_DEFAULT_PATH)
     find_library(LIBAVFORMAT_LIB NAMES avformat PATHS /usr/local/lib /usr/lib NO_DEFAULT_PATH)
     find_library(LIBAVUTIL_LIB NAMES avutil PATHS /usr/local/lib /usr/lib NO_DEFAULT_PATH)
@@ -92,12 +84,10 @@ if(NOT LIBAVCODEC_FOUND)
     endif()
 endif()
 
-# Check if essential FFmpeg components are found
 if(NOT LIBAVCODEC_FOUND OR NOT LIBAVFORMAT_FOUND OR NOT LIBAVUTIL_FOUND)
     message(WARNING "Essential FFmpeg components not found. Video playback may not work.")
 else()
     message(STATUS "FFmpeg support enabled")
-    # Add FFmpeg compiler definitions
     add_definitions(-DHAS_FFMPEG=1)
 endif()
 
@@ -105,7 +95,6 @@ find_package(OpenGL REQUIRED)
 
 add_executable(simplehttpserver main.cpp)
 
-# Include directories - UPDATED: Add FFmpeg includes
 target_include_directories(simplehttpserver PRIVATE 
     ${SDL3_INCLUDE_DIRS}
     ${SDL3_IMAGE_INCLUDE_DIRS}
@@ -116,7 +105,6 @@ target_include_directories(simplehttpserver PRIVATE
     ${LIBSWSCALE_INCLUDE_DIRS}
 )
 
-# Link with ALL required libraries including Vulkan, SDL3_image, and FFmpeg - UPDATED
 target_link_libraries(simplehttpserver 
     ${SDL3_LIBRARIES}
     ${SDL3_IMAGE_LIBRARIES}
@@ -129,7 +117,7 @@ target_link_libraries(simplehttpserver
     vulkan
 )
 
-# Add compiler definitions - UPDATED: Add FFmpeg definition
+# Add compiler definitions
 target_compile_definitions(simplehttpserver PRIVATE
     SDL_VIDEO_OPENGL=1
     GL_GLEXT_PROTOTYPES=1
