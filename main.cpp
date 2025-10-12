@@ -1,44 +1,80 @@
-#include "main.hpp"
 #include <iostream>
-#include <cstdlib>
+#include <vector>
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+#include <SDL3/SDL_opengl.h>
 #include <SDL3/SDL_vulkan.h>
-#include <unistd.h>
+#include <vulkan/vulkan.h>
 
 using namespace std;
 
-int main(int argc, char* argv[]) 
+bool tryVulkan() 
 {
-    //system("Xephyr :1 -screen 640x480 &");
-    //sleep(1);
-    //system("DISPLAY=:1 startplasma-x11 &");
+    SDL_Window* window = 
+    SDL_CreateWindow(
+        "Vulkan Test", 
+        640, 
+        480, 
+        SDL_WINDOW_VULKAN);
 
-    //SDL_Delay(4000);
-    SDL_Window *window;
+    VkInstance instance = VK_NULL_HANDLE;
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+
+    VkApplicationInfo appInfo = {};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = "Vulkan Test";
+    appInfo.apiVersion = VK_API_VERSION_1_0;
+
+    uint32_t extensionCount = 0;
+    const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
+
+    VkInstanceCreateInfo createInfo = {};
+    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    createInfo.pApplicationInfo = &appInfo;
+    createInfo.enabledExtensionCount = extensionCount;
+    createInfo.ppEnabledExtensionNames = extensions;
+
+    vkCreateInstance(&createInfo, nullptr, &instance);
+    SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface);
+    
     bool done = false;
-    //setenv("DISPLAY", ":1", 1);
-    SDL_Init(SDL_INIT_VIDEO);
-
-    window = SDL_CreateWindow(
-        "An SDL3 window",
-        640,
-        480,
-        0
-        //Other valid flags:
-        //SDL_WINDOW_VULKAN
-        //SDL_WINDOW_OPENGL
-    );
-
-    if (window == NULL) 
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Could not create window: %s\n", SDL_GetError());
-        return 1;
-    }
-
     while (!done) 
     {
         SDL_Event event;
+        while (SDL_PollEvent(&event)) 
+        {
+            if (event.type == SDL_EVENT_QUIT) 
+            {
+                done = true;
+            }
+        }
+        SDL_Delay(16);
+    }
+    
+    vkDestroySurfaceKHR(instance, surface, nullptr);
+    vkDestroyInstance(instance, nullptr);
+    SDL_DestroyWindow(window);
 
+    return true;
+}
+
+void runOpenGL() 
+{
+    SDL_Window *window = SDL_CreateWindow
+    (
+        "OpenGL Window", 
+        640, 
+        480, 
+        SDL_WINDOW_OPENGL
+    );
+
+    SDL_GLContext gl_context = SDL_GL_CreateContext(window);
+    SDL_GL_SetSwapInterval(1);
+
+    bool done = false;
+    while (!done) 
+    {
+        SDL_Event event;
         while (SDL_PollEvent(&event)) 
         {
             if (event.type == SDL_EVENT_QUIT) 
@@ -47,13 +83,33 @@ int main(int argc, char* argv[])
             }
         }
 
+        glClearColor(0.2f, 0.3f, 0.8f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glBegin(GL_TRIANGLES);
+        glColor3f(1.0f, 0.0f, 0.0f);
+        glVertex2f(-0.6f, -0.6f);
+        glColor3f(0.0f, 1.0f, 0.0f);
+        glVertex2f(0.6f, -0.6f);
+        glColor3f(0.0f, 0.0f, 1.0f);
+        glVertex2f(0.0f, 0.6f);
+        glEnd();
+
+        SDL_GL_SwapWindow(window);
+        SDL_Delay(16);
     }
 
+    SDL_GL_DestroyContext(gl_context);
     SDL_DestroyWindow(window);
+}
+
+int main() 
+{
+    SDL_Init(SDL_INIT_VIDEO);
+    
+    //tryVulkan();
+    runOpenGL();
 
     SDL_Quit();
-
-    //system("pkill Xephyr");
-    
     return 0;
 }
