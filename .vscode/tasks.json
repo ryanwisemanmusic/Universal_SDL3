@@ -1,0 +1,11 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "update-intellisense",
+            "type": "shell", 
+            "command": "${workspaceFolder}/.vscode/generate_cpp_config.sh",
+            "group": "build"
+        }
+    ]
+}
