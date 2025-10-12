@@ -1,5 +1,6 @@
 #include <iostream>
 #include <vector>
+#include <array>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_main.h>
@@ -20,7 +21,10 @@ extern "C"
     #include <libswscale/swscale.h>
 }
 
+
+
 using namespace std;
+
 
 bool tryVulkan() 
 {
@@ -127,3 +131,4 @@ int main()
     SDL_Quit();
     return 0;
 }
+
