@@ -1,10 +1,10 @@
-.PHONY: all clean build run purge shell
+.PHONY: all clean build run purge shell intellisense
 
 PROJECT_ROOT := $(shell pwd)
 IMAGE_NAME := mostsignificant/simplehttpserver
 CONTAINER_NAME := sdl3-app
 
-CXX_FILES := main.cpp  
+CXX_FILES := main.cpp screenScenes.h
 C_FILES := 
 CMAKE_FILES := CMakeLists.txt
 SHELL_FILES := fb-wrapper.sh
@@ -28,7 +28,12 @@ build:
 	@echo "=== BUILDING DOCKER IMAGE ==="
 	@docker build --platform=linux/arm64 -t $(IMAGE_NAME) .
 
-run:
+intellisense:
+	@echo "=== UPDATING INTELLISENSE CONFIG ==="
+	@chmod +x .vscode/generate_cpp_config.sh
+	@.vscode/generate_cpp_config.sh
+
+run: intellisense
 	@echo "=== BUILDING AND RUNNING APPLICATION ==="
 	@docker run --rm --name $(CONTAINER_NAME) \
 		$(VOLUME_MOUNTS) \
