@@ -1,3 +1,0 @@
-- pciaccess (The warnings + anything failed)
-- libdrm (The warnings + anything failed)
-- python (missing meson + mako)
