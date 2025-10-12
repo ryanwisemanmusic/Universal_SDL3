@@ -1,15 +1,9 @@
 {
-  "C_Cpp.default.compileCommands": "${workspaceFolder}/.vscode/compile_commands.json",
-  "C_Cpp.loggingLevel": "Debug",
-  "files.associations": {
-    "*.dbclient-js": "javascript",
-    "iostream": "cpp"
-  },
-  "vsicons.associations.files": [
-    {
-      "icon": "text", 
-      "extensions": ["ans", "ansi"],
-      "format": "txt"
+    "C_Cpp.intelliSenseEngine": "default",
+    "C_Cpp.preferredPathSeparator": "Forward Slash", 
+    "C_Cpp.autoAddFileAssociations": false,
+    "C_Cpp.loggingLevel": "Debug",
+    "tasks.onTaskInit": {
+        "update-intellisense": "onFolderOpen"
     }
-  ]
 }
