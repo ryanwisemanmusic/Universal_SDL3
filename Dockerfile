@@ -677,17 +677,8 @@ RUN mkdir -p /tmp/runtime-root && \
 
 WORKDIR /app
 
-COPY main.cpp .
-COPY CMakeLists.txt .
-
 # Vulkan Symlink
 RUN ln -sf /usr/lib/libvulkan.so.1 /usr/lib/libvulkan.so && \
     ln -sf /usr/lib/libvulkan.so.1.4.313 /usr/lib/libvulkan.so.1
 
-RUN mkdir build && cd build && cmake .. && make
-
-COPY fb-wrapper.sh .
-RUN chmod +x fb-wrapper.sh
-
-ENTRYPOINT ["./fb-wrapper.sh"]
 CMD ["./build/simplehttpserver"]
