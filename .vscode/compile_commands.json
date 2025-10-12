@@ -1,8 +1,0 @@
-[
-{
-  "directory": "/Users/ryanwiseman/Universal_SDL3_symlink/build/native",
-  "command": "/usr/bin/c++ -DBOOST_PROGRAM_OPTIONS_DYN_LINK -DBOOST_PROGRAM_OPTIONS_NO_LIB -DNATIVE_MACOS_BUILD=1 -DSDL_VIDEO_DRIVER_COCOA=1 -I/Users/ryanwiseman/Universal_SDL3_symlink/build/deps/install/include -F/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks -isystem /opt/homebrew/include -O3 -DNDEBUG -std=gnu++17 -arch arm64 -o CMakeFiles/simplehttpserver.dir/Users/ryanwiseman/Universal_SDL3_symlink/main.cpp.o -c /Users/ryanwiseman/Universal_SDL3_symlink/main.cpp",
-  "file": "/Users/ryanwiseman/Universal_SDL3_symlink/main.cpp",
-  "output": "CMakeFiles/simplehttpserver.dir/Users/ryanwiseman/Universal_SDL3_symlink/main.cpp.o"
-}
-]
