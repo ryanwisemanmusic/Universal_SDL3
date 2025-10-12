@@ -11,6 +11,14 @@
 #include <SDL3_image/SDL_image.h>
 #include <SDL3_ttf/SDL_ttf.h>
 #include <vulkan/vulkan.h>
+#include <sqlite3.h>
+
+extern "C" 
+{
+    #include <libavcodec/avcodec.h>
+    #include <libavformat/avformat.h>
+    #include <libswscale/swscale.h>
+}
 
 using namespace std;
 
