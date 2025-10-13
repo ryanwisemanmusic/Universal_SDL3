@@ -7,35 +7,16 @@ pkgdesc="JUCE Framework for Alpine Linux"
 url="https://juce.com"
 arch="all"
 license="GPL3"
-depends_dev="freetype-dev libjpeg-turbo-dev libpng-dev zlib-dev"
+depends_dev=""
 makedepends="
-	alsa-lib-dev
 	cmake
 	ninja
-	doxygen
-	flac-dev
-	freetype-dev
-	gendesk
-	graphviz
-	gtk+3.0-dev
-	jack-dev
-	ladspa-sdk-dev
-	libjpeg-turbo-dev
-	libpng-dev
-	libvorbis-dev
-	libx11-dev
-	libxcursor-dev
-	libxext-dev
-	libxinerama-dev
-	libxrandr-dev
 	python3
-	webkit2gtk-dev
-	zlib-dev
 	$depends_dev
 	"
 
 subpackages="$pkgname-dev $pkgname-doc"
-source="https://github.com/juce-framework/JUCE/archive/refs/tags/$pkgver.tar.gz"
+source="juce-$pkgver.tar.gz::https://github.com/juce-framework/JUCE/archive/refs/tags/$pkgver.tar.gz"
 
 builddir="$srcdir/JUCE-$pkgver"
 
@@ -74,5 +55,4 @@ package() {
 	DESTDIR="$pkgdir" ninja -C build install
 }
 
-sha512sums="271f241cfb76bc1ea1838d9ba552b893d1d8df413d24b051ffb31c6c9b7eff10d18c16d3e8b03c9a910470508e2177aa2d15eab208974171d5835b8b62fcabdf  7.0.8.tar.gz"
-
+sha512sums="271f241cfb76bc1ea1838d9ba552b893d1d8df413d24b051ffb31c6c9b7eff10d18c16d3e8b03c9a910470508e2177aa2d15eab208974171d5835b8b62fcabdf  juce-7.0.8.tar.gz"
