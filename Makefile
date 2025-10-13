@@ -38,7 +38,6 @@ intellisense:
 run: intellisense
 	@docker run --rm --name $(CONTAINER_NAME) \
 		$(VOLUME_MOUNTS) \
-		-e DISPLAY=host.docker.internal:0 \
 		--platform=linux/arm64 \
 		$(IMAGE_NAME) \
 		sh -c "mkdir -p build && cd build && \
@@ -49,7 +48,6 @@ run-log: intellisense
 	@mkdir -p log
 	@docker run --rm --name $(CONTAINER_NAME) \
 		$(VOLUME_MOUNTS) \
-		-e DISPLAY=host.docker.internal:0 \
 		--platform=linux/arm64 \
 		$(IMAGE_NAME) \
 		sh -c "mkdir -p build && cd build && \
@@ -59,7 +57,6 @@ run-log: intellisense
 shell:
 	@docker run -it --rm \
 		$(VOLUME_MOUNTS) \
-		-e DISPLAY=host.docker.internal:0 \
 		--platform=linux/arm64 \
 		$(IMAGE_NAME) \
 		/bin/bash
