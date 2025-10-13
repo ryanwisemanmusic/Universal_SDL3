@@ -1,18 +1,13 @@
 #Universal SDL3
+Introducing my universal SDL3 project, with the sheer intention on allowing others to build cross-platform applications without the headache of dealing with multiple platforms.
 
-Hello, welcome to a Universal SDL3 Application project repo!!!! Ever
-since I began working with this library, one of the biggest hassles is
-to get dynamic linking working. And so hence, was born this Universal SDL project.
+So far, this SDL3 project has the following support (but not limited to):
+- OpenGL
+- Vulkan
+- SDL3
+- SDL3_image
+- SDL3_ttf
+- Sqlite3 
+- FFMPEG
 
-This is a highly experimental project, meaning there's a lot of testing
-of it required still. Already, there are issues under the hood if you
-run the build-docker-debug make command, and that may interfere with
-just exactly what code you can run.
-
-My aims with this project is to provide cross-platform development for
-Windows, Mac, and Linux without needing to configure each platform build
-and face the problem of discrepancies between the three OSses.
-
-I hope this runs on your machine, as this is the point of a project like this.
-Do not expect it to be stable to write code to said window and rely upon
-other libraries. This is far from where I want this codebase to be
+I cannot ensure that the libraries have full functionality, so please report to me any particular issues you may find if you decide to use this repo.
