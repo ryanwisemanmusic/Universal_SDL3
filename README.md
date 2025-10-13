@@ -1,4 +1,5 @@
-#Universal SDL3
+# Universal SDL3
+
 Introducing my universal SDL3 project, with the sheer intention on allowing others to build cross-platform applications without the headache of dealing with multiple platforms. Currently, this has been tested on my ARM based Mac, and works, so results may vary.
 
 The base of this project is Alpine Linux, particularly, its edge branch. It's great since you can access experimental libraries that aren't available in the stable branch.
