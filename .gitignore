@@ -225,3 +225,4 @@ logs/debug/filesystem_debug.log
 logs/debug/runtime_debug.log
 docs/OLD DOCKER CODE JUST IN CASE.md
 *.gz
+log/test.log
