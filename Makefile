@@ -1,13 +1,14 @@
-.PHONY: all clean build run purge shell intellisense test-stage
+.PHONY: all clean build run purge shell intellisense test-stage run-log
 
 PROJECT_ROOT := $(shell pwd)
-IMAGE_NAME := mostsignificant/simplehttpserver
+IMAGE_NAME := lilyspark-alpha
 CONTAINER_NAME := sdl3-app
 
-CXX_FILES := main.cpp screenScenes.h
+CXX_FILES := main.cpp
 C_FILES := 
 CMAKE_FILES := CMakeLists.txt
 SHELL_FILES := fb-wrapper.sh
+
 
 SOURCE_FILES := $(CXX_FILES) $(C_FILES) $(CMAKE_FILES) $(SHELL_FILES)
 VOLUME_MOUNTS := $(foreach file,$(SOURCE_FILES),-v "$(PROJECT_ROOT)/$(file):/app/$(file)")
@@ -33,7 +34,6 @@ test-stage: purge
 	@docker build --platform=linux/arm64 --target test -t $(IMAGE_NAME)-test . > log/test.log 2>&1
 
 intellisense:
-	@echo "=== UPDATING INTELLISENSE CONFIG ==="
 	@chmod +x .vscode/generate_cpp_config.sh
 	@.vscode/generate_cpp_config.sh
 
@@ -44,6 +44,15 @@ run: intellisense
 		--platform=linux/arm64 \
 		$(IMAGE_NAME) \
 		sh -c "chmod +x fb-wrapper.sh && mkdir -p build && cd build && cmake .. && make -j\$$(nproc) && cd .. && ./fb-wrapper.sh"
+
+run-log: intellisense
+	@mkdir -p log
+	@docker run --rm --name $(CONTAINER_NAME) \
+		$(VOLUME_MOUNTS) \
+		-e DISPLAY=host.docker.internal:0 \
+		--platform=linux/arm64 \
+		$(IMAGE_NAME) \
+		sh -c "chmod +x fb-wrapper.sh && mkdir -p build && cd build && cmake .. && make -j\$$(nproc) && cd .. && ./fb-wrapper.sh" > log/run.log 2>&1
 
 shell:
 	@docker run -it --rm \
