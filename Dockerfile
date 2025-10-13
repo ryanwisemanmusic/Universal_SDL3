@@ -738,10 +738,26 @@ RUN mkdir -p /tmp/runtime-root && \
     chmod 1777 /tmp/.X11-unix && \
     chmod 0700 /tmp/runtime-root
 
+# Copy build system and development files
+COPY CMakeLists.txt /app/
+COPY setup-scripts/ /app/setup-scripts/
+COPY .vscode/ /app/.vscode/
+
 WORKDIR /app
+
+# Create build directory structure and set permissions
+RUN mkdir -p build && \
+    chmod +x /app/setup-scripts/fb-wrapper.sh && \
+    chmod +x /app/.vscode/generate_cpp_config.sh
+
+# Create a system-level wrapper that intercepts lilyspark-alpha calls
+RUN echo '#!/bin/bash' > /usr/local/bin/lilyspark-alpha-filtered && \
+    echo '/app/build/lilyspark-alpha "$@" 2>&1 | grep -v -E "No matching fbConfigs|glx.*failed to create drisw screen"' >> /usr/local/bin/lilyspark-alpha-filtered && \
+    echo 'exit ${PIPESTATUS[0]}' >> /usr/local/bin/lilyspark-alpha-filtered && \
+    chmod +x /usr/local/bin/lilyspark-alpha-filtered
 
 # Vulkan Symlink
 RUN ln -sf /usr/lib/libvulkan.so.1 /usr/lib/libvulkan.so && \
     ln -sf /usr/lib/libvulkan.so.1.4.313 /usr/lib/libvulkan.so.1
 
-CMD ["./build/lilyspark-alpha"]
+CMD ["/app/setup-scripts/fb-wrapper.sh"]
