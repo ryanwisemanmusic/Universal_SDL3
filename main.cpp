@@ -28,12 +28,15 @@ using namespace std;
 
 bool tryVulkan() 
 {
+    
     SDL_Window* window = 
     SDL_CreateWindow(
         "Vulkan Test", 
         640, 
         480, 
         SDL_WINDOW_VULKAN);
+
+    
 
     VkInstance instance = VK_NULL_HANDLE;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
@@ -85,6 +88,8 @@ void runOpenGL()
         480, 
         SDL_WINDOW_OPENGL
     );
+    SDL_Renderer *renderer = NULL;
+    renderer = SDL_CreateRenderer(window, "gpu");
 
     SDL_GLContext gl_context = SDL_GL_CreateContext(window);
     SDL_GL_SetSwapInterval(1);
@@ -131,4 +136,3 @@ int main()
     SDL_Quit();
     return 0;
 }
-
