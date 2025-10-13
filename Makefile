@@ -4,13 +4,11 @@ PROJECT_ROOT := $(shell pwd)
 IMAGE_NAME := lilyspark-alpha
 CONTAINER_NAME := sdl3-app
 
+# Only mount main.cpp for local development - this is what users will replace
 CXX_FILES := main.cpp
-C_FILES := 
-CMAKE_FILES := CMakeLists.txt
-SHELL_FILES := fb-wrapper.sh
 
-
-SOURCE_FILES := $(CXX_FILES) $(C_FILES) $(CMAKE_FILES) $(SHELL_FILES)
+# These are handled in the Docker image, no need to mount them
+SOURCE_FILES := $(CXX_FILES)
 VOLUME_MOUNTS := $(foreach file,$(SOURCE_FILES),-v "$(PROJECT_ROOT)/$(file):/app/$(file)")
 
 all: clean build run
@@ -43,7 +41,9 @@ run: intellisense
 		-e DISPLAY=host.docker.internal:0 \
 		--platform=linux/arm64 \
 		$(IMAGE_NAME) \
-		sh -c "chmod +x fb-wrapper.sh && mkdir -p build && cd build && cmake .. && make -j\$$(nproc) && cd .. && ./fb-wrapper.sh"
+		sh -c "mkdir -p build && cd build && \
+		cmake .. && make -j\$$(nproc) && cd .. && \
+		lilyspark-alpha-filtered"
 
 run-log: intellisense
 	@mkdir -p log
@@ -52,7 +52,9 @@ run-log: intellisense
 		-e DISPLAY=host.docker.internal:0 \
 		--platform=linux/arm64 \
 		$(IMAGE_NAME) \
-		sh -c "chmod +x fb-wrapper.sh && mkdir -p build && cd build && cmake .. && make -j\$$(nproc) && cd .. && ./fb-wrapper.sh" > log/run.log 2>&1
+		sh -c "mkdir -p build && cd build && \
+		cmake .. && make -j\$$(nproc) && cd .. && \
+		lilyspark-alpha-filtered"
 
 shell:
 	@docker run -it --rm \
