@@ -1,5 +1,5 @@
 # Single stage: Build and run in Alpine
-FROM alpine:3.22
+FROM alpine:3.22 AS foundation
 
 RUN mkdir -p \
     /lilyspark \
@@ -148,8 +148,9 @@ ENV PKG_CONFIG_PATH="/lilyspark/lib/pkgconfig"
 #
 #
 
+FROM foundation AS libs
 # /lilyspark/usr/local/lib/audio/codec packages
-RUN apk add --no-cache alsa-lib-dev ladspa-dev lame-dev libopenmpt-dev \
+RUN apk add --no-cache alsa-lib-dev ladspa-dev lame-dev libopenmpt-dev jack-dev \
     libvorbis-dev opus-dev pulseaudio-dev soxr-dev \
     --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community
 
@@ -363,17 +364,20 @@ ENV PKG_CONFIG_PATH="/lilyspark/usr/local/lib/network/streaming/lib/pkgconfig:${
 #
 
 # /lilyspark/usr/local/lib/system/audio/framework
-RUN apk add --no-cache lilv-dev \
+RUN apk add --no-cache lilv-dev ladspa-dev \
     --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community
 
 # Sysroot integration
-RUN find /usr/lib -name "*lilv*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/audio/framework/lib/ 2>/dev/null || true
+RUN find /usr/lib -name "*lilv*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/audio/framework/lib/ 2>/dev/null || true && \
+    find /usr/lib -name "*ladspa*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/audio/framework/lib/ 2>/dev/null || true
 
 # Copy binary paths
-RUN find /usr/bin -name "*lilv*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/audio/framework/bin/ 2>/dev/null || true
+RUN find /usr/bin -name "*lilv*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/audio/framework/bin/ 2>/dev/null || true && \
+    find /usr/bin -name "*ladspa*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/audio/framework/bin/ 2>/dev/null || true
 
 # pkgconfig stuff
-RUN find /usr/lib -name "*lilv*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/audio/framework/lib/pkgconfig/ 2>/dev/null || true
+RUN find /usr/lib -name "*lilv*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/audio/framework/lib/pkgconfig/ 2>/dev/null || true && \
+    find /usr/lib -name "*ladspa*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/audio/framework/lib/pkgconfig/ 2>/dev/null || true
 
 # ENV setup
 ENV PATH="/lilyspark/usr/local/lib/system/audio/framework/bin:${PATH}"
@@ -417,17 +421,40 @@ ENV PKG_CONFIG_PATH="/lilyspark/usr/local/lib/system/encoding/lib/pkgconfig:${PK
 #
 
 # /lilyspark/usr/local/lib/system/graphics packages
-RUN apk add --no-cache libtheora-dev \
+RUN apk add --no-cache libtheora-dev gtk+3.0-dev \
     --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community
 
 # Sysroot integration
-RUN find /usr/lib -name "*theora*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/ 2>/dev/null || true
+RUN find /usr/lib -name "*theora*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/ 2>/dev/null || true && \
+    find /usr/lib -name "*gtk*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/ 2>/dev/null || true && \
+    find /usr/lib -name "*gdk*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/ 2>/dev/null || true && \
+    find /usr/lib -name "*glib*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/ 2>/dev/null || true && \
+    find /usr/lib -name "*gobject*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/ 2>/dev/null || true && \
+    find /usr/lib -name "*gio*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/ 2>/dev/null || true && \
+    find /usr/lib -name "*cairo*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/ 2>/dev/null || true && \
+    find /usr/lib -name "*pango*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/ 2>/dev/null || true && \
+    find /usr/lib -name "*harfbuzz*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/ 2>/dev/null || true && \
+    find /usr/lib -name "*atk*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/ 2>/dev/null || true && \
+    find /usr/lib -name "*gdk_pixbuf*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/ 2>/dev/null || true
 
 # Copy binary paths
-RUN find /usr/bin -name "*theora*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/bin/ 2>/dev/null || true
+RUN find /usr/bin -name "*theora*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/bin/ 2>/dev/null || true && \
+    find /usr/bin -name "*gtk*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/bin/ 2>/dev/null || true && \
+    find /usr/bin -name "*gdk*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/bin/ 2>/dev/null || true && \
+    find /usr/bin -name "*glib*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/bin/ 2>/dev/null || true
 
 # pkgconfig stuff
-RUN find /usr/lib -name "*theora*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/pkgconfig/ 2>/dev/null || true
+RUN find /usr/lib -name "*theora*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/pkgconfig/ 2>/dev/null || true && \
+    find /usr/lib -name "*gtk*".pc -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/pkgconfig/ 2>/dev/null || true && \
+    find /usr/lib -name "*gdk*".pc -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/pkgconfig/ 2>/dev/null || true && \
+    find /usr/lib -name "*glib*".pc -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/pkgconfig/ 2>/dev/null || true && \
+    find /usr/lib -name "*gobject*".pc -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/pkgconfig/ 2>/dev/null || true && \
+    find /usr/lib -name "*gio*".pc -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/pkgconfig/ 2>/dev/null || true && \
+    find /usr/lib -name "*cairo*".pc -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/pkgconfig/ 2>/dev/null || true && \
+    find /usr/lib -name "*pango*".pc -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/pkgconfig/ 2>/dev/null || true && \
+    find /usr/lib -name "*harfbuzz*".pc -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/pkgconfig/ 2>/dev/null || true && \
+    find /usr/lib -name "*atk*".pc -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/pkgconfig/ 2>/dev/null || true && \
+    find /usr/lib -name "*gdk_pixbuf*".pc -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/system/graphics/lib/pkgconfig/ 2>/dev/null || true
 
 # ENV setup
 ENV PATH="/lilyspark/usr/local/lib/system/graphics/bin:${PATH}"
@@ -662,6 +689,33 @@ ENV PKG_CONFIG_PATH="/lilyspark/usr/local/lib/video/ffmpeg/lib/pkgconfig:${PKG_C
 #
 #
 
+FROM libs AS test
+# APKBUILD - JUCE
+RUN apk add --no-cache abuild sudo git
+
+RUN adduser -D builder && \
+    addgroup builder abuild && \
+    echo "builder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+COPY packages/JUCE/ /home/builder/JUCE/
+RUN chown -R builder:builder /home/builder/JUCE
+
+USER builder
+RUN cd /home/builder/JUCE && \
+    abuild-keygen -a -n && \
+    abuild checksum && \
+    abuild -r || echo "JUCE package build failed - continuing without it"
+
+USER root
+RUN apk add --allow-untrusted /home/builder/packages/*/juce-*.apk 2>/dev/null || echo "No JUCE package to install - continuing"
+
+RUN pkg-config --exists juce && echo "✅ JUCE installed successfully" || echo "⚠️ JUCE not available"
+
+#
+#
+#
+
+FROM test AS runtime
 # ENV variables - GRAPHICS
 ENV LIBGL_ALWAYS_SOFTWARE=1
 ENV GALLIUM_DRIVER=llvmpipe
