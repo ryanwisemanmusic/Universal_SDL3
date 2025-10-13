@@ -730,7 +730,7 @@ ENV LIBGL_ALWAYS_SOFTWARE=1
 ENV GALLIUM_DRIVER=llvmpipe
 ENV MESA_LOADER_DRIVER_OVERRIDE=swrast
 ENV XDG_RUNTIME_DIR=/tmp/runtime-root
-ENV DISPLAY=:99
+ENV DISPLAY=host.docker.internal:0
 
 # Create runtime directories
 RUN mkdir -p /tmp/runtime-root && \
