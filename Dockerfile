@@ -150,15 +150,16 @@ ENV PKG_CONFIG_PATH="/lilyspark/lib/pkgconfig"
 
 FROM foundation AS libs
 # /lilyspark/usr/local/lib/audio/codec packages
-RUN apk add --no-cache alsa-lib-dev ladspa-dev lame-dev libopenmpt-dev jack-dev \
+RUN apk update && apk add --no-cache --force-overwrite \
+    alsa-lib-dev ladspa-dev lame-dev jack-dev \
     libvorbis-dev opus-dev pulseaudio-dev soxr-dev \
     --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community
+
 
 # Sysroot integration
 RUN find /usr/lib -name "*asound*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/ 2>/dev/null || true && \
     find /usr/lib -name "*ladspa*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/ 2>/dev/null || true && \
     find /usr/lib -name "*mp3lame*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/ 2>/dev/null || true && \
-    find /usr/lib -name "*openmpt*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/ 2>/dev/null || true && \
     find /usr/lib -name "*vorbis*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/ 2>/dev/null || true && \
     find /usr/lib -name "*opus*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/ 2>/dev/null || true && \
     find /usr/lib -name "*pulse*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/ 2>/dev/null || true && \
@@ -172,7 +173,6 @@ RUN find /usr/bin -name "*alsa*" -type f | xargs -I {} cp {} /lilyspark/usr/loca
 RUN find /usr/lib -name "*alsa*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/pkgconfig/ 2>/dev/null || true && \
     find /usr/lib -name "*ladspa*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/pkgconfig/ 2>/dev/null || true && \
     find /usr/lib -name "*lame*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/pkgconfig/ 2>/dev/null || true && \
-    find /usr/lib -name "*openmpt*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/pkgconfig/ 2>/dev/null || true && \
     find /usr/lib -name "*vorbis*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/pkgconfig/ 2>/dev/null || true && \
     find /usr/lib -name "*vorbisenc*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/pkgconfig/ 2>/dev/null || true && \
     find /usr/lib -name "*vorbisfile*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/audio/codec/lib/pkgconfig/ 2>/dev/null || true && \
@@ -235,7 +235,7 @@ RUN cd /tmp && \
     wget https://github.com/libsdl-org/SDL_image/releases/download/release-3.2.4/SDL3_image-3.2.4.tar.gz && \
     tar -xzf SDL3_image-3.2.4.tar.gz && \
     cd SDL3_image-3.2.4 && \
-    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr && \
+    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr -DSDL3IMAGE_MP3=OFF && \
     cmake --build build -j$(nproc) && \
     cmake --install build && \
     cd / && rm -rf /tmp/SDL3_image*
@@ -548,6 +548,12 @@ ENV PKG_CONFIG_PATH="/lilyspark/usr/local/lib/fonts/lib/pkgconfig:${PKG_CONFIG_P
 #
 
 # /lilyspark/usr/local/lib/video/codec packages
+RUN apk add --no-cache mpg123-dev mpg123 \
+# SIDE NOTE I FUCKING ADD YOU, THE ONLY THING MISSING, AND YOU STILLLLLL ARE A PROBLEM TO SDL3_TTF?????????
+# I LINK YOU LIKE EVERYTHING ELSE SO WTF IS THE PROBLEM?????
+    --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
+    --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community
+
 RUN apk add --no-cache aom-dev dav1d-dev rav1e-dev x264-dev x265-dev xvidcore-dev \
     libvpx-dev libwebp-dev vidstab-dev zimg-dev \
     --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community
@@ -559,6 +565,7 @@ RUN find /usr/lib -name "*aom*" \( -name "*.so*" -o -name "*.a" \) -type f | xar
     find /usr/lib -name "*x264*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/ 2>/dev/null || true && \
     find /usr/lib -name "*x265*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/ 2>/dev/null || true && \
     find /usr/lib -name "*xvidcore*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/ 2>/dev/null || true && \
+    find /usr/lib -name "*mpg123*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/ 2>/dev/null || true && \
     find /usr/lib -name "*vpx*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/ 2>/dev/null || true && \
     find /usr/lib -name "*webp*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/ 2>/dev/null || true && \
     find /usr/lib -name "*vidstab*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/ 2>/dev/null || true && \
@@ -569,7 +576,8 @@ RUN find /usr/bin -name "*aom*" -type f | xargs -I {} cp {} /lilyspark/usr/local
     find /usr/bin -name "*dav1d*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/bin/ 2>/dev/null || true && \
     find /usr/bin -name "*rav1e*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/bin/ 2>/dev/null || true && \
     find /usr/bin -name "*x264*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/bin/ 2>/dev/null || true && \
-    find /usr/bin -name "*x265*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/bin/ 2>/dev/null || true
+    find /usr/bin -name "*x265*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/bin/ 2>/dev/null || true && \
+    find /usr/bin -name "*mpg123*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/bin/ 2>/dev/null || true
 
 # pkgconfig stuff
 RUN find /usr/lib -name "*aom*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/pkgconfig/ 2>/dev/null || true && \
@@ -578,6 +586,7 @@ RUN find /usr/lib -name "*aom*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/lo
     find /usr/lib -name "*x264*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/pkgconfig/ 2>/dev/null || true && \
     find /usr/lib -name "*x265*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/pkgconfig/ 2>/dev/null || true && \
     find /usr/lib -name "*xvidcore*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/pkgconfig/ 2>/dev/null || true && \
+    find /usr/lib -name "*mpg123*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/pkgconfig/ 2>/dev/null || true && \
     find /usr/lib -name "*vpx*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/pkgconfig/ 2>/dev/null || true && \
     find /usr/lib -name "*webp*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/pkgconfig/ 2>/dev/null || true && \
     find /usr/lib -name "*vidstab*.pc" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/video/codec/lib/pkgconfig/ 2>/dev/null || true && \
@@ -735,4 +744,4 @@ WORKDIR /app
 RUN ln -sf /usr/lib/libvulkan.so.1 /usr/lib/libvulkan.so && \
     ln -sf /usr/lib/libvulkan.so.1.4.313 /usr/lib/libvulkan.so.1
 
-CMD ["./build/simplehttpserver"]
+CMD ["./build/lilyspark-alpha"]
