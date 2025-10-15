@@ -1,14 +1,16 @@
-.PHONY: all clean build run purge shell intellisense test-stage run-log
+.PHONY: all clean build run purge shell intellisense test-stage run-log setup-venv activate-venv quit-venv python-deps
 
 PROJECT_ROOT := $(shell pwd)
 IMAGE_NAME := lilyspark-alpha
 CONTAINER_NAME := sdl3-app
+VENV_DIR := venv
+PYTHON := $(VENV_DIR)/bin/python3
+PIP := $(VENV_DIR)/bin/pip
 
-# Only mount main.cpp for local development - this is what users will replace
 CXX_FILES := main.cpp
+PYTHON_FILES := wifidetect.py
 
-# These are handled in the Docker image, no need to mount them
-SOURCE_FILES := $(CXX_FILES)
+SOURCE_FILES := $(CXX_FILES) $(PYTHON_FILES)
 VOLUME_MOUNTS := $(foreach file,$(SOURCE_FILES),-v "$(PROJECT_ROOT)/$(file):/app/$(file)")
 
 all: clean build run
@@ -60,3 +62,31 @@ shell:
 		--platform=linux/arm64 \
 		$(IMAGE_NAME) \
 		/bin/bash
+
+# Python Virtual Environment Management
+setup-venv:
+	@python3 -m venv $(VENV_DIR)
+
+python-deps: setup-venv
+	@$(PIP) install --upgrade pip
+	@$(PIP) install pandas numpy
+
+activate-venv:
+	@echo "To activate the virtual environment, run:"
+	@echo "source $(VENV_DIR)/bin/activate"
+
+quit-venv:
+	@echo "To deactivate the virtual environment, run:"
+	@echo "deactivate"
+
+# Test Python setup
+test-python: python-deps
+	@$(PYTHON) -c "import pandas as pd; import numpy as np; print('✓ All Python imports successful!')"
+	@$(PYTHON) -c "import pandas as pd; print('✓ Pandas version:', pd.__version__)"
+
+# Run Python code
+run-python: python-deps activate-venv quit-venv
+	@echo "Running Python code"
+	@$(PYTHON) $(PYTHON_FILES)
+	
+	
