@@ -398,7 +398,7 @@ RUN find /usr/lib -name "libiw*" \( -name "*.so*" -o -name "*.a" \) -type f | xa
 # Set up environment variables
 ENV PATH="/lilyspark/usr/local/lib/python/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/lilyspark/usr/local/lib/python/lib:/lilyspark/usr/local/lib/python/usr/lib:${LD_LIBRARY_PATH}"
-ENV PYTHONPATH="/lilyspark/usr/local/lib/python/lib/python3.11/site-packages:${PYTHONPATH}"
+ENV PYTHONPATH="/lilyspark/usr/local/lib/python/lib/python3.11/site-packages"
 ENV PKG_CONFIG_PATH="/lilyspark/usr/local/lib/python/usr/lib/pkgconfig:/lilyspark/usr/local/lib/python/lib/pkgconfig:${PKG_CONFIG_PATH}"
 ENV PYTHONHOME="/lilyspark/usr/local/lib/python"
 
