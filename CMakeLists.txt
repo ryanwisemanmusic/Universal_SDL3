@@ -164,6 +164,20 @@ add_executable(lilyspark-alpha
     main.cpp 
 )
 
+pkg_check_modules(python3 QUIET python3)
+if(NOT python3_FOUND)
+    message(WARNING "Python3 not found via pkg-config, trying manual discovery...")
+    find_library(PYTHON3_LIB NAMES python3 PATHS /usr/lib /usr/local/lib)
+    if(PYTHON3_LIB)
+        set(PYTHON3_LIBRARIES ${PYTHON3_LIB})
+        set(PYTHON3_FOUND TRUE)
+        message(STATUS "Found Python3 manually: ${PYTHON3_LIB}")
+    else()
+        message(WARNING "Python3 not found! Some features may not work.")
+    endif()
+endif()
+
+
 target_include_directories(lilyspark-alpha PRIVATE 
     ${SDL3_INCLUDE_DIRS}
     ${SDL3_TTF_INCLUDE_DIRS}
@@ -173,6 +187,9 @@ target_include_directories(lilyspark-alpha PRIVATE
     ${LIBAVFORMAT_INCLUDE_DIRS}
     ${LIBAVUTIL_INCLUDE_DIRS}
     ${LIBSWSCALE_INCLUDE_DIRS}
+    ${LIBSWRESAMPLE_INCLUDE_DIRS}
+    ${SQLITE3_INCLUDE_DIRS}
+    ${PYTHON3_INCLUDE_DIRS}
 )
 
 # Alright, check back here if you aren't finding shit; because chances are, it's here
@@ -181,6 +198,12 @@ target_link_directories(lilyspark-alpha PRIVATE
     /usr/local/lib
     /lilyspark/usr/local/lib/graphics/sdl3/lib
     /lilyspark/usr/local/lib/video/codec/lib
+    /lilyspark/usr/local/lib/video/ffmpeg/lib
+    /lilyspark/usr/local/lib/video/formats/lib
+    /lilyspark/usr/local/lib/video/hardware/lib
+    /lilyspark/usr/local/lib/audio/codec/lib
+    /lilyspark/usr/local/lib/audio/formats/lib
+    /lilyspark/usr/local/lib/python/lib
 )
 
 target_link_libraries(lilyspark-alpha 
@@ -195,6 +218,7 @@ target_link_libraries(lilyspark-alpha
     ${LIBSWRESAMPLE_LIBRARIES}
     
     ${SQLITE3_LIBRARIES}
+    ${PYTHON3_LIBRARIES}
     OpenGL::GL
     vulkan
     
@@ -218,4 +242,6 @@ message(STATUS "SDL3_ttf: ${SDL3_TTF_LIBRARIES}")
 message(STATUS "SDL3_image: ${SDL3_IMAGE_LIBRARIES}")
 message(STATUS "FFmpeg: ${LIBAVCODEC_LIBRARIES}")
 message(STATUS "SQLite3: ${SQLITE3_LIBRARIES}")
-message(STATUS "Using clean linking without mpg123 dependencies")
+#message(STATUS "Using clean linking without mpg123 dependencies")
+message(STATUS "Python3: ${PYTHON3_LIBRARIES}")
+message(STATUS "Pandas: Available as Python package")
