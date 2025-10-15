@@ -1,0 +1,30 @@
+{
+  "python": {
+    "interpreter": "./venv/bin/python3",
+    "virtualenv": "./venv",
+    "packages": [
+      "pandas",
+      "numpy",
+      "python-dateutil",
+      "pytz",
+      "tzdata",
+      "six"
+    ]
+  },
+  "project": {
+    "name": "Universal_SDL3",
+    "type": "mixed",
+    "languages": ["cpp", "python"],
+    "build_system": "make"
+  },
+  "development": {
+    "intellisense": {
+      "python_enabled": true,
+      "cpp_enabled": true
+    },
+    "linting": {
+      "python": true,
+      "cpp": false
+    }
+  }
+}
