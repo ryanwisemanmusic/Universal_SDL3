@@ -1,9 +1,15 @@
 {
-    "C_Cpp.intelliSenseEngine": "default",
-    "C_Cpp.preferredPathSeparator": "Forward Slash", 
-    "C_Cpp.autoAddFileAssociations": false,
-    "C_Cpp.loggingLevel": "Debug",
-    "tasks.onTaskInit": {
-        "update-intellisense": "onFolderOpen"
-    }
+    "python.pythonPath": "./venv/bin/python3",
+    "python.defaultInterpreterPath": "./venv/bin/python3",
+    "python.terminal.activateEnvironment": true,
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.pycodestyleEnabled": true,
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.typeCheckingMode": "basic",
+    "python.envFile": "${workspaceFolder}/.env",
+    "python.venvPath": "${workspaceFolder}/venv",
+    "python.analysis.extraPaths": [
+        "./venv/lib/python3.13/site-packages"
+    ]
 }
