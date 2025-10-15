@@ -59,6 +59,11 @@ RUN mkdir -p \
     /lilyspark/usr/local/lib/network/streaming/lib \
     /lilyspark/usr/local/lib/network/streaming/share \
     /lilyspark/usr/local/lib/network/streaming/pkgconfig \
+    /lilyspark/usr/local/lib/python/ \
+    /lilyspark/usr/local/lib/python/bin \
+    /lilyspark/usr/local/lib/python/lib \
+    /lilyspark/usr/local/lib/python/share \
+    /lilyspark/usr/local/lib/python/pkgconfig \
     /lilyspark/usr/local/lib/system/encoding \
     /lilyspark/usr/local/lib/system/audio/framework \
     /lilyspark/usr/local/lib/system/audio/framework/bin \
@@ -358,6 +363,44 @@ RUN find /usr/lib -name "*librist*.pc" -type f | xargs -I {} cp {} /lilyspark/us
 ENV PATH="/lilyspark/usr/local/lib/network/streaming/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/lilyspark/usr/local/lib/network/streaming/lib:${LD_LIBRARY_PATH}"
 ENV PKG_CONFIG_PATH="/lilyspark/usr/local/lib/network/streaming/lib/pkgconfig:${PKG_CONFIG_PATH}"
+
+#
+#
+#
+
+# /lilyspark/usr/local/lib/python
+RUN apk add --no-cache python3-dev python3 py3-pandas iw wireless-tools \
+    --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community
+
+# Sysroot integration - improved with better error handling and completeness
+RUN find /usr/lib -name "*python*" \( -name "*.so*" -o -name "*.a" -o -name "*.py" \) -type f | xargs -I {} cp --parents {} /lilyspark/usr/local/lib/python/ 2>/dev/null || true
+RUN find /usr/lib -name "*pandas*" \( -name "*.so*" -o -name "*.a" -o -name "*.py" \) -type f | xargs -I {} cp --parents {} /lilyspark/usr/local/lib/python/ 2>/dev/null || true
+RUN find /usr/lib -name "libpython*" -type f | xargs -I {} cp --parents {} /lilyspark/usr/local/lib/python/ 2>/dev/null || true
+
+# Copy binary paths with proper structure
+RUN mkdir -p /lilyspark/usr/local/lib/python/bin && \
+    find /usr/bin -name "*python*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/python/bin/ 2>/dev/null || true
+
+# Copy essential Python directories
+RUN cp -r /usr/lib/python* /lilyspark/usr/local/lib/python/lib/ 2>/dev/null || true
+
+# pkgconfig stuff with complete structure
+RUN find /usr/lib -name "python*.pc" -type f | xargs -I {} cp --parents {} /lilyspark/usr/local/lib/python/ 2>/dev/null || true
+RUN find /usr/lib -name "py3-*.pc" -type f | xargs -I {} cp --parents {} /lilyspark/usr/local/lib/python/ 2>/dev/null || true
+
+# Copy necessary include files
+RUN cp -r /usr/include/python* /lilyspark/usr/local/lib/python/include/ 2>/dev/null || true
+
+# Copy wireless tools binaries and libraries
+RUN find /usr/sbin -name "iw*" -type f | xargs -I {} cp {} /lilyspark/usr/local/lib/python/bin/ 2>/dev/null || true
+RUN find /usr/lib -name "libiw*" \( -name "*.so*" -o -name "*.a" \) -type f | xargs -I {} cp --parents {} /lilyspark/usr/local/lib/python/ 2>/dev/null || true
+
+# Set up environment variables
+ENV PATH="/lilyspark/usr/local/lib/python/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/lilyspark/usr/local/lib/python/lib:/lilyspark/usr/local/lib/python/usr/lib:${LD_LIBRARY_PATH}"
+ENV PYTHONPATH="/lilyspark/usr/local/lib/python/lib/python3.11/site-packages:${PYTHONPATH}"
+ENV PKG_CONFIG_PATH="/lilyspark/usr/local/lib/python/usr/lib/pkgconfig:/lilyspark/usr/local/lib/python/lib/pkgconfig:${PKG_CONFIG_PATH}"
+ENV PYTHONHOME="/lilyspark/usr/local/lib/python"
 
 #
 #
